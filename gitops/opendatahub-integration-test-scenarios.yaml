@@ -9,9 +9,9 @@ metadata:
 spec:
   application: opendatahub-release
   contexts:
-  - description: execute the integration test when component odh-operator-bundle
+  - description: execute the integration test when component odh-operator
       updates
-    name: component_odh-operator-bundle
+    name: component_odh-operator
   resolverRef:
     params:
     - name: url
