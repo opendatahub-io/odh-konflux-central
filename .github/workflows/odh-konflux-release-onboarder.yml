@@ -35,7 +35,6 @@ on:
           - odh-model-controller
           - openvino-model-server
           - rest-proxy
-          - ta-lmes-driver
           - text-generation-inference
           - training-operator
           - trustyai-explainability
