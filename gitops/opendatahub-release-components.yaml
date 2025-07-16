@@ -489,6 +489,25 @@ metadata:
     build.appstudio.openshift.io/request: configure-pac-no-mr
     mintmaker.appstudio.redhat.com/disabled: true
     build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+  name: odh-model-registry
+spec:
+  application: opendatahub-release
+  componentName: odh-model-registry-job-async-upload
+  containerImage: quay.io/opendatahub/model-registry-job-async-upload
+  source:
+    git:
+      context: jobs/async-upload
+      dockerfileUrl: Dockerfile
+      revision: "v0.2.17"
+      url: https://github.com/opendatahub-io/model-registry
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
   name: odh-model-registry-operator
 spec:
   application: opendatahub-release
