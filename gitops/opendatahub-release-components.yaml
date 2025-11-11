@@ -802,7 +802,7 @@ spec:
     git:
       context: ./
       dockerfileUrl: Dockerfile
-      revision: "main"
+      revision: "candidate"
       url: https://github.com/opendatahub-io/notebooks
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
