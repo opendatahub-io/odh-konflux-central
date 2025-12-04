@@ -1926,6 +1926,6 @@ spec:
     git:
       context: .
       dockerfileUrl: cmd/trainer-controller-manager/Dockerfile.odh
-      revision: master
+      revision: main
       url: https://github.com/opendatahub-io/trainer.git
 ---
