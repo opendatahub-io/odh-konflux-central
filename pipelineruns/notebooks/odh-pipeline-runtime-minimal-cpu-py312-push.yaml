@@ -7,7 +7,7 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "stable" && !("manifests/base/params-latest.env".pathChanged()) && ( "runtimes/minimal/ubi9-python-3.12/**".pathChanged() || "runtimes/minimal/build-args/cpu.conf".pathChanged() || ".tekton/odh-pipeline-runtime-minimal-cpu-py312-push.yaml".pathChanged() )
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch == "stable" && !("manifests/base/params-latest.env".pathChanged()) && ( "runtimes/minimal/ubi9-python-3.12/**".pathChanged() || "runtimes/minimal/ubi9-python-3.12/build-args/cpu.conf".pathChanged() || ".tekton/odh-pipeline-runtime-minimal-cpu-py312-push.yaml".pathChanged() )
   labels:
     appstudio.openshift.io/application: opendatahub-builds
     appstudio.openshift.io/component: odh-pipeline-runtime-minimal-cpu-py312
