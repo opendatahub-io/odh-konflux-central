@@ -461,7 +461,7 @@ spec:
       context: sdk/python/feast/infra/feature_servers/multicloud
       dockerfileUrl: Dockerfile
       revision: "stable"
-      url: https://github.com/opendatahub-io/feast   
+      url: https://github.com/opendatahub-io/feast
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
 kind: Component
