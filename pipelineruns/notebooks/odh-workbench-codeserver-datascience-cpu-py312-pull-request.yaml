@@ -8,7 +8,7 @@ metadata:
     build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && (target_branch == "main" || target_branch == "stable") && !("manifests/base/params-latest.env".pathChanged()) && ( ".tekton/odh-workbench-codeserver-datascience-cpu-py312-pull-request.yaml".pathChanged() || "runtimes/rocm-tensorflow/ubi9-python-3.12/**".pathChanged() || "runtimes/rocm-tensorflow/ubi9-python-3.12/build-args/rocm.conf".pathChanged() )
+    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && (target_branch == "main" || target_branch == "stable") && !("manifests/base/params-latest.env".pathChanged()) && ( ".tekton/odh-workbench-codeserver-datascience-cpu-py312-pull-request.yaml".pathChanged() || "codeserver/ubi9-python-3.12/**".pathChanged() || "codeserver/ubi9-python-3.12/build-args/cpu.conf".pathChanged() )
       && body.repository.full_name == "opendatahub-io/notebooks"
   labels:
     appstudio.openshift.io/application: opendatahub-builds
@@ -25,11 +25,11 @@ spec:
   - name: output-image
     value: quay.io/opendatahub/odh-workbench-codeserver-datascience-cpu-py312-ubi9:odh-stable
   - name: dockerfile
-    value: runtimes/rocm-tensorflow/ubi9-python-3.12/Dockerfile.rocm
+    value: codeserver/ubi9-python-3.12/Dockerfile.cpu
   - name: path-context
     value: .
   - name: build-args-file
-    value: runtimes/rocm-tensorflow/ubi9-python-3.12/build-args/rocm.conf
+    value: codeserver/ubi9-python-3.12/build-args/cpu.conf
   - name: additional-tags
     value:
     - '{{target_branch}}-{{revision}}'
