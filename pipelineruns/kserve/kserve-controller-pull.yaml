@@ -30,7 +30,7 @@ spec:
   - name: path-context
     value: .
   - name: additional-tags
-    value: 
+    value:
     - 'odh-pr-{{revision}}'
   - name: pipeline-type
     value: pull-request

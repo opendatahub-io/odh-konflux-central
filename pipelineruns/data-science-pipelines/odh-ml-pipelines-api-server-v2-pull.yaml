@@ -24,7 +24,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/opendatahub/ds-pipelines-api-server:odh-pr 
+    value: quay.io/opendatahub/ds-pipelines-api-server:odh-pr
   - name: dockerfile
     value: backend/Dockerfile
   - name: path-context
