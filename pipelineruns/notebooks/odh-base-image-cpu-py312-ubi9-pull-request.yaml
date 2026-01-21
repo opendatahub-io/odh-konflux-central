@@ -26,7 +26,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/opendatahub/odh-base-image-cpu-py312-ubi9:on-pr-{{revision}}
+    value: quay.io/opendatahub/odh-base-image-cpu-py312-ubi9:on-pr
   - name: image-expires-after
     value: 5d
   - name: dockerfile
@@ -37,6 +37,11 @@ spec:
     value:
     - linux-mxlarge/amd64
     - linux/arm64
+  - name: additional-tags
+    value:
+    - 'odh-pr-{{revision}}'
+  - name: pipeline-type
+    value: pull-request
   pipelineRef:
     resolver: git
     params:
