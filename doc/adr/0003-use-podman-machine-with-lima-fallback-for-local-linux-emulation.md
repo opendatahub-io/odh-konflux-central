@@ -26,7 +26,7 @@ We will support **[Podman Machine](https://docs.podman.io/en/latest/markdown/pod
 
 ## Design Space Explored
 
-We evaluated five approaches to bringing Linux capabilities to macOS. Our criteria were **Open Source Status**, **Filesystem Integration** (automatic mounting of `$PWD`), and **Security Feature Parity** (support for namespaces/network isolation).
+We evaluated six approaches to bringing Linux capabilities to macOS. Our criteria were **Open Source Status**, **Filesystem Integration** (automatic mounting of `$PWD`), and **Security Feature Parity** (support for namespaces/network isolation).
 
 ### Comparison Matrix
 
