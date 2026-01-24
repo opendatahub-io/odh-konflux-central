@@ -1,6 +1,5 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
-#test4
 metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/ml-metadata?rev={{revision}}
