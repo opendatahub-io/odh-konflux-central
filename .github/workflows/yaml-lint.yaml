@@ -19,6 +19,7 @@ jobs:
         with:
           strict: true
           config_file: .yamllint
+          yamllint_version: "==1.38.0"
 
   kubeconform:
     name: Kubeconform Schema Validation
