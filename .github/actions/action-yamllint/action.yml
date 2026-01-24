@@ -13,6 +13,10 @@ inputs:
     description: Strict mode, causes linter warnings to be handled as errors
     default: "false"
     required: false
+  YAMLLINT_VERSION:
+    description: Version of yamllint to use
+    default: "1.38.0"
+    required: false
 
 runs:
   using: "composite"
@@ -25,8 +29,7 @@ runs:
     - name: Install yamllint
       shell: bash
       run: |
-        pip install --upgrade pip
-        pip install --no-cache-dir --prefer-binary yamllint==1.38.0
+        pipx install --pip-args "--no-cache-dir --prefer-binary" "yamllint==${{ inputs.YAMLLINT_VERSION }}"
 
     - name: Run yamllint
       shell: bash
@@ -45,4 +48,4 @@ runs:
         fi
 
         set -x
-        yamllint "${OPTS[@]}" "${{ inputs.file_or_dir }}"
+        pipx run "yamllint==${{ inputs.YAMLLINT_VERSION }}" "${OPTS[@]}" "${{ inputs.file_or_dir }}"
