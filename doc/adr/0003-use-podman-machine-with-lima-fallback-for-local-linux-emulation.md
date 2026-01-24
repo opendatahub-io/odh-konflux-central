@@ -14,6 +14,8 @@ Since macOS uses the [Darwin kernel](https://en.wikipedia.org/wiki/Darwin_(opera
 
 The team primarily uses Red Hat Enterprise Linux (RHEL) or Fedora on their workstations, where these scripts run natively. However, a significant portion of the team uses macOS. We need a standardized way to execute Linux-native logic on macOS without forcing developers to maintain complex manual VM setups.
 
+**Note on Windows:** Developers using Windows with WSL2 have native Linux namespace support and can run these scripts directly within their WSL2 environment.
+
 ## Decision
 
 We will support **[Podman Machine](https://docs.podman.io/en/latest/markdown/podman-machine.1.html)** as the primary virtualization interface for macOS developers, with **[Lima (Linux Machines)](https://github.com/lima-vm/lima)** as the supported fallback for advanced emulation needs.
