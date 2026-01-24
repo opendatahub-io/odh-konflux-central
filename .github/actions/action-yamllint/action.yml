@@ -1,0 +1,48 @@
+name: "yamllint"
+description: "Run yamllint on the repository to enforce YAML style guide."
+inputs:
+  config_file:
+    description: Path to a custom configuration file (non-default YAMLLint path)
+    default: ""
+    required: false
+  file_or_dir:
+    description: Files (or directory) to check
+    default: "."
+    required: false
+  strict:
+    description: Strict mode, causes linter warnings to be handled as errors
+    default: "false"
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+
+    - name: Install yamllint
+      shell: bash
+      run: |
+        pip install --upgrade pip
+        pip install --no-cache-dir --prefer-binary yamllint==1.38.0
+
+    - name: Run yamllint
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+
+        # Build the command options dynamically
+        OPTS="--format github"
+
+        if [[ "${{ inputs.strict }}" == "true" ]]; then
+          OPTS="$OPTS --strict"
+        fi
+
+        if [[ -n "${{ inputs.config_file }}" ]]; then
+          OPTS="$OPTS -c ${{ inputs.config_file }}"
+        fi
+
+        set -x
+        yamllint $OPTS "${{ inputs.file_or_dir }}"
