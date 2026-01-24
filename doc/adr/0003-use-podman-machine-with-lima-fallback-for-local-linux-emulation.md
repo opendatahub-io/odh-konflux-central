@@ -1,4 +1,4 @@
-# 3. Use Podman Machine with Lima Fallback for Local Linux Emulation
+# 3. Use unshare on Linux and Lima VM on macOS for Security Sandboxing
 
 **Date:** 2026-01-24
 
@@ -18,10 +18,10 @@ The team primarily uses Red Hat Enterprise Linux (RHEL) or Fedora on their works
 
 ## Decision
 
-We will support **[Podman Machine](https://docs.podman.io/en/latest/markdown/podman-machine.1.html)** as the primary virtualization interface for macOS developers, with **[Lima (Linux Machines)](https://github.com/lima-vm/lima)** as the supported fallback for advanced emulation needs.
+We will use **[`unshare`](https://man7.org/linux/man-pages/man1/unshare.1.html)** as the primary sandboxing mechanism on Linux. For macOS developers, we will require **[Lima (Linux Machines)](https://github.com/lima-vm/lima)** to provide a Linux environment where `unshare` can run natively. **[Podman Machine](https://docs.podman.io/en/latest/markdown/podman-machine.1.html)** remains under consideration as a future alternative.
 
-1. **Primary (Happy Path):** Scripts should first detect and utilize **Podman**, as it is the standard toolset within Red Hat. We will leverage `podman run` with ephemeral containers to emulate the Linux environment.
-2. **Secondary (Full Emulation):** If Podman is insufficient (e.g., for testing non-containerized system tools) or absent, scripts should detect and utilize **Lima**.
+1. **Linux (Native):** Use `unshare` directly for network and filesystem isolation.
+2. **macOS (Required):** Use **Lima** to run a Linux VM where `unshare` works natively. Podman is under consideration as a future alternative.
 3. **Refusal of Proprietary Tools:** We explicitly avoid depending on [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/) to prevent licensing friction and ensure our tooling remains open-source friendly.
 
 ## Design Space Explored
@@ -32,8 +32,8 @@ We evaluated six approaches to bringing Linux capabilities to macOS. Our criteri
 
 | Tool | License | Filesystem Mounts | Network Isolation | Maturity | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| **[Podman Machine](https://podman.io/)** | ✅ Apache 2.0 | ✅ Automatic | ✅ `--network none` | 🟢 High | **Primary** |
-| **[Lima](https://github.com/lima-vm/lima)** | ✅ Apache 2.0 | ✅ Automatic | ✅ `unshare` (in VM) | 🟢 High | **Secondary** |
+| **[Lima](https://github.com/lima-vm/lima)** | ✅ Apache 2.0 | ✅ Automatic | ✅ `unshare` (in VM) | 🟢 High | **Chosen** |
+| **[Podman Machine](https://podman.io/)** | ✅ Apache 2.0 | ✅ Automatic | ✅ `--network none` | 🟢 High | Under consideration |
 | **[Docker Desktop](https://www.docker.com/)** | ❌ Proprietary | ✅ Automatic | ✅ `--network none` | 🟢 High | Rejected |
 | **[OrbStack](https://orbstack.dev/)** | ❌ Proprietary | ✅ Automatic | ✅ `--network none` | 🟢 High | Rejected |
 | **[Multipass](https://multipass.run/)** | ✅ GPLv3 | ⚠️ Manual Flags | ✅ `unshare` (in VM) | 🟡 Medium | Rejected |
@@ -41,7 +41,16 @@ We evaluated six approaches to bringing Linux capabilities to macOS. Our criteri
 
 ### Detailed Analysis
 
-### 1. Podman Machine (Chosen Primary)
+### 1. Lima (Linux Machines) (Chosen for macOS)
+
+*The spiritual successor to [Vagrant](https://www.vagrantup.com/) for macOS.*
+
+<span style="color:green;">⊕</span> **Kernel Parity:** Lima provides a full Linux VM. This allows us to use low-level tools like `unshare` exactly as they are used in CI, without the container abstraction.
+<span style="color:green;">⊕</span> **Multi-Distro:** Lima makes it trivial to spin up an `ubuntu-24.04` instance (matching GHA runners) alongside a `fedora` instance (matching dev laptops) via simple templates (`limactl start template://fedora`), enabling precise "works on my machine" debugging.
+
+<span style="color:red;">⊖</span> **Adoption Barrier:** It is a separate tool that developers must install (`brew install lima`).
+
+### 2. Podman Machine (Under Consideration)
 
 *The enterprise standard.*
 
@@ -50,15 +59,6 @@ We evaluated six approaches to bringing Linux capabilities to macOS. Our criteri
 <span style="color:green;">⊕</span> **Filesystem:** `podman machine` handles volume mounting of `/Users` automatically using `virtiofs`, making `$PWD` availability inside the VM transparent.
 
 <span style="color:red;">⊖</span> **Abstraction Leak:** It is container-centric. Running a "script" means wrapping it in a container image (e.g., `python:slim`), which introduces a slight abstraction layer compared to a raw VM shell.
-
-### 2. Lima (Linux Machines) (Chosen Secondary)
-
-*The spiritual successor to [Vagrant](https://www.vagrantup.com/) for macOS.*
-
-<span style="color:green;">⊕</span> **Kernel Parity:** Lima provides a full Linux VM. This allows us to use low-level tools like `unshare` exactly as they are used in CI, without the container abstraction.
-<span style="color:green;">⊕</span> **Multi-Distro:** Lima makes it trivial to spin up an `ubuntu-24.04` instance (matching GHA runners) alongside a `fedora` instance (matching dev laptops) via simple templates (`limactl start template://fedora`), enabling precise "works on my machine" debugging.
-
-<span style="color:red;">⊖</span> **Adoption Barrier:** It is a separate tool that developers must install (`brew install lima`). It is powerful but less ubiquitous than Podman.
 
 ### 3. Docker Desktop / OrbStack
 
@@ -90,23 +90,23 @@ We evaluated six approaches to bringing Linux capabilities to macOS. Our criteri
 
 Our wrapper scripts (e.g., `run_yamllint.py`) will implement a "Traffic Controller" pattern:
 
-1. **Detect OS:** If Linux, run natively.
-2. **If macOS:**
-   * **Check for `podman`:** If present, execute logic inside a `python:slim` container using `podman run --network none -v $PWD:$PWD`.
-   * **Else, check for `lima`:** If present, execute logic via `lima unshare ...`.
-   * **Else, fall back:** Execute on the host (unsandboxed) with a warning.
+1. **Detect OS:** If Linux, run natively with `unshare`.
+2. **If macOS:** Exit with an error instructing the user to run the script inside a Lima VM for security compliance.
+
+**Open question:** Should the script automatically invoke `lima unshare ...` when Lima is detected, or should it simply instruct the user to run the script under Lima themselves (e.g., `lima bash -c './run_yamllint.py ...'`)? The latter is simpler but requires more manual steps.
 
 ## Consequences
 
 **Positive:**
 
-* **Zero-Config for Most:** Red Hat developers with Podman installed get sandboxing automatically without installing new tools.
-* **Debuggability:** Developers hitting complex OS-specific bugs have the option to install Lima and gain a full Ubuntu environment that mirrors CI exactly.
+* **Zero-Config for Linux:** Developers on Linux (including RHEL/Fedora) get sandboxing via native `unshare` without installing new tools.
+* **Debuggability:** Developers hitting complex OS-specific bugs can use Lima to gain a full Ubuntu environment that mirrors CI exactly.
 * **Security:** We maintain the guarantee that our scripts do not access the network or sensitive files, even on local laptops.
 
 **Negative:**
 
-* **Script Complexity:** Our wrapper scripts must now handle platform detection and virtualization command construction (the "abstraction sandwich" of Python calling Bash calling Podman calling Bash).
+* **macOS Requirement:** Developers on macOS must install Lima (`brew install lima`); scripts will refuse to run without a Linux VM for sandboxing.
+* **Script Complexity:** Our wrapper scripts must now handle platform detection and virtualization command construction.
 * **Performance:** Running a simple linter via a VM adds distinct overhead (seconds vs milliseconds). We accept this cost for the sake of consistency and security.
 
 ## References
