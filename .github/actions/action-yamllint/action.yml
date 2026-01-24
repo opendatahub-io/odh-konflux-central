@@ -33,16 +33,16 @@ runs:
       run: |
         set -Eeuo pipefail
 
-        # Build the command options dynamically
-        OPTS="--format github"
+        # Build the command options dynamically using array for safe handling of spaces
+        OPTS=(--format github)
 
         if [[ "${{ inputs.strict }}" == "true" ]]; then
-          OPTS="$OPTS --strict"
+          OPTS+=(--strict)
         fi
 
         if [[ -n "${{ inputs.config_file }}" ]]; then
-          OPTS="$OPTS -c ${{ inputs.config_file }}"
+          OPTS+=(-c "${{ inputs.config_file }}")
         fi
 
         set -x
-        yamllint $OPTS "${{ inputs.file_or_dir }}"
+        yamllint "${OPTS[@]}" "${{ inputs.file_or_dir }}"
