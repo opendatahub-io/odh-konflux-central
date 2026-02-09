@@ -52,6 +52,8 @@ spec:
           workspaces:
             - name: data
               optional: false
+            - name: quay-auth
+              optional: false
           steps:
             - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
               env:
@@ -118,9 +120,11 @@ spec:
               echo "FBC: $CATALOG_IMAGE"
               echo "Operator: $OPERATOR_IMAGE"
     workspaces:
-    - name: git-auth
-      optional: true
     - name: data
+      optional: false
+    - name: quay-auth
+      optional: false
+    - name: git-auth
       optional: false
   workspaces:
   - name: data
@@ -129,5 +133,5 @@ spec:
     secret: 
       secretName: odh-nightly-bot-pull-secret
   - name: git-auth
-    secret:
-      secretName: '{{ git_auth_secret }}'
+    secret: 
+      secretName: devops-infra-ssh-key-for-odh-nightly
