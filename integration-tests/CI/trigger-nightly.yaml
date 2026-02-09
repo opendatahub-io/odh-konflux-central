@@ -53,7 +53,6 @@ spec:
               value: $(params.CATALOG_IMAGE)
             - name: DATA_PATH
               value: $(workspaces.data.path)
-              # tekton credential helper automatically populates config.json
             - name: AUTH_PATH
               value: /workspace/.docker/config.json
             script: |
