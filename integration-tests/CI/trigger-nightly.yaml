@@ -161,6 +161,8 @@ spec:
                 secretKeyRef:
                   name: rhoai-devops-bot-slack-token
                   key: SLACK_TOKEN
+            - name: LATEST_CI_IMAGE
+              value: $(tasks.choose-ci-build.results.latest-ci-image)
             - name: CHANNEL
               value: C0883L8FARE
             workingDir: /workspace
@@ -171,10 +173,13 @@ spec:
               git init .
               git remote add origin git@github.com:red-hat-data-services/rhods-devops-infra.git
               git fetch origin main
+              git fetch origin odh-tracer
               git show origin/main:tools/send-slack-message/send-slack-message.sh > ./send-slack-message.sh
+              git show origin/odh-tracer:tools/tracer/tracer.sh > ./tracer.sh
               chmod +x ./send-slack-message.sh
-              ./send-slack-message.sh -c "$CHANNEL" -m test -m test -m test -v
-              echo slack notification placeholder
+              chmod +x ./tracer.sh
+              ./tracer.sh --odh -i "$LATEST_CI_IMAGE" --show-commits | tee tracer-output.txt
+              ./send-slack-message.sh -c "$CHANNEL" -m test -f tracer-output.txt -v
     workspaces:
     - name: data
       optional: false
