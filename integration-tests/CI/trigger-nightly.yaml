@@ -109,6 +109,11 @@ spec:
               tag_image "$OPERATOR_IMAGE" "$TAG"
               tag_image "$CATALOG_IMAGE" "$TAG"
 
+              # Write results (extract sha256 digest from image references)
+              echo -n "${BUNDLE_IMAGE#*@}" > $(results.bundle-sha.path)
+              echo -n "${CATALOG_IMAGE#*@}" > $(results.fbc-sha.path)
+              echo -n "${OPERATOR_IMAGE#*@}" > $(results.operator-sha.path)
+
               echo "Done! All images have been tagged as $TAG"
     workspaces:
     - name: git-auth
