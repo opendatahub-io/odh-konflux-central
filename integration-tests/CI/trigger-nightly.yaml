@@ -1,0 +1,122 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: trigger-nightly
+  namespace: open-data-hub-tenant
+spec:
+  pipelineSpec:
+    description: |
+      Tags the latest CI build as a nightly and then triggers tests, slack notification
+    params:
+      - description: FBC image source
+        name: CATALOG_IMAGE
+        type: string
+        default: quay.io/opendatahub/opendatahub-operator-catalog:odh-stable
+    tasks:
+      - name: get-current-catalog
+        description: grabs the catalog yaml file from the specified catalog image
+        workspaces:
+        - name: data
+          workspace: data
+        taskSpec:
+          workspaces:
+            - name: data
+              optional: false
+          steps:
+          - image: $(params.CATALOG_IMAGE)
+            workingDir: /workspace
+            script: |
+              #!/bin/sh
+              cp -r /configs/* /workspace/
+              if ! ls /workspace/rhods-operator/catalog.yaml; then
+                echo "Error: catalog not found"
+                exit 1
+              fi
+
+      - name: tag-nightly
+        description: check prerequisites if the ITS needs to execute
+        runAfter:
+          - get-current-catalog
+        workspaces:
+        - name: data
+          workspace: data
+        taskSpec:
+          workspaces:
+            - name: data
+              optional: false
+          results:
+          - name: bundle-sha
+            description: "bundle sha that was tagged"
+          - name: fbc-sha
+            description: "fbc sha that was tagged"
+          - name: operator-sha
+            description: "operator sha that was tagged"
+          steps:
+            - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+            env:
+              - name: CATALOG_IMAGE
+                value: $(params.CATALOG_IMAGE)
+            script: |
+              #!/bin/bash
+              set -e
+
+              echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
+              CATALOG=/workspace/rhods-operator/catalog.yaml
+              TAG="odh-stable-nightly"
+
+              # Step 1 & 2: Find olm.channel with name fast-3.x, get the last entry name
+              BUNDLE_NAME=$(yq 'select(.schema == "olm.channel" and .name == "fast-3.x") | .entries[-1].name' "$CATALOG")
+              echo "Bundle name: $BUNDLE_NAME"
+
+              # Step 3: Find olm.bundle with that name, get the image
+              BUNDLE_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .image" "$CATALOG")
+              echo "Bundle image: $BUNDLE_IMAGE"
+
+              # Step 4: Get containerImage from olm.csv.metadata property
+              OPERATOR_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .properties[] | select(.type == \"olm.csv.metadata\") | .value.annotations.containerImage" "$CATALOG")
+              echo "Operator image: $OPERATOR_IMAGE"
+
+              # Inspect catalog image to get label and digest
+              CATALOG_INSPECT=$(skopeo inspect --no-tags "docker://$CATALOG_IMAGE")
+              LABEL_OPERATOR_IMAGE=$(echo "$CATALOG_INSPECT" | yq '.Labels["opendatahub-operator.image"]')
+              CATALOG_DIGEST=$(echo "$CATALOG_INSPECT" | yq '.Digest')
+              CATALOG_IMAGE="${CATALOG_IMAGE%:*}@${CATALOG_DIGEST}"
+              echo "Catalog image: $CATALOG_IMAGE"
+              echo "Operator image from catalog label: $LABEL_OPERATOR_IMAGE"
+
+              if [ "$OPERATOR_IMAGE" != "$LABEL_OPERATOR_IMAGE" ]; then
+                echo "ERROR: Operator image mismatch!"
+                echo "  From catalog.yaml: $OPERATOR_IMAGE"
+                echo "  From catalog label: $LABEL_OPERATOR_IMAGE"
+                exit 1
+              fi
+              echo "Operator image verified."
+
+              # Function to tag an image
+              tag_image() {
+                local IMAGE="$1"
+                local TAG="$2"
+                # Extract registry/repo from image (remove @sha256:...)
+                local REPO="${IMAGE%@*}"
+                echo "Tagging $IMAGE as $REPO:$TAG"
+                skopeo copy --all --authfile /secrets/.dockerconfigjson "docker://$IMAGE" "docker://$REPO:$TAG"
+              }
+
+              # Tag all three images as odh-stable-nightly
+              echo "Tagging images as $TAG..."
+              tag_image "$BUNDLE_IMAGE" "$TAG"
+              tag_image "$OPERATOR_IMAGE" "$TAG"
+              tag_image "$CATALOG_IMAGE" "$TAG"
+
+              echo "Done! All images have been tagged as $TAG"
+    workspaces:
+    - name: git-auth
+      optional: true
+    - name: data
+      optional: false
+  workspaces:
+  - name: data
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
