@@ -9,6 +9,9 @@ spec:
     description: |
       Tags the latest CI build as a nightly and then triggers tests, slack notification
     params:
+      - description: Snapshot of the application
+        name: SNAPSHOT
+        type: string
       - description: FBC image source
         name: CATALOG_IMAGE
         type: string
