@@ -141,8 +141,8 @@ spec:
             - name: SLACK_TOKEN
               valueFrom:
                 secretKeyRef:
-                  key: rhoai-devops-bot-slack-token
-                  value: SLACK_TOKEN
+                  name: rhoai-devops-bot-slack-token
+                  key: SLACK_TOKEN
             - name: CHANNEL
               value: C0883L8FARE
             workingDir: /workspace
