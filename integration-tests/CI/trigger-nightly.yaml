@@ -31,6 +31,7 @@ spec:
             - name: data
               optional: false
             - name: quay-auth
+              mountPath: /workspace
               optional: false
           steps:
           - image: $(params.CATALOG_IMAGE)
@@ -145,11 +146,11 @@ spec:
                 echo placeholder
     workspaces:
     - name: data
-      optional: false
+      optional: true
     - name: quay-auth
-      optional: false
+      optional: true
     - name: git-auth
-      optional: false
+      optional: true
   workspaces:
   - name: data
     emptyDir: {}
