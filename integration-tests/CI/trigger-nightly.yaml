@@ -130,11 +130,15 @@ spec:
         - name: data
           workspace: data
         taskSpec:
+          env:
+            - name: HOME
+              value: /workspace
           workspaces:
             - name: data
               optional: false
           steps:
             - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+              workingDir: /workspace
               script: |
                 #!/bin/bash
                 set -e
