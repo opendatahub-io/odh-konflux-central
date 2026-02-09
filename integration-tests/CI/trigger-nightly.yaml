@@ -31,12 +31,14 @@ spec:
             - name: data
               optional: false
             - name: quay-auth
-              mountPath: /workspace
+              mountPath: /workspace/.docker
               optional: false
           steps:
           - image: $(params.CATALOG_IMAGE)
             name: get-current-catalog
             env:
+            - name: HOME
+              value: /workspace
             - name: DATA_PATH
               value: $(workspaces.data.path)
             script: |
@@ -50,12 +52,14 @@ spec:
             name: tag-nightly-images
             workingDir: /workspace
             env:
+            - name: HOME
+              value: /workspace
             - name: CATALOG_IMAGE
               value: $(params.CATALOG_IMAGE)
             - name: DATA_PATH
               value: $(workspaces.data.path)
             - name: AUTH_PATH
-              value: $(worspaces.quay-auth.path)
+              value: $(workspaces.quay-auth.path)
             script: |
               #!/bin/bash
               set -e
