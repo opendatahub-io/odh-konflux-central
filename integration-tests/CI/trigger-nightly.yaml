@@ -117,27 +117,27 @@ spec:
         - tag-nightly
         taskSpec:
           steps:
-            - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
-              script: |
-                #!/bin/bash
-                set -e
-                echo nightly trigger placeholder
+          - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+            script: |
+              #!/bin/bash
+              set -e
+              echo nightly trigger placeholder
       - name: slack-notification
         description: notify slack about new nightly
         runAfter:
-          - tag-nightly
+        - tag-nightly
         workspaces:
         - name: data
           workspace: data
         taskSpec:
-          env:
-          - name: HOME
-            value: /workspace
           workspaces:
           - name: data
             optional: false
           steps:
           - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner@sha256:c8bc1b9f04259c3cbfbfc74fc1bc143d9c0c42d8acf17ef240630719a4faa882
+            env:
+            - name: HOME
+              value: /workspace
             workingDir: /workspace
             script: |
               #!/bin/bash
