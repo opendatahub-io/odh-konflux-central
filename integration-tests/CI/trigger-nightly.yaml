@@ -2,7 +2,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: trigger-nightly
+  generateName: trigger-nightly-
   namespace: open-data-hub-tenant
 spec:
   pipelineSpec:
@@ -54,7 +54,7 @@ spec:
             description: "operator sha that was tagged"
           steps:
             - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
-            env:
+              env:
               - name: CATALOG_IMAGE
                 value: $(params.CATALOG_IMAGE)
             script: |
