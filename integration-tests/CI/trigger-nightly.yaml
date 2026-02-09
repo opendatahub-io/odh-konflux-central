@@ -121,7 +121,7 @@ spec:
               script: |
                 #!/bin/bash
                 set -e
-                echo placeholder
+                echo nightly trigger placeholder
       - name: slack-notification
         description: notify slack about new nightly
         runAfter:
@@ -129,28 +129,21 @@ spec:
         workspaces:
         - name: data
           workspace: data
-        - name: git-auth
-          workspace: git-auth
         taskSpec:
           workspaces:
             - name: data
-              optional: false
-            - name: git-auth
               optional: false
           steps:
             - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
               script: |
                 #!/bin/bash
                 set -e
-                echo placeholder
+                git clone git@github.com:red-hat-data-services/rhods-devops-infra.git
+                ls
+                echo slack notification placeholder
     workspaces:
     - name: data
-      optional: false
-    - name: git-auth
       optional: false
   workspaces:
   - name: data
     emptyDir: {}
-  - name: git-auth
-    secret: 
-      secretName: devops-infra-ssh-key-for-odh-nightly
