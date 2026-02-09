@@ -155,7 +155,7 @@ spec:
               git fetch origin main
               git show origin/main:tools/send-slack-message/send-slack-message.sh > ./send-slack-message.sh
               chmod +x ./send-slack-message.sh
-              ./send-slack-message.sh -c "$CHANNEL" -m test -m test -m test
+              ./send-slack-message.sh -c "$CHANNEL" -m test -m test -m test -v
               echo slack notification placeholder
     workspaces:
     - name: data
