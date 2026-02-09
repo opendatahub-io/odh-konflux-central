@@ -19,8 +19,26 @@ spec:
         type: string
         default: quay.io/opendatahub/opendatahub-operator-catalog:odh-stable
     tasks:
+      - name: choose-ci-build
+        description: selects the latest ci build to promote to nightly
+        taskSpec:
+          results:
+          - name: latest-ci-image
+            description: "the image reference (with SHA) to use for nightly"
+          steps:
+          - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+            name: get-latest-catalog-ci-build-sha
+            env:
+            - name: HOME
+              value: /workspace
+            - name: CATALOG_IMAGE
+              value: $(params.CATALOG_IMAGE)
+            script: |
+              #!/bin/bash
+              set -e
+              skopeo inspect "docker://$CATALOG_IMAGE" --no-tags | jq -r '.Name + "@" + .Digest' | tee "$(results.latest-ci-image.path)"
       - name: tag-nightly
-        description: grabs the catalog yaml file from the specified catalog image
+        description: Tags the latest ci build as nightly
         workspaces:
         - name: data
           workspace: data
@@ -29,7 +47,7 @@ spec:
             - name: data
               optional: false
           steps:
-          - image: $(params.CATALOG_IMAGE)
+          - image: $(tasks.choose-ci-build.results.latest-ci-image)
             name: get-current-catalog
             env:
             - name: HOME
