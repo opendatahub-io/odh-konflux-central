@@ -36,7 +36,7 @@ spec:
             script: |
               #!/bin/bash
               set -e
-              skopeo inspect "docker://$CATALOG_IMAGE" --no-tags | jq -r '.Name + "@" + .Digest' | tee "$(results.latest-ci-image.path)"
+              skopeo inspect "docker://$CATALOG_IMAGE" --no-tags | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-ci-image.path)"
       - name: tag-nightly
         description: Tags the latest ci build as nightly
         workspaces:
