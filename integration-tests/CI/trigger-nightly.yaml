@@ -53,8 +53,9 @@ spec:
               value: $(params.CATALOG_IMAGE)
             - name: DATA_PATH
               value: $(workspaces.data.path)
+              # tekton credential helper automatically populates config.json
             - name: AUTH_PATH
-              value: /workspace/.docker
+              value: /workspace/.docker/config.json
             script: |
               #!/bin/bash
               set -e
@@ -98,7 +99,7 @@ spec:
                 # Extract registry/repo from image (remove @sha256:...)
                 local REPO="${IMAGE%@*}"
                 echo "Tagging $IMAGE as $REPO:$TAG"
-                skopeo copy --all --authfile "$AUTH_PATH/.dockerconfigjson" "docker://$IMAGE" "docker://$REPO:$TAG"
+                skopeo copy --all --authfile "$AUTH_PATH" "docker://$IMAGE" "docker://$REPO:$TAG"
               }
 
               # Tag all three images as odh-stable-nightly
