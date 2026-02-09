@@ -48,6 +48,8 @@ spec:
         workspaces:
         - name: data
           workspace: data
+        - name: quay-auth
+          workspace: quay-auth
         taskSpec:
           workspaces:
             - name: data
@@ -64,61 +66,93 @@ spec:
               - name: AUTH_PATH
                 value: $(worspaces.quay-auth.path)
               script: |
-              #!/bin/bash
-              set -e
+                #!/bin/bash
+                set -e
 
-              echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
-              CATALOG="$DATA_PATH"/rhods-operator/catalog.yaml
-              TAG="odh-stable-nightly"
+                echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
+                CATALOG="$DATA_PATH"/rhods-operator/catalog.yaml
+                TAG="odh-stable-nightly"
 
-              # Step 1 & 2: Find olm.channel with name fast-3.x, get the last entry name
-              BUNDLE_NAME=$(yq 'select(.schema == "olm.channel" and .name == "fast-3.x") | .entries[-1].name' "$CATALOG")
-              echo "Bundle name: $BUNDLE_NAME"
+                # Step 1 & 2: Find olm.channel with name fast-3.x, get the last entry name
+                BUNDLE_NAME=$(yq 'select(.schema == "olm.channel" and .name == "fast-3.x") | .entries[-1].name' "$CATALOG")
+                echo "Bundle name: $BUNDLE_NAME"
 
-              # Step 3: Find olm.bundle with that name, get the image
-              BUNDLE_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .image" "$CATALOG")
-              echo "Bundle image: $BUNDLE_IMAGE"
+                # Step 3: Find olm.bundle with that name, get the image
+                BUNDLE_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .image" "$CATALOG")
+                echo "Bundle image: $BUNDLE_IMAGE"
 
-              # Step 4: Get containerImage from olm.csv.metadata property
-              OPERATOR_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .properties[] | select(.type == \"olm.csv.metadata\") | .value.annotations.containerImage" "$CATALOG")
-              echo "Operator image: $OPERATOR_IMAGE"
+                # Step 4: Get containerImage from olm.csv.metadata property
+                OPERATOR_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .properties[] | select(.type == \"olm.csv.metadata\") | .value.annotations.containerImage" "$CATALOG")
+                echo "Operator image: $OPERATOR_IMAGE"
 
-              # Inspect catalog image to get label and digest
-              CATALOG_INSPECT=$(skopeo inspect --no-tags "docker://$CATALOG_IMAGE")
-              LABEL_OPERATOR_IMAGE=$(echo "$CATALOG_INSPECT" | yq '.Labels["opendatahub-operator.image"]')
-              CATALOG_DIGEST=$(echo "$CATALOG_INSPECT" | yq '.Digest')
-              CATALOG_IMAGE="${CATALOG_IMAGE%:*}@${CATALOG_DIGEST}"
-              echo "Catalog image: $CATALOG_IMAGE"
-              echo "Operator image from catalog label: $LABEL_OPERATOR_IMAGE"
+                # Inspect catalog image to get label and digest
+                CATALOG_INSPECT=$(skopeo inspect --no-tags "docker://$CATALOG_IMAGE")
+                LABEL_OPERATOR_IMAGE=$(echo "$CATALOG_INSPECT" | yq '.Labels["opendatahub-operator.image"]')
+                CATALOG_DIGEST=$(echo "$CATALOG_INSPECT" | yq '.Digest')
+                CATALOG_IMAGE="${CATALOG_IMAGE%:*}@${CATALOG_DIGEST}"
+                echo "Catalog image: $CATALOG_IMAGE"
+                echo "Operator image from catalog label: $LABEL_OPERATOR_IMAGE"
 
-              if [ "$OPERATOR_IMAGE" != "$LABEL_OPERATOR_IMAGE" ]; then
-                echo "ERROR: Operator image mismatch!"
-                echo "  From catalog.yaml: $OPERATOR_IMAGE"
-                echo "  From catalog label: $LABEL_OPERATOR_IMAGE"
-                exit 1
-              fi
-              echo "Operator image verified."
+                if [ "$OPERATOR_IMAGE" != "$LABEL_OPERATOR_IMAGE" ]; then
+                  echo "ERROR: Operator image mismatch!"
+                  echo "  From catalog.yaml: $OPERATOR_IMAGE"
+                  echo "  From catalog label: $LABEL_OPERATOR_IMAGE"
+                  exit 1
+                fi
+                echo "Operator image verified."
 
-              # Function to tag an image
-              tag_image() {
-                local IMAGE="$1"
-                local TAG="$2"
-                # Extract registry/repo from image (remove @sha256:...)
-                local REPO="${IMAGE%@*}"
-                echo "Tagging $IMAGE as $REPO:$TAG"
-                skopeo copy --all --authfile "$AUTH_PATH/.dockerconfigjson" "docker://$IMAGE" "docker://$REPO:$TAG"
-              }
+                # Function to tag an image
+                tag_image() {
+                  local IMAGE="$1"
+                  local TAG="$2"
+                  # Extract registry/repo from image (remove @sha256:...)
+                  local REPO="${IMAGE%@*}"
+                  echo "Tagging $IMAGE as $REPO:$TAG"
+                  skopeo copy --all --authfile "$AUTH_PATH/.dockerconfigjson" "docker://$IMAGE" "docker://$REPO:$TAG"
+                }
 
-              # Tag all three images as odh-stable-nightly
-              echo "Tagging images as $TAG..."
-              tag_image "$BUNDLE_IMAGE" "$TAG"
-              tag_image "$OPERATOR_IMAGE" "$TAG"
-              tag_image "$CATALOG_IMAGE" "$TAG"
+                # Tag all three images as odh-stable-nightly
+                echo "Tagging images as $TAG..."
+                tag_image "$BUNDLE_IMAGE" "$TAG"
+                tag_image "$OPERATOR_IMAGE" "$TAG"
+                tag_image "$CATALOG_IMAGE" "$TAG"
 
-              echo "Done! All images have been tagged as $TAG"
-              echo "Bundle: $BUNDLE_IMAGE"
-              echo "FBC: $CATALOG_IMAGE"
-              echo "Operator: $OPERATOR_IMAGE"
+                echo "Done! All images have been tagged as $TAG"
+                echo "Bundle: $BUNDLE_IMAGE"
+                echo "FBC: $CATALOG_IMAGE"
+                echo "Operator: $OPERATOR_IMAGE"
+      - name: trigger-nightly-tests
+        description: trigger nightly tests
+        runAfter:
+          - tag-nightly
+        taskSpec:
+          steps:
+            - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+              script: |
+                #!/bin/bash
+                set -e
+                echo placeholder
+      - name: slack-notification
+        description: notify slack about new nightly
+        runAfter:
+          - tag-nightly
+        workspaces:
+        - name: data
+          workspace: data
+        - name: git-auth
+          workspace: git-auth
+        taskSpec:
+          workspaces:
+            - name: data
+              optional: false
+            - name: git-auth
+              optional: false
+          steps:
+            - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+              script: |
+                #!/bin/bash
+                set -e
+                echo placeholder
     workspaces:
     - name: data
       optional: false
