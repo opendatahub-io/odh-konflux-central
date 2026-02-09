@@ -138,12 +138,23 @@ spec:
             env:
             - name: HOME
               value: /workspace
+            - name: SLACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rhoai-devops-bot-slack-token
+                  value: SLACK_TOKEN
+            - name: CHANNEL
+              value: C0883L8FARE
             workingDir: /workspace
             script: |
               #!/bin/bash
               set -e
-              git clone git@github.com:red-hat-data-services/rhods-devops-infra.git
-              ls
+              git init .
+              git remote add origin git@github.com:red-hat-data-services/rhods-devops-infra.git
+              git fetch origin main
+              git show origin/main:tools/send-slack-message/send-slack-message.sh > ./send-slack-message.sh
+              chmod +x ./send-slack-message.sh
+              ./send-slack-message.sh -c "$CHANNEL" -m test -m test -m test
               echo slack notification placeholder
     workspaces:
     - name: data
