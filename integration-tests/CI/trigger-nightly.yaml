@@ -37,7 +37,7 @@ spec:
               fi
 
       - name: tag-nightly
-        description: check prerequisites if the ITS needs to execute
+        description: tags bundle, operator, and catalog images as nightly
         runAfter:
           - get-current-catalog
         workspaces:
@@ -61,7 +61,7 @@ spec:
                 value: $(params.CATALOG_IMAGE)
               - name: DATA_PATH
                 value: $(workspaces.data.path)
-            script: |
+              script: |
               #!/bin/bash
               set -e
 
