@@ -146,11 +146,11 @@ spec:
                 echo placeholder
     workspaces:
     - name: data
-      optional: true
+      optional: false
     - name: quay-auth
-      optional: true
+      optional: false
     - name: git-auth
-      optional: true
+      optional: false
   workspaces:
   - name: data
     emptyDir: {}
