@@ -114,7 +114,7 @@ spec:
       - name: trigger-nightly-tests
         description: trigger nightly tests
         runAfter:
-          - tag-nightly
+        - tag-nightly
         taskSpec:
           steps:
             - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
@@ -131,20 +131,20 @@ spec:
           workspace: data
         taskSpec:
           env:
-            - name: HOME
-              value: /workspace
+          - name: HOME
+            value: /workspace
           workspaces:
-            - name: data
-              optional: false
+          - name: data
+            optional: false
           steps:
-            - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner@sha256:c8bc1b9f04259c3cbfbfc74fc1bc143d9c0c42d8acf17ef240630719a4faa882
-              workingDir: /workspace
-              script: |
-                #!/bin/bash
-                set -e
-                git clone git@github.com:red-hat-data-services/rhods-devops-infra.git
-                ls
-                echo slack notification placeholder
+          - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner@sha256:c8bc1b9f04259c3cbfbfc74fc1bc143d9c0c42d8acf17ef240630719a4faa882
+            workingDir: /workspace
+            script: |
+              #!/bin/bash
+              set -e
+              git clone git@github.com:red-hat-data-services/rhods-devops-infra.git
+              ls
+              echo slack notification placeholder
     workspaces:
     - name: data
       optional: false
