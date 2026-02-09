@@ -149,6 +149,7 @@ spec:
             script: |
               #!/bin/bash
               set -e
+              mkdir slack && cd slack
               git init .
               git remote add origin git@github.com:red-hat-data-services/rhods-devops-infra.git
               git fetch origin main
