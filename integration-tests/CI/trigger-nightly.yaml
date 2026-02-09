@@ -5,6 +5,8 @@ metadata:
   generateName: trigger-nightly-
   namespace: open-data-hub-tenant
 spec:
+  taskRunTemplate:
+    serviceAccountName: odh-nightly-sa
   pipelineSpec:
     description: |
       Tags the latest CI build as a nightly and then triggers tests, slack notification
@@ -57,6 +59,8 @@ spec:
                 value: $(params.CATALOG_IMAGE)
               - name: DATA_PATH
                 value: $(workspaces.data.path)
+              - name: AUTH_PATH
+                value: $(worspaces.quay-auth.path)
               script: |
               #!/bin/bash
               set -e
@@ -100,7 +104,7 @@ spec:
                 # Extract registry/repo from image (remove @sha256:...)
                 local REPO="${IMAGE%@*}"
                 echo "Tagging $IMAGE as $REPO:$TAG"
-                skopeo copy --all --authfile /secrets/.dockerconfigjson "docker://$IMAGE" "docker://$REPO:$TAG"
+                skopeo copy --all --authfile "$AUTH_PATH/.dockerconfigjson" "docker://$IMAGE" "docker://$REPO:$TAG"
               }
 
               # Tag all three images as odh-stable-nightly
@@ -121,6 +125,9 @@ spec:
   workspaces:
   - name: data
     emptyDir: {}
+  - name: quay-auth
+    secret: 
+      secretName: odh-nightly-bot-pull-secret
   - name: git-auth
     secret:
       secretName: '{{ git_auth_secret }}'
