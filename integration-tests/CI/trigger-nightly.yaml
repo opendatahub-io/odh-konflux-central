@@ -47,13 +47,6 @@ spec:
           workspaces:
             - name: data
               optional: false
-          results:
-          - name: bundle-sha
-            description: "bundle sha that was tagged"
-          - name: fbc-sha
-            description: "fbc sha that was tagged"
-          - name: operator-sha
-            description: "operator sha that was tagged"
           steps:
             - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
               env:
@@ -113,12 +106,10 @@ spec:
               tag_image "$OPERATOR_IMAGE" "$TAG"
               tag_image "$CATALOG_IMAGE" "$TAG"
 
-              # Write results (extract sha256 digest from image references)
-              echo -n "${BUNDLE_IMAGE#*@}" > $(results.bundle-sha.path)
-              echo -n "${CATALOG_IMAGE#*@}" > $(results.fbc-sha.path)
-              echo -n "${OPERATOR_IMAGE#*@}" > $(results.operator-sha.path)
-
               echo "Done! All images have been tagged as $TAG"
+              echo "Bundle: $BUNDLE_IMAGE"
+              echo "FBC: $CATALOG_IMAGE"
+              echo "Operator: $OPERATOR_IMAGE"
     workspaces:
     - name: git-auth
       optional: true
