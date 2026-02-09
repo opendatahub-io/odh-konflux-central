@@ -30,7 +30,7 @@ spec:
           workspaces:
             - name: data
               optional: false
-            - name: data
+            - name: quay-auth
               optional: false
           steps:
           - image: $(params.CATALOG_IMAGE)
