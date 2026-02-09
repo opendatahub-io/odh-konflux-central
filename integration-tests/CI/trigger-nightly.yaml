@@ -24,14 +24,9 @@ spec:
         workspaces:
         - name: data
           workspace: data
-        - name: quay-auth
-          workspace: quay-auth
         taskSpec:
           workspaces:
             - name: data
-              optional: false
-            - name: quay-auth
-              mountPath: /workspace/.docker
               optional: false
           steps:
           - image: $(params.CATALOG_IMAGE)
@@ -59,7 +54,7 @@ spec:
             - name: DATA_PATH
               value: $(workspaces.data.path)
             - name: AUTH_PATH
-              value: $(workspaces.quay-auth.path)
+              value: /workspace/.docker
             script: |
               #!/bin/bash
               set -e
@@ -151,16 +146,11 @@ spec:
     workspaces:
     - name: data
       optional: false
-    - name: quay-auth
-      optional: false
     - name: git-auth
       optional: false
   workspaces:
   - name: data
     emptyDir: {}
-  - name: quay-auth
-    secret: 
-      secretName: odh-nightly-bot-pull-secret
   - name: git-auth
     secret: 
       secretName: devops-infra-ssh-key-for-odh-nightly
