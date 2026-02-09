@@ -137,7 +137,7 @@ spec:
             - name: data
               optional: false
           steps:
-            - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+            - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner@sha256:c8bc1b9f04259c3cbfbfc74fc1bc143d9c0c42d8acf17ef240630719a4faa882
               workingDir: /workspace
               script: |
                 #!/bin/bash
