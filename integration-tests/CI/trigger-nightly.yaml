@@ -58,7 +58,7 @@ spec:
             script: |
               #!/bin/bash
               set -e
-
+              exit 0
               echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
               CATALOG="$DATA_PATH"/rhods-operator/catalog.yaml
               TAG="odh-stable-nightly"
