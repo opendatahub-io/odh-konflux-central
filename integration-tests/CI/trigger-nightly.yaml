@@ -25,11 +25,13 @@ spec:
               optional: false
           steps:
           - image: $(params.CATALOG_IMAGE)
-            workingDir: /workspace
+            env:
+            - name: DATA_PATH
+              value: $(workspaces.data.path)
             script: |
               #!/bin/sh
-              cp -r /configs/* /workspace/
-              if ! ls /workspace/rhods-operator/catalog.yaml; then
+              cp -r /configs/* "$DATA_PATH"/
+              if ! ls "$DATA_PATH"/rhods-operator/catalog.yaml; then
                 echo "Error: catalog not found"
                 exit 1
               fi
@@ -57,12 +59,14 @@ spec:
               env:
               - name: CATALOG_IMAGE
                 value: $(params.CATALOG_IMAGE)
+              - name: DATA_PATH
+                value: $(workspaces.data.path)
             script: |
               #!/bin/bash
               set -e
 
               echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
-              CATALOG=/workspace/rhods-operator/catalog.yaml
+              CATALOG="$DATA_PATH"/rhods-operator/catalog.yaml
               TAG="odh-stable-nightly"
 
               # Step 1 & 2: Find olm.channel with name fast-3.x, get the last entry name
@@ -122,6 +126,7 @@ spec:
       optional: false
   workspaces:
   - name: data
+    emptyDir: {}
   - name: git-auth
     secret:
       secretName: '{{ git_auth_secret }}'
