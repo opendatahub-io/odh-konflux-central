@@ -40,7 +40,7 @@ spec:
               set -e
               skopeo_inspect=$(skopeo inspect "docker://$CATALOG_IMAGE" --no-tags)
               echo $skopeo_inspect | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"
-              echo $skopeo_inspect | jq -r '.Labels."opendatahub-operator.image"  | tr -d '\n' | tee "$(results.latest-operator-ci-image.path)"
+              echo $skopeo_inspect | jq -r '.Labels."opendatahub-operator.image"'  | tr -d '\n' | tee "$(results.latest-operator-ci-image.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
