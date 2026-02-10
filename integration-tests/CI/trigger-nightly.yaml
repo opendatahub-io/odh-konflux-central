@@ -38,6 +38,8 @@ spec:
               set -e
               skopeo inspect "docker://$CATALOG_IMAGE" --no-tags | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-ci-image.path)"
       - name: tag-nightly
+        runAfter:
+        - choose-ci-build
         description: Tags the latest ci build as nightly
         workspaces:
         - name: data
