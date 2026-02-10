@@ -179,7 +179,10 @@ spec:
               chmod +x ./send-slack-message.sh
               chmod +x ./tracer.sh
               ./tracer.sh --odh -i "$LATEST_CI_IMAGE" --show-commits | tee tracer-output.txt
-              ./send-slack-message.sh -c "$CHANNEL" -m test -f tracer-output.txt -v
+              alertEmoji=":nightly:"
+              slack_message="${alertEmoji} A new *Nightly Build* is available for ODH 
+              Image: ${LATEST_CI_IMAGE}"
+              ./send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -f tracer-output.txt -v
     workspaces:
     - name: data
       optional: false
