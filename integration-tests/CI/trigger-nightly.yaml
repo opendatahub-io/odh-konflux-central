@@ -23,8 +23,10 @@ spec:
         description: selects the latest ci build to promote to nightly
         taskSpec:
           results:
-          - name: latest-ci-image
-            description: "the image reference (with SHA) to use for nightly"
+          - name: latest-catalog-ci-image
+            description: "the catalog image reference (with SHA) to use for nightly"
+          - name: latest-operator-ci-image
+            description: "the operator image reference (with SHA) to use for nightly"
           steps:
           - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
             name: get-latest-catalog-ci-build-sha
@@ -36,7 +38,9 @@ spec:
             script: |
               #!/bin/bash
               set -e
-              skopeo inspect "docker://$CATALOG_IMAGE" --no-tags | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-ci-image.path)"
+              skopeo_inspect=$(skopeo inspect "docker://$CATALOG_IMAGE" --no-tags)
+              cat $skopeo_inspect | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"
+              cat $skopeo_inspect | jq -r '.Labels."opendatahub-operator.image"  | tr -d '\n' | tee "$(results.latest-operator-ci-image.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
@@ -49,7 +53,7 @@ spec:
             - name: data
               optional: false
           steps:
-          - image: $(tasks.choose-ci-build.results.latest-ci-image)
+          - image: $(tasks.choose-ci-build.results.latest-catalog-ci-image)
             name: get-current-catalog
             env:
             - name: HOME
@@ -163,8 +167,10 @@ spec:
                 secretKeyRef:
                   name: rhoai-devops-bot-slack-token
                   key: SLACK_TOKEN
-            - name: LATEST_CI_IMAGE
-              value: $(tasks.choose-ci-build.results.latest-ci-image)
+            - name: LATEST_CATALOG_CI_IMAGE
+              value: $(tasks.choose-ci-build.results.latest-catalog-ci-image)
+            - name: LATEST_OPERATOR_CI_IMAGE
+              value: $(tasks.choose-ci-build.results.latest-operator-ci-image)
             - name: CHANNEL
               value: C0883L8FARE
             workingDir: /workspace
@@ -180,10 +186,14 @@ spec:
               git show origin/odh-tracer:tools/tracer/tracer.sh > ./tracer.sh
               chmod +x ./send-slack-message.sh
               chmod +x ./tracer.sh
-              ./tracer.sh --odh -i "$LATEST_CI_IMAGE" --show-commits | tee tracer-output.txt
+
+              ./tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
+              operator_image_sha=$(echo "$LATEST_OPERATOR_CI_IMAGE" | sed 's/.*@sha256://')
+              metadata_url="https://github.com/opendatahub-io/odh-build-metadata/tree/main/components/odh-operator/${operator_image_sha}"
               alertEmoji=":nightly:"
               slack_message="${alertEmoji} A new *Nightly Build* is available for ODH 
-              Image: ${LATEST_CI_IMAGE}"
+              Image: ${LATEST_CATALOG_CI_IMAGE}
+              Build Metadata: <${metadata_url}|Link>"
               ./send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -f tracer-output.txt -v
     workspaces:
     - name: data
