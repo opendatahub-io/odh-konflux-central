@@ -172,7 +172,7 @@ spec:
             - name: LATEST_OPERATOR_CI_IMAGE
               value: $(tasks.choose-ci-build.results.latest-operator-ci-image)
             - name: CHANNEL
-              value: C0883L8FARE
+              value: C07RGA06207 # C0883L8FARE
             workingDir: /workspace
             script: |
               #!/bin/bash
