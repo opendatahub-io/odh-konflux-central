@@ -191,7 +191,8 @@ spec:
               operator_image_sha=$(echo "$LATEST_OPERATOR_CI_IMAGE" | sed 's/.*@sha256://')
               metadata_url="https://github.com/opendatahub-io/odh-build-metadata/tree/main/components/odh-operator/${operator_image_sha}"
               alertEmoji=":nightly:"
-              slack_message="${alertEmoji} A new *Nightly Build* is available for ODH 
+              slack_message="PROOF OF CONCEPT - DO NOT USE
+              ${alertEmoji} A new *Nightly Build* is available for ODH 
               Image: ${LATEST_CATALOG_CI_IMAGE}
               Build Metadata: <${metadata_url}|Link>"
               ./send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -f tracer-output.txt -v
