@@ -53,9 +53,9 @@ spec:
               #!/bin/bash
               set -e
               skopeo_inspect=$(skopeo inspect "docker://$CATALOG_IMAGE" --no-tags)
-              echo $skopeo_inspect | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"
-              echo $skopeo_inspect | jq -r '.Labels."opendatahub-operator.image"'  | tr -d '\n' | tee "$(results.latest-operator-ci-image.path)"
-              echo $skopeo_inspect | jq -r '.Labels."build-url"'  | tr -d '\n' | tee "$(results.latest-catalog-ci-build-url.path)"
+              echo "$skopeo_inspect" | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"
+              echo "$skopeo_inspect" | jq -r '.Labels."opendatahub-operator.image"'  | tr -d '\n' | tee "$(results.latest-operator-ci-image.path)"
+              echo "$skopeo_inspect" | jq -r '.Labels."build-url"'  | tr -d '\n' | tee "$(results.latest-catalog-ci-build-url.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
@@ -190,7 +190,7 @@ spec:
 
               echo "Triggering nightly jenkins jobs for: $TARGET"
 
-              curl -X POST "https://api.github.com/repos/$OWNER/$REPO/actions/workflows/$WORKFLOW_FILE/dispatches" \
+              curl -f -X POST "https://api.github.com/repos/$OWNER/$REPO/actions/workflows/$WORKFLOW_FILE/dispatches" \
               -H "Accept: application/vnd.github.v3+json" \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Content-Type: application/json" \
