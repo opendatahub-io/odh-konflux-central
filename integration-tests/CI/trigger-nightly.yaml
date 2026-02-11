@@ -143,6 +143,8 @@ spec:
           steps:
           - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
             env:
+            - name: HOME
+              value: /workspace
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
