@@ -18,6 +18,18 @@ spec:
         name: CATALOG_IMAGE
         type: string
         default: quay.io/opendatahub/opendatahub-operator-catalog:odh-stable
+      - description: Trigger Nightly Tests
+        name: TRIGGER_NIGHTLY_TESTS
+        type: string
+        default: "false"
+      - description: Trigger Slack Notification
+        name: TRIGGER_SLACK
+        type: string
+        default: "true"
+      - description: Whether to tag the latest CI build as a nightly 
+        name: TRIGGER_NIGHTLY_TAG
+        type: string
+        default: "false"
     tasks:
       - name: choose-ci-build
         description: selects the latest ci build to promote to nightly
@@ -79,10 +91,17 @@ spec:
               value: $(workspaces.data.path)
             - name: AUTH_PATH
               value: /workspace/.docker/config.json
+            - name: TRIGGER_NIGHTLY_TAG
+              value: $(params.TRIGGER_NIGHTLY_TAG)
             script: |
               #!/bin/bash
               set -e
-              exit 0
+
+              if [[ "$TRIGGER_NIGHTLY_TAG" != "true" ]]; then
+                echo "TRIGGER_NIGHTLY_TAG=$TRIGGER_NIGHTLY_TAG"
+                echo "proceeding without tagging a new nightly"
+              fi
+
               echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
               CATALOG="$DATA_PATH"/rhods-operator/catalog.yaml
               TAG="odh-stable-nightly"
@@ -137,6 +156,11 @@ spec:
               echo "Operator: $OPERATOR_IMAGE"
       - name: trigger-nightly-tests
         description: trigger nightly tests
+        when:
+        - input: $(params.TRIGGER_NIGHTLY_TESTS)
+          operator: in
+          values:
+          - "true"
         runAfter:
         - tag-nightly
         taskSpec:
@@ -169,9 +193,13 @@ spec:
               -d '{ "ref": "main", "inputs": { "target_branch": "'"$TARGET"'" } }'
       - name: slack-notification
         description: notify slack about new nightly
+        when:
+        - input: $(params.TRIGGER_SLACK)
+          operator: in
+          values:
+          - "true"
         runAfter:
         - tag-nightly
-        - trigger-nightly-tests
         workspaces:
         - name: data
           workspace: data
