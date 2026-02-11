@@ -100,6 +100,7 @@ spec:
               if [[ "$TRIGGER_NIGHTLY_TAG" != "true" ]]; then
                 echo "TRIGGER_NIGHTLY_TAG=$TRIGGER_NIGHTLY_TAG"
                 echo "proceeding without tagging a new nightly"
+                exit 0
               fi
 
               echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
