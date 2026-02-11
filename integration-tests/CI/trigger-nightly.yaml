@@ -39,6 +39,8 @@ spec:
             description: "the catalog image reference (with SHA) to use for nightly"
           - name: latest-operator-ci-image
             description: "the operator image reference (with SHA) to use for nightly"
+          - name: latest-catalog-ci-build-url
+            description: "the build url for the latest catalog"
           steps:
           - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
             name: get-latest-catalog-ci-build-sha
@@ -53,6 +55,7 @@ spec:
               skopeo_inspect=$(skopeo inspect "docker://$CATALOG_IMAGE" --no-tags)
               echo $skopeo_inspect | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"
               echo $skopeo_inspect | jq -r '.Labels."opendatahub-operator.image"'  | tr -d '\n' | tee "$(results.latest-operator-ci-image.path)"
+              echo $skopeo_inspect | jq -r '.Labels."build-url"'  | tr -d '\n' | tee "$(results.latest-catalog-ci-build-url.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
@@ -222,6 +225,8 @@ spec:
               value: $(tasks.choose-ci-build.results.latest-catalog-ci-image)
             - name: LATEST_OPERATOR_CI_IMAGE
               value: $(tasks.choose-ci-build.results.latest-operator-ci-image)
+            - name: BUILD_URL
+              value: $(tasks.choose-ci-build.results.latest-catalog-ci-build-url)
             - name: CHANNEL
               value: C07RGA06207 # C0883L8FARE
             workingDir: /workspace
@@ -245,7 +250,8 @@ spec:
               slack_message="PROOF OF CONCEPT - DO NOT USE
               ${alertEmoji} A new *Nightly Build* is available for ODH 
               Image: ${LATEST_CATALOG_CI_IMAGE}
-              Build Metadata: <${metadata_url}|Link>"
+              Build Metadata: <${metadata_url}|Link>
+              Build URL: <${BUILD_URL}>"
               ./send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -f tracer-output.txt -v
     workspaces:
     - name: data
