@@ -26,7 +26,7 @@ spec:
         name: TRIGGER_SLACK
         type: string
         default: "true"
-      - description: Whether to tag the latest CI build as a nightly 
+      - description: Whether to tag the latest CI build as a nightly
         name: TRIGGER_NIGHTLY_TAG
         type: string
         default: "true"
@@ -248,7 +248,7 @@ spec:
               metadata_url="https://github.com/opendatahub-io/odh-build-metadata/tree/main/components/odh-operator/${operator_image_sha}"
               alertEmoji=":nightly:"
               slack_message="PROOF OF CONCEPT - DO NOT USE
-              ${alertEmoji} A new *Nightly Build* is available for ODH 
+              ${alertEmoji} A new *Nightly Build* is available for ODH
               Image: ${LATEST_CATALOG_CI_IMAGE}
               Build Metadata: <${metadata_url}|Link>
               Build URL: <${BUILD_URL}>"
