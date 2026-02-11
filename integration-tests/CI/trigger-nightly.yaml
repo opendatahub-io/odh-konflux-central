@@ -142,14 +142,34 @@ spec:
         taskSpec:
           steps:
           - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
+            env:
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rhods-ci
+                  key: secret
             script: |
               #!/bin/bash
               set -e
-              echo nightly trigger placeholder
+
+              TARGET=odh-stable
+
+              OWNER="red-hat-data-services"
+              REPO="conforma-reporter"
+              WORKFLOW_FILE="smoke-trigger.yaml"
+
+              echo "Triggering nightly jenkins jobs for: $TARGET"
+
+              curl -X POST "https://api.github.com/repos/$OWNER/$REPO/actions/workflows/$WORKFLOW_FILE/dispatches" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{ "ref": "main", "inputs": { "target_branch": "'"$TARGET"'" } }'
       - name: slack-notification
         description: notify slack about new nightly
         runAfter:
         - tag-nightly
+        - trigger-nightly-tests
         workspaces:
         - name: data
           workspace: data
