@@ -29,7 +29,7 @@ spec:
       - description: Whether to tag the latest CI build as a nightly 
         name: TRIGGER_NIGHTLY_TAG
         type: string
-        default: "false"
+        default: "true"
     tasks:
       - name: choose-ci-build
         description: selects the latest ci build to promote to nightly
