@@ -37,7 +37,7 @@ spec:
           results:
           - name: latest-catalog-ci-image
             description: "the catalog image reference (with SHA) to use for nightly"
-          - name: latest-operator-ci-image
+          - name: latest-build-metadata-url
             description: "the operator image reference (with SHA) to use for nightly"
           - name: latest-catalog-ci-build-url
             description: "the build url for the latest catalog"
@@ -54,7 +54,7 @@ spec:
               set -e
               skopeo_inspect=$(skopeo inspect "docker://$CATALOG_IMAGE" --no-tags)
               echo "$skopeo_inspect" | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"
-              echo "$skopeo_inspect" | jq -r '.Labels."opendatahub-operator.image"'  | tr -d '\n' | tee "$(results.latest-operator-ci-image.path)"
+              echo "$skopeo_inspect" | jq -r '.Labels."build-metadata-url"'  | tr -d '\n' | tee "$(results.latest-build-metadata-url.path)"
               echo "$skopeo_inspect" | jq -r '.Labels."build-url"'  | tr -d '\n' | tee "$(results.latest-catalog-ci-build-url.path)"
       - name: tag-nightly
         runAfter:
@@ -223,8 +223,8 @@ spec:
                   key: SLACK_TOKEN
             - name: LATEST_CATALOG_CI_IMAGE
               value: $(tasks.choose-ci-build.results.latest-catalog-ci-image)
-            - name: LATEST_OPERATOR_CI_IMAGE
-              value: $(tasks.choose-ci-build.results.latest-operator-ci-image)
+            - name: LATEST_BUILD_METADATA_URL
+              value: $(tasks.choose-ci-build.results.latest-build-metadata-url)
             - name: BUILD_URL
               value: $(tasks.choose-ci-build.results.latest-catalog-ci-build-url)
             - name: CHANNEL
@@ -244,13 +244,11 @@ spec:
               chmod +x ./tracer.sh
 
               ./tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
-              operator_image_sha=$(echo "$LATEST_OPERATOR_CI_IMAGE" | sed 's/.*@sha256://')
-              metadata_url="https://github.com/opendatahub-io/odh-build-metadata/tree/main/components/odh-operator/${operator_image_sha}"
               alertEmoji=":nightly:"
               slack_message="PROOF OF CONCEPT - DO NOT USE
               ${alertEmoji} A new *Nightly Build* is available for ODH
               Image: ${LATEST_CATALOG_CI_IMAGE}
-              Build Metadata: <${metadata_url}|Link>
+              Build Metadata: <${LATEST_BUILD_METADATA_URL}|Link>
               Build URL: <${BUILD_URL}>"
               ./send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -f tracer-output.txt -v
     workspaces:
