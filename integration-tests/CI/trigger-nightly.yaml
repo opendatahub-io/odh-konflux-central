@@ -110,8 +110,8 @@ spec:
               CATALOG="$DATA_PATH"/rhods-operator/catalog.yaml
               TAG="odh-stable-nightly"
 
-              # Step 1 & 2: Find olm.channel with name fast-3.x, get the last entry name
-              BUNDLE_NAME=$(yq 'select(.schema == "olm.channel" and .name == "fast-3.x") | .entries[-1].name' "$CATALOG")
+              # Step 1 & 2: Find olm.channel with name odh-stable, get the last entry name
+              BUNDLE_NAME=$(yq 'select(.schema == "olm.channel" and .name == "odh-stable") | .entries[-1].name' "$CATALOG")
               echo "Bundle name: $BUNDLE_NAME"
 
               # Step 3: Find olm.bundle with that name, get the image
