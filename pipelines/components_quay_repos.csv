@@ -47,6 +47,10 @@ odh-workbench-jupyter-trustyai-cpu-py311-ubi9,quay.io/opendatahub/odh-workbench-
 odh-workbench-jupyter-trustyai-cpu-py312-ubi9,quay.io/opendatahub/odh-workbench-jupyter-trustyai-cpu-py312-ubi9
 odh-workbench-codeserver-datascience-cpu-py311-ubi9,quay.io/opendatahub/odh-workbench-codeserver-datascience-cpu-py311-ubi9
 odh-workbench-codeserver-datascience-cpu-py312-ubi9,quay.io/opendatahub/odh-workbench-codeserver-datascience-cpu-py312-ubi9
+odh-workbench-rstudio-minimal-cpu-py312-c9s-pull-request.yaml,quay.io/opendatahub/odh-workbench-rstudio-minimal-cpu-py312-c9s
+odh-workbench-rstudio-minimal-cpu-py312-c9s-push.yaml,quay.io/opendatahub/odh-workbench-rstudio-minimal-cpu-py312-c9s
+odh-workbench-rstudio-minimal-cuda-py312-c9s-pull-request.yaml,quay.io/opendatahub/odh-workbench-rstudio-minimal-cuda-py312-c9s
+odh-workbench-rstudio-minimal-cuda-py312-c9s-push.yaml,quay.io/opendatahub/odh-workbench-rstudio-minimal-cuda-py312-c9s
 odh-dashboard,quay.io/opendatahub/odh-dashboard
 odh-model-controller,quay.io/opendatahub/odh-model-controller
 odh-mm-rest-proxy,quay.io/opendatahub/rest-proxy
