@@ -212,7 +212,7 @@ spec:
           - name: data
             optional: false
           steps:
-          - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner@sha256:c8bc1b9f04259c3cbfbfc74fc1bc143d9c0c42d8acf17ef240630719a4faa882
+          - image: quay.io/rhoai/rhoai-task-toolset:odh-nightly-runner
             env:
             - name: HOME
               value: /workspace
@@ -228,7 +228,15 @@ spec:
             - name: BUILD_URL
               value: $(tasks.choose-ci-build.results.latest-catalog-ci-build-url)
             - name: CHANNEL
-              value: C07RGA06207 # C0883L8FARE
+              valueFrom:
+                configMapKeyRef:
+                  name: slack-config
+                  key: odh-notification-channel
+            - name: MESSAGE_TEMPLATE
+              valueFrom:
+                configMapKeyRef:
+                  name: slack-config
+                  key: nightly-message-template
             workingDir: /workspace
             script: |
               #!/bin/bash
@@ -244,12 +252,7 @@ spec:
               chmod +x ./tracer.sh
 
               ./tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
-              alertEmoji=":nightly:"
-              slack_message="PROOF OF CONCEPT - DO NOT USE
-              ${alertEmoji} A new *Nightly Build* is available for ODH
-              Image: ${LATEST_CATALOG_CI_IMAGE}
-              Build Metadata: <${LATEST_BUILD_METADATA_URL}|Link>
-              Build URL: <${BUILD_URL}>"
+              slack_message=$(echo "$MESSAGE_TEMPLATE" | envsubst '$LATEST_CATALOG_CI_IMAGE $LATEST_BUILD_METADATA_URL $BUILD_URL')
               ./send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -f tracer-output.txt -v
     workspaces:
     - name: data
