@@ -245,9 +245,8 @@ spec:
               git init .
               git remote add origin git@github.com:red-hat-data-services/rhods-devops-infra.git
               git fetch origin main
-              git fetch origin odh-tracer
               git show origin/main:tools/send-slack-message/send-slack-message.sh > ./send-slack-message.sh
-              git show origin/odh-tracer:tools/tracer/tracer.sh > ./tracer.sh
+              git show origin/main:tools/tracer/tracer.sh > ./tracer.sh
               chmod +x ./send-slack-message.sh
               chmod +x ./tracer.sh
 
