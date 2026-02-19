@@ -212,8 +212,6 @@ spec:
                   -e IMAGE_REGISTRY="${NOTEBOOK_IMAGE[0]}" -e NOTEBOOK_TAG="${NOTEBOOK_IMAGE[1]}"
               make test-jupyter-datascience-ubi9-python-3.12
               make undeploy9-jupyter-datascience-ubi9-python-3.12
-#
-
 
 
 
