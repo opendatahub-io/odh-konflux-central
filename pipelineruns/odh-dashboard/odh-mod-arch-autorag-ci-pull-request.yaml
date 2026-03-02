@@ -45,7 +45,7 @@ spec:
     - name: pathInRepo
       value: pipeline/multi-arch-container-build.yaml
   taskRunTemplate:
-    serviceAccountName: build-pipeline-sa-odh-mod-arch-autorag
+    serviceAccountName: build-pipeline-odh-mod-arch-autorag-ci
   workspaces:
   - name: git-auth
     secret:
