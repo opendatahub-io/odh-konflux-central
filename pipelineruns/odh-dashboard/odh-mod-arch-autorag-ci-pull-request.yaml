@@ -1,6 +1,5 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
-#
 metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/odh-dashboard?rev={{revision}}
@@ -16,7 +15,7 @@ metadata:
     appstudio.openshift.io/application: opendatahub-builds
     appstudio.openshift.io/component: odh-mod-arch-autorag-ci
     pipelines.appstudio.openshift.io/type: build
-  name: odh-mod-arch-autorag-ci-on-pull-request
+  name: odh-mod-arch-autorag-ci-pull-request
   namespace: open-data-hub-tenant
 spec:
   params:
