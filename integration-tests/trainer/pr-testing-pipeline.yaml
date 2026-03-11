@@ -1,0 +1,500 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: odh-pr-test-trainer
+  annotations:
+    pipelinesascode.tekton.dev/on-event: "[pull_request]"
+    pipelinesascode.tekton.dev/on-target-branch: "[main]"
+spec:
+  timeouts:
+    pipeline: 1h
+  pipelineSpec:
+    description: |
+      An integration test which provisions an ephemeral Hypershift cluster, deploys the Kubeflow
+      Trainer from a Konflux snapshot and runs the Go e2e tests against it.
+    params:
+      - description: Snapshot of the application
+        name: SNAPSHOT
+        type: string
+      - name: oci-artifacts-repo
+        default: 'quay.io/opendatahub/odh-ci-artifacts'
+        description: The OCI container used to store all test artifacts.
+      - name: artifact-browser-url
+        default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
+        description: The URL for browsing test artifacts.
+    tasks:
+      - name: audit-snapshot
+        params:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+        taskSpec:
+          params:
+            - name: SNAPSHOT
+              description: Snapshot of the application
+          results:
+          - name: pull-request-author
+          - name: pull-request-number
+          - name: git-repo
+          - name: git-org
+          - name: git-revision
+          steps:
+            - name: audit-snapshot
+              image: quay.io/konflux-ci/konflux-test:stable
+              workingDir: /workspace
+              env:
+                - name: SNAPSHOT
+                  value: $(params.SNAPSHOT)
+                - name: PR_AUTHOR
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sender']
+                - name: PR_NUMBER
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/pull-request']
+                - name: GIT_REPO
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/url-repository']
+                - name: GIT_ORG
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/url-org']
+                - name: GIT_REVISION
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
+              script: |
+                #!/bin/bash
+                set -e
+                echo "SNAPSHOT=${SNAPSHOT}"
+
+                # Parse JSON and iterate through each component
+                while IFS= read -r row; do
+                    COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.name')
+                    IMAGE=$(echo "$row" | base64 -d | jq -r '.containerImage')
+                    GIT_COMMIT=$(echo "$row" | base64 -d | jq -r '.source.git.revision')
+                    GIT_URL=$(echo "$row" | base64 -d | jq -r '.source.git.url')
+                    echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
+                    echo "GIT_COMMIT=${GIT_COMMIT}"
+                    echo "GIT_URL=${GIT_URL}"
+                done < <(echo "$SNAPSHOT" | jq -r '.components[] | @base64')
+
+                echo -n "${PR_AUTHOR}" > "$(results.pull-request-author.path)"
+                echo -n "${PR_NUMBER}" > "$(results.pull-request-number.path)"
+                echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
+                echo -n "${GIT_ORG}" > "$(results.git-org.path)"
+                echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
+
+      - name: provision-eaas-space
+        runAfter:
+          - audit-snapshot
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/konflux-ci/build-definitions.git
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+        params:
+          - name: ownerName
+            value: $(context.pipelineRun.name)
+          - name: ownerUid
+            value: $(context.pipelineRun.uid)
+      - name: provision-cluster
+        runAfter:
+          - provision-eaas-space
+        taskSpec:
+          results:
+            - name: clusterName
+              value: "$(steps.create-cluster.results.clusterName)"
+          steps:
+            - name: get-supported-versions
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+              params:
+                - name: eaasSpaceSecretRef
+                  value: $(tasks.provision-eaas-space.results.secretRef)
+            - name: pick-version
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+              params:
+                - name: prefix
+                  value: "$(steps.get-supported-versions.results.versions[0])."
+            - name: create-cluster
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
+              params:
+                - name: eaasSpaceSecretRef
+                  value: $(tasks.provision-eaas-space.results.secretRef)
+                - name: version
+                  value: "$(steps.pick-version.results.version)"
+                - name: instanceType
+                  value: m5.2xlarge
+      - name: deploy-and-test
+        timeout: 50m
+        runAfter:
+          - provision-cluster
+        taskSpec:
+          volumes:
+            - name: credentials
+              emptyDir: {}
+          steps:
+            - name: get-kubeconfig
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+              params:
+                - name: eaasSpaceSecretRef
+                  value: $(tasks.provision-eaas-space.results.secretRef)
+                - name: clusterName
+                  value: "$(tasks.provision-cluster.results.clusterName)"
+                - name: credentials
+                  value: credentials
+            - name: deploy-and-e2e
+              image: quay.io/rhoai/rhoai-task-toolset:trainer
+              onError: continue
+              computeResources:
+                requests:
+                  memory: "4Gi"
+                  cpu: "2"
+                limits:
+                  memory: "8Gi"
+                  cpu: "4"
+              env:
+                - name: KUBECONFIG
+                  value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+                - name: SNAPSHOT
+                  value: $(params.SNAPSHOT)
+                - name: ARTIFACT_DIR
+                  value: /workspace/artifacts-dir
+              workingDir: /workspace/source
+              volumeMounts:
+                - name: credentials
+                  mountPath: /credentials
+              script: |
+                #!/bin/bash
+                set -e
+                oc whoami
+                oc get pods -A
+
+                echo "SNAPSHOT=${SNAPSHOT}"
+                COMPONENT_NAME=trainer-ci
+                COMPONENT_JSON=$(echo "${SNAPSHOT}" | jq -er --arg component_name "${COMPONENT_NAME}" '.components[] | select(.name == $component_name)')
+                TRAINER_IMAGE=$(echo "${COMPONENT_JSON}" | jq -er '.containerImage')
+                GIT_COMMIT=$(echo "${COMPONENT_JSON}" | jq -er '.source.git.revision')
+                GIT_URL=$(echo "${COMPONENT_JSON}" | jq -er '.source.git.url')
+                echo "TRAINER_IMAGE: ${TRAINER_IMAGE}"
+                echo "GIT_COMMIT: ${GIT_COMMIT}"
+                echo "GIT_URL: ${GIT_URL}"
+
+                git clone "${GIT_URL}" src_code
+                cd src_code
+                git checkout "${GIT_COMMIT}"
+
+                # Inject the Konflux snapshot image into RHOAI manifests
+                sed -i "s|odh-kubeflow-trainer-controller-image=.*|odh-kubeflow-trainer-controller-image=${TRAINER_IMAGE}|" manifests/rhoai/params.env
+
+                echo "Installing cert-manager (required by JobSet)..."
+                oc apply -f - <<EOF
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: cert-manager-operator
+                ---
+                apiVersion: operators.coreos.com/v1
+                kind: OperatorGroup
+                metadata:
+                  name: cert-manager-operator
+                  namespace: cert-manager-operator
+                spec:
+                  targetNamespaces:
+                  - cert-manager-operator
+                ---
+                apiVersion: operators.coreos.com/v1alpha1
+                kind: Subscription
+                metadata:
+                  name: openshift-cert-manager-operator
+                  namespace: cert-manager-operator
+                spec:
+                  channel: stable-v1
+                  name: openshift-cert-manager-operator
+                  source: redhat-operators
+                  sourceNamespace: openshift-marketplace
+                EOF
+                echo "Waiting for cert-manager CSV to be created by OLM..."
+                for i in $(seq 1 60); do
+                  CSV=$(oc get csv -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator -o name 2>/dev/null | head -1)
+                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
+                  echo "  attempt $i/60, retrying in 10s..."
+                  sleep 10
+                done
+                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
+                  -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator \
+                  --timeout=300s
+                echo "Waiting for cert-manager deployment to be created by the operator..."
+                for i in $(seq 1 30); do
+                  oc get deployment cert-manager -n cert-manager 2>/dev/null && break
+                  echo "  attempt $i/30, retrying in 10s..."
+                  sleep 10
+                done
+                oc wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=300s
+
+                echo "Installing JobSet operator (required by Kubeflow Trainer)..."
+                oc apply -f - <<EOF
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: openshift-jobset-operator
+                ---
+                apiVersion: operators.coreos.com/v1
+                kind: OperatorGroup
+                metadata:
+                  name: openshift-jobset-operator
+                  namespace: openshift-jobset-operator
+                spec:
+                  targetNamespaces:
+                  - openshift-jobset-operator
+                ---
+                apiVersion: operators.coreos.com/v1alpha1
+                kind: Subscription
+                metadata:
+                  name: job-set
+                  namespace: openshift-jobset-operator
+                spec:
+                  channel: stable-v1.0
+                  name: job-set
+                  source: redhat-operators
+                  sourceNamespace: openshift-marketplace
+                EOF
+                echo "Waiting for JobSet CSV to be created by OLM..."
+                for i in $(seq 1 60); do
+                  CSV=$(oc get csv -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator -o name 2>/dev/null | head -1)
+                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
+                  echo "  attempt $i/60, retrying in 10s..."
+                  sleep 10
+                done
+                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
+                  -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator \
+                  --timeout=300s
+                oc apply -f - <<EOF
+                apiVersion: operator.openshift.io/v1
+                kind: JobSetOperator
+                metadata:
+                  name: cluster
+                spec:
+                  logLevel: Normal
+                  managementState: Managed
+                  operatorLogLevel: Normal
+                EOF
+                echo "Waiting for jobsets CRD to be created by the operator..."
+                for i in $(seq 1 30); do
+                  oc get crd jobsets.jobset.x-k8s.io 2>/dev/null && break
+                  echo "  attempt $i/30, retrying in 10s..."
+                  sleep 10
+                done
+                oc wait --for=condition=established crd/jobsets.jobset.x-k8s.io --timeout=300s
+                oc wait --for=condition=Available jobsetoperator/cluster --timeout=300s
+
+                echo "Deploying Kubeflow Trainer..."
+                make deploy-rhoai
+
+                echo "Running RHOAI e2e tests..."
+                make ginkgo
+                mkdir -p "${ARTIFACT_DIR}"
+                set +e
+                ./bin/ginkgo -v --junit-report=junit.xml --output-dir="${ARTIFACT_DIR}" ./test/e2e/rhai/...
+                TEST_EXIT_CODE=$?
+                set -e
+
+
+                if [ "${TEST_EXIT_CODE}" -ne 0 ]; then
+                  oc logs -n opendatahub -l app.kubernetes.io/name=trainer || true
+                  exit "${TEST_EXIT_CODE}"
+                fi
+            - name: must-gather
+              onError: continue
+              image: quay.io/rhoai/rhoai-task-toolset:trainer
+              env:
+                - name: KUBECONFIG
+                  value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+                - name: ARTIFACT_DIR
+                  value: /workspace/artifacts-dir
+              workingDir: /workspace/source
+              volumeMounts:
+                - name: credentials
+                  mountPath: /credentials
+              script: |
+                mkdir -p "${ARTIFACT_DIR}/gather-trainer"
+                oc adm must-gather --image=quay.io/modh/must-gather:rhoai-2.24 --dest-dir "${ARTIFACT_DIR}/gather-trainer" -- "export COMPONENT=trainer; /usr/bin/gather" || true
+
+                mkdir -p "${ARTIFACT_DIR}/gather-openshift"
+                oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift"
+            - name: git-push-artifacts
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/secure-git-push/0.1/secure-git-push.yaml
+              params:
+                - name: source-path
+                  value: /workspace/artifacts-dir
+                - name: repo-path
+                  value: 'opendatahub-io/odh-build-metadata'
+                - name: repo-branch
+                  value: 'ci-artifacts'
+                - name: sparse-file-path
+                  value: 'test-artifacts/docs'
+                - name: dest-path
+                  value: 'test-artifacts/$(context.pipelineRun.name)'
+                - name: pipelinerun-name
+                  value: $(context.pipelineRun.name)
+            - name: check-test-exit-code
+              image: quay.io/konflux-ci/konflux-test:stable
+              script: |
+                #!/bin/bash
+                EXIT_CODE=$(cat $(steps.deploy-and-e2e.exitCode.path))
+                if [ "${EXIT_CODE}" != "0" ]; then
+                  echo "Tests failed with exit code ${EXIT_CODE}"
+                  exit "${EXIT_CODE}"
+                fi
+
+    finally:
+    - name: push-ci-artifacts-and-update-pr
+      params:
+        - name: oci-artifacts-repo
+          value: $(params.oci-artifacts-repo)
+        - name: pipeline-status
+          value: $(tasks.status)
+      taskSpec:
+        volumes:
+          - name: odh-registry-secret-volume
+            secret:
+              secretName: odh-registry-secret
+              items:
+              - key: .dockerconfigjson
+                path: oci-storage-dockerconfigjson
+        params:
+          - name: oci-artifacts-repo
+            description: oci-artifacts-repo
+          - name: pipeline-status
+            type: string
+        steps:
+          - name: pull-ci-artifacts
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/git-clone/0.1/git-clone.yaml
+            params:
+              - name: repo-path
+                value: 'opendatahub-io/odh-build-metadata'
+              - name: repo-branch
+                value: 'ci-artifacts'
+              - name: sparse-file-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+              - name: dest-path
+                value: /workspace/odh-ci-artifacts
+              - name: artifacts-dir-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+          - name: secure-push-oci
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/secure-push-oci/0.1/secure-push-oci.yaml
+            params:
+              - name: workdir-path
+                value: '/workspace/odh-ci-artifacts/test-artifacts/$(context.pipelineRun.name)'
+              - name: oci-ref
+                value: $(params.oci-artifacts-repo):$(context.pipelineRun.name)
+              - name: credentials-volume-name
+                value: odh-registry-secret-volume
+          - name: share-status-on-pull-request
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/pull-request-comment/0.1/pull-request-comment.yaml
+            params:
+              - name: test-name
+                value: $(context.pipelineRun.name)
+              - name: oci-container
+                value: $(params.oci-artifacts-repo):$(context.pipelineRun.name)
+              - name: pipeline-aggregate-status
+                value: $(params.pipeline-status)
+              - name: pull-request-author
+                value: $(tasks.audit-snapshot.results.pull-request-author)
+              - name: pull-request-number
+                value: $(tasks.audit-snapshot.results.pull-request-number)
+              - name: git-repo
+                value: $(tasks.audit-snapshot.results.git-repo)
+              - name: git-org
+                value: $(tasks.audit-snapshot.results.git-org)
+              - name: git-revision
+                value: $(tasks.audit-snapshot.results.git-revision)
+              - name: artifact-browser-url
+                value: $(params.artifact-browser-url)
+          - name: cleanup-artifacts-from-git
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/cleanup-git-repo/0.1/cleanup-git-repo.yaml
+            params:
+              - name: work-dir
+                value: '/workspace/odh-ci-artifacts'
+              - name: artifacts-dir-path
+                value: 'test-artifacts'
+              - name: dir-to-be-deleted
+                value: '$(context.pipelineRun.name)'
