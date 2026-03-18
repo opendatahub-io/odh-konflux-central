@@ -24,10 +24,25 @@ spec:
     value: '{{revision}}'
   - name: output-image
     value: quay.io/opendatahub/mlflow:odh-stable
+  - name: additional-tags
+    value:
+    - 'odh-stable-{{revision}}'
+    - master
+    - latest
   - name: dockerfile
     value: Dockerfile.konflux
   - name: path-context
     value: .
+  - name: hermetic
+    value: 'true'
+  - name: prefetch-input
+    value: '[{"type": "pip", "path": ".", "requirements_files": ["requirements/konflux-pypi.txt"]}, {"type": "pip", "path": "requirements", "requirements_files": ["konflux-aipcc.txt", "konflux-build-aipcc.txt"], "binary": {"arch": ":all:"}}, {"type": "yarn", "path": "mlflow/server/js"}, {"type": "rpm", "path": "requirements"}]'
+  - name: build-platforms
+    value:
+    - linux-extra-fast/amd64
+    - linux-m2xlarge/arm64
+    - linux/ppc64le
+    - linux/s390x
   pipelineRef:
     resolver: git
     params:
@@ -37,6 +52,15 @@ spec:
       value: main
     - name: pathInRepo
       value: pipeline/multi-arch-container-build.yaml
+  # Extra memory prevents yarn from silently failing/timing out during prefetch.
+  taskRunSpecs:
+  - pipelineTaskName: prefetch-dependencies
+    computeResources:
+      requests:
+        cpu: '1'
+        memory: 4608Mi
+      limits:
+        memory: 4608Mi
   taskRunTemplate:
     serviceAccountName: build-pipeline-mlflow
   workspaces:
