@@ -223,11 +223,12 @@ spec:
               chmod +x ./tracer.sh
 
               ./tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
-              ./tracer-diff.sh --mode 2 --only-changes "--odh --digest $PREVIOUS_NIGHTLY_SHA" "--odh -i $LATEST_CATALOG_CI_IMAGE"   | tee tracer-diff.txt
+              TRACER=./tracer.sh ./tracer-diff.sh --mode 2 --only-changes "--odh --digest $PREVIOUS_NIGHTLY_SHA" "--odh -i $LATEST_CATALOG_CI_IMAGE"   | tee tracer-diff.txt
               SUBST_VARS='$LATEST_CATALOG_CI_IMAGE $LATEST_BUILD_METADATA_URL $BUILD_URL'
               slack_message=$(echo "$MESSAGE_TEMPLATE" | envsubst "$SUBST_VARS")
+
               SLACK_RC=0
-              OUTPUT=$(./send-slack-message.sh -c "$CHANNEL" -m "$(cat tracer-diff.txt)" -f tracer-output.txt -v 2>&1) || SLACK_RC=$?
+              OUTPUT=$(./send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -m "*Comparison with Previous Nightly*" -m "$(cat tracer-diff.txt)" -f tracer-output.txt -v 2>&1) || SLACK_RC=$?
 
               THREAD_TS=$(printf '%s\n' "$OUTPUT" | grep -oP 'Setting new thread id:\s*\K[0-9]+\.[0-9]+' | head -1 || true)
 
