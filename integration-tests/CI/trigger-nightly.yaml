@@ -209,7 +209,7 @@ spec:
             workingDir: /workspace
             script: |
               #!/bin/bash
-              set -e
+              set -eo pipefail
               mkdir slack && cd slack
               git init .
               git remote add origin git@github.com:red-hat-data-services/rhods-devops-infra.git
