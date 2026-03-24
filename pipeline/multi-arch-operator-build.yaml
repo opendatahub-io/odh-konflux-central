@@ -653,28 +653,10 @@ spec:
       operator: in
       values:
       - "false"
-  - name: pipeline-success-indicator
-    runAfter:
-    - build-source-image
-    - sast-shell-check
-    - sast-unicode-check
-    - deprecated-base-image-check
-    - clair-scan
-    - ecosystem-cert-preflight-checks
-    - sast-snyk-check
-    - clamav-scan
-    - apply-tags
-    - push-dockerfile
-    - rpms-signature-scan
-    taskSpec:
-      steps:
-      - name: noop
-        image: quay.io/rhoai-konflux/alpine:latest
-        script: |
-          echo "Success"
-  finally:
   - name: push-build-metadata
     description: push-build-metadata
+    runAfter:
+    - build-image-index
     params:
     - name: build-metadata-repo
       value: "$(params.build-metadata-repo)"
@@ -752,8 +734,6 @@ spec:
             git add --sparse components/odh-operator/${OUTPUT_IMAGE_DIGEST}
             git commit -m "build-meta for operator image ${OUTPUT_IMAGE_DIGEST}"
             git push
-
-
     when:
     - input: "$(tasks.build-image-index.status)"
       operator: in
@@ -761,6 +741,29 @@ spec:
     workspaces:
     - name: basic-auth
       workspace: git-auth
+  - name: pipeline-success-indicator
+    runAfter:
+    - build-source-image
+    - sast-shell-check
+    - sast-unicode-check
+    - deprecated-base-image-check
+    - clair-scan
+    - ecosystem-cert-preflight-checks
+    - sast-snyk-check
+    - clamav-scan
+    - apply-tags
+    - push-dockerfile
+    - rpms-signature-scan
+    - sast-coverity-check
+    - coverity-availability-check
+    - push-build-metadata
+    taskSpec:
+      steps:
+      - name: noop
+        image: quay.io/rhoai-konflux/alpine:latest
+        script: |
+          echo "Success"
+  finally:
   - name: show-sbom
     params:
     - name: IMAGE_URL
