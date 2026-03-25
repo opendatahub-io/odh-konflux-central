@@ -299,6 +299,25 @@ metadata:
     build.appstudio.openshift.io/request: configure-pac-no-mr
     mintmaker.appstudio.redhat.com/disabled: true
     build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-model-serving-api-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-model-serving-api-ci
+  containerImage: quay.io/opendatahub/odh-model-serving-api
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Containerfile.server
+      revision: "main"
+      url: https://github.com/opendatahub-io/odh-model-controller
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
   name: odh-notebook-controller-ci
 spec:
   application: opendatahub-builds
