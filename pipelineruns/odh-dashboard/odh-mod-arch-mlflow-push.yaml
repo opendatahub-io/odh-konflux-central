@@ -30,6 +30,10 @@ spec:
     value: packages/mlflow/Dockerfile.workspace
   - name: path-context
     value: .
+  - name: build-platforms
+    value:
+    - linux/ppc64le
+    - linux/x86_64
   pipelineRef:
     resolver: git
     params:
