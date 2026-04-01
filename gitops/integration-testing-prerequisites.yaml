@@ -63,6 +63,27 @@ spec:
       revision: stable
       url: https://github.com/opendatahub-io/kubeflow.git
 ---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: 'true'
+    git-provider: github
+    git-provider-url: https://github.com
+  name: maas-group
+  namespace: open-data-hub-tenant
+spec:
+  application: group-testing
+  componentName: maas-group
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/maas-group
+  source:
+    git:
+      dockerfileUrl: maas-api/Dockerfile
+      url: https://github.com/opendatahub-io/models-as-a-service.git
+      revision: "main"
+---
 apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
