@@ -155,3 +155,26 @@ spec:
         value: integration-tests/opendatahub-operator/pr-test-pipelinerun.yaml
     resolver: git
     resourceKind: pipelinerun
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: trainer-ci-its-manual
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute the integration test when component trainer-ci updates
+      name: component_trainer-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/trainer/pr-testing-pipeline.yaml
+    resolver: git
+    resourceKind: pipelinerun
