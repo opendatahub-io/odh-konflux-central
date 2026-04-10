@@ -163,6 +163,8 @@ spec:
           volumes:
             - name: credentials
               emptyDir: {}
+            - name: test-status
+              emptyDir: {}
           steps:
             - name: get-kubeconfig
               ref:
@@ -202,9 +204,13 @@ spec:
               volumeMounts:
                 - name: credentials
                   mountPath: /credentials
+                - name: test-status
+                  mountPath: /test-status
               script: |
                 #!/bin/bash
                 set -e
+                STATUS_FILE="/test-status/deploy-and-e2e-status"
+                echo "failed" > "$STATUS_FILE"
                 oc whoami
                 oc get pods -A
 
@@ -332,16 +338,9 @@ spec:
                 echo "Running RHOAI e2e tests..."
                 make ginkgo
                 mkdir -p "${ARTIFACT_DIR}"
-                set +e
                 ./bin/ginkgo -v --junit-report=junit.xml --output-dir="${ARTIFACT_DIR}" ./test/e2e/rhai/...
-                TEST_EXIT_CODE=$?
-                set -e
 
-
-                if [ "${TEST_EXIT_CODE}" -ne 0 ]; then
-                  oc logs -n opendatahub -l app.kubernetes.io/name=trainer || true
-                  exit "${TEST_EXIT_CODE}"
-                fi
+                echo "success" > "$STATUS_FILE"
             - name: must-gather
               onError: continue
               image: quay.io/rhoai/rhoai-task-toolset:trainer
@@ -384,14 +383,17 @@ spec:
                 - name: pipelinerun-name
                   value: $(context.pipelineRun.name)
             - name: check-test-exit-code
-              image: quay.io/konflux-ci/konflux-test:stable
+              image: alpine
+              volumeMounts:
+                - name: test-status
+                  mountPath: /test-status
               script: |
-                #!/bin/bash
-                EXIT_CODE=$(cat $(steps.deploy-and-e2e.exitCode.path))
-                if [ "${EXIT_CODE}" != "0" ]; then
-                  echo "Tests failed with exit code ${EXIT_CODE}"
-                  exit "${EXIT_CODE}"
+                STATUS_FILE="/test-status/deploy-and-e2e-status"
+                if ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
+                  echo "Failing pipeline because deploy-and-e2e step failed"
+                  exit 1
                 fi
+                echo "deploy-and-e2e step succeeded"
 
     finally:
     - name: push-ci-artifacts-and-update-pr
