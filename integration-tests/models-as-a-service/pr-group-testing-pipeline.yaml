@@ -171,7 +171,8 @@ spec:
                 value: "$(steps.pick-version.results.version)"
               - name: instanceType
                 value: m5.2xlarge
-    - name: deploy-and-test
+    - name: e2e-maas-openshift
+      timeout: 1h30m
       workspaces:
       - name: basic-auth
         workspace: git-auth
