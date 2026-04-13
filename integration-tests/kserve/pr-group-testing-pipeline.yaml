@@ -812,7 +812,7 @@ spec:
             - name: ERROR_404_ISVC_IMAGE
               value: quay.io/opendatahub/error-404-isvc:$(tasks.rhoai-init.results.mandatory-tag) #$(tasks.build-error-404-isvc.results.IMAGE_REF)
             - name: ARTIFACT_DIR
-              value: /workspace/artifact-dir
+              value: /workspace/artifacts-dir
           workingDir: /workspace/source
           volumeMounts:
             - name: credentials
@@ -1050,7 +1050,7 @@ spec:
             - name: ERROR_404_ISVC_IMAGE
               value: quay.io/opendatahub/error-404-isvc:$(tasks.rhoai-init.results.mandatory-tag) #$(tasks.build-error-404-isvc.results.IMAGE_REF)
             - name: ARTIFACT_DIR
-              value: /workspace/artifact-dir
+              value: /workspace/artifacts-dir
           workingDir: /workspace/source
           volumeMounts:
             - name: credentials
@@ -1285,7 +1285,7 @@ spec:
             - name: ERROR_404_ISVC_IMAGE
               value: quay.io/opendatahub/error-404-isvc:$(tasks.rhoai-init.results.mandatory-tag) #$(tasks.build-error-404-isvc.results.IMAGE_REF)
             - name: ARTIFACT_DIR
-              value: /workspace/artifact-dir
+              value: /workspace/artifacts-dir
           workingDir: /workspace/source
           volumeMounts:
             - name: credentials
@@ -1526,7 +1526,7 @@ spec:
             - name: ERROR_404_ISVC_IMAGE
               value: quay.io/opendatahub/error-404-isvc:$(tasks.rhoai-init.results.mandatory-tag) #$(tasks.build-error-404-isvc.results.IMAGE_REF)
             - name: ARTIFACT_DIR
-              value: /workspace/artifact-dir
+              value: /workspace/artifacts-dir
           workingDir: /workspace/source
           volumeMounts:
             - name: credentials
