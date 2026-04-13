@@ -65,6 +65,7 @@ on:
           - trustyai-service-operator
           - vllm-orchestrator-gateway
           - workload-variant-autoscaler
+          - rhaii-cluster-validation
 
       pr_target_branch:
         description: 'Target branch for the PR (e.g. main)'

@@ -12,8 +12,6 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "$$TARGET_BRANCH$$"
-      && ( "python/**".pathChanged()
-            || ".tekton/odh-kserve-autogluon-server-ci-on-pull-request.yaml".pathChanged() )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: opendatahub-builds

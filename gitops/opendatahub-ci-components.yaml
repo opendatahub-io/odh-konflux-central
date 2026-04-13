@@ -1138,8 +1138,65 @@ spec:
   containerImage: quay.io/opendatahub/llm-d-routing-sidecar
   source:
     git:
+      dockerfileUrl: Dockerfile.sidecar
       revision: main
-      url: https://github.com/opendatahub-io/llm-d-routing-sidecar
+      url: https://github.com/opendatahub-io/llm-d-inference-scheduler.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-routing-sidecar-konflux-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-routing-sidecar-konflux-ci
+  containerImage: quay.io/opendatahub/llm-d-routing-sidecar-konflux
+  source:
+    git:
+      dockerfileUrl: Dockerfile.sidecar.konflux
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-inference-scheduler.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-uds-tokenizer-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-uds-tokenizer-ci
+  containerImage: quay.io/opendatahub/llm-d-uds-tokenizer
+  source:
+    git:
+      context: services/uds_tokenizer
+      dockerfileUrl: Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-kv-cache
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-uds-tokenizer-konflux-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-uds-tokenizer-konflux-ci
+  containerImage: quay.io/opendatahub/llm-d-uds-tokenizer-konflux
+  source:
+    git:
+      context: services/uds_tokenizer
+      dockerfileUrl: Dockerfile.konflux
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-kv-cache
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
 kind: Component
@@ -1159,7 +1216,6 @@ spec:
       dockerfileUrl: Dockerfile
       revision: main
       url: https://github.com/opendatahub-io/llama-stack-k8s-operator
-
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
 kind: Component

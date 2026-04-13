@@ -1619,6 +1619,28 @@ spec:
             echo "deploy-and-e2e step succeeded"
 
   finally:
+  - name: export-pipeline-logs
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/konflux-ci/tekton-integration-catalog.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: tasks/export-logs/0.1/export-logs-to-quay.yaml
+    params:
+    - name: quay-repo
+      value: $(params.oci-artifacts-repo)
+    - name: pipeline-run-name
+      value: $(context.pipelineRun.name)
+    - name: namespace
+      value: $(context.pipelineRun.namespace)
+    - name: artifact-credentials-secret
+      value: odh-registry-secret
+    workspaces:
+    - name: shared-data
+      workspace: pipeline-logs
   - name: push-ci-artifacts-and-update-pr
     workspaces:
     - name: basic-auth
@@ -1735,3 +1757,4 @@ spec:
     optional: true
   - name: netrc
     optional: true
+  - name: pipeline-logs

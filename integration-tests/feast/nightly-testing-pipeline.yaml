@@ -1,0 +1,587 @@
+---
+# Nightly integration test pipeline for Feast.
+#
+# Builds feast-operator and feature-server images from the configured Git branch,
+# pushes them to quay.io/opendatahub as :odh-master, then provisions an ephemeral
+# HyperShift cluster, deploys those images, and runs the full e2e + REST API +
+# upgrade test suite.
+#
+#
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: odh-nightly-test-feast
+spec:
+  description: |
+    Nightly integration test for Feast. Builds feast-operator and feature-server
+    images from the configured Git branch, pushes them to quay.io/opendatahub as
+    :odh-master, then provisions an ephemeral HyperShift cluster, deploys those
+    images, and runs the full e2e + REST API + upgrade test suite.
+  params:
+    - description: List of components in the group
+      name: group-components
+      type: string
+    - name: oci-artifacts-repo
+      default: 'quay.io/opendatahub/odh-ci-artifacts'
+      description: The OCI container used to store all test artifacts.
+    - name: artifact-browser-url
+      default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
+      description: The OCI container used to store all test artifacts.
+    - name: git-repo
+      default: 'opendatahub-io/feast'
+      description: GitHub repo (owner/name) for commit status reporting.
+    - name: git-branch
+      default: 'master'
+      description: Branch to report status against.
+  tasks:
+    - name: build-and-push-images
+      description: |
+        Clone opendatahub-io/feast, build feast-operator and feature-server for Linux/amd64,
+        push quay.io/opendatahub/feast-operator:odh-master and feature-server:odh-master, emit SNAPSHOT digests.
+      params:
+        - name: COMPONENTS
+          value: $(params.group-components)
+        - name: git-repo
+          value: $(params.git-repo)
+        - name: git-branch
+          value: $(params.git-branch)
+      taskSpec:
+        params:
+          - name: COMPONENTS
+            description: List of components in the group
+          - name: git-repo
+            description: GitHub repo as owner/name (e.g. opendatahub-io/feast)
+          - name: git-branch
+            description: Branch to build from
+        results:
+          - name: SNAPSHOT
+            description: JSON snapshot of component images (by digest after push)
+          - name: git-revision
+            description: Git revision built from the source
+        volumes:
+          - name: odh-registry-push
+            secret:
+              secretName: odh-registry-secret
+              items:
+                - key: .dockerconfigjson
+                  path: config.json
+          - name: varlibcontainers
+            emptyDir: {}
+        steps:
+          - name: clone-build-push
+            image: quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709
+            securityContext:
+              capabilities:
+                add:
+                  - SETFCAP
+            computeResources:
+              requests:
+                memory: "4Gi"
+                cpu: "2"
+              limits:
+                memory: "8Gi"
+                cpu: "4"
+            env:
+              - name: COMPONENTS
+                value: $(params.COMPONENTS)
+              - name: GIT_REPO
+                value: $(params.git-repo)
+              - name: GIT_BRANCH
+                value: $(params.git-branch)
+              - name: REGISTRY_PREFIX
+                value: quay.io/opendatahub
+              - name: IMAGE_TAG
+                value: odh-master
+              - name: BUILDAH_FORMAT
+                value: docker
+              - name: STORAGE_DRIVER
+                value: vfs
+            volumeMounts:
+              - name: odh-registry-push
+                mountPath: /registry-auth
+                readOnly: true
+              - name: varlibcontainers
+                mountPath: /var/lib/containers
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+
+              export REGISTRY_AUTH_FILE=/registry-auth/config.json
+
+              WORKDIR=/workspace/feast-build
+              mkdir -p "${WORKDIR}"
+              cd "${WORKDIR}"
+
+              FEAST_GIT_URL="https://github.com/${GIT_REPO}.git"
+              echo "Cloning ${FEAST_GIT_URL} branch ${GIT_BRANCH}"
+              git clone --depth 1 --branch "${GIT_BRANCH}" "${FEAST_GIT_URL}" src
+              cd src
+              GIT_SHA="$(git rev-parse HEAD)"
+              GIT_URL="https://github.com/${GIT_REPO}"
+
+              OPERATOR_REF="${REGISTRY_PREFIX}/feast-operator:${IMAGE_TAG}"
+              SERVER_REF="${REGISTRY_PREFIX}/feature-server:${IMAGE_TAG}"
+
+              # Patch requirements.txt to install Feast SDK from the cloned source
+              # instead of the released PyPI version, so the nightly image contains
+              # the latest code from the branch (not just the last published release).
+              echo "=== Patching feature-server requirements.txt to use local source ==="
+              echo ".[minimal]" > sdk/python/feast/infra/feature_servers/multicloud/requirements.txt
+              cat sdk/python/feast/infra/feature_servers/multicloud/requirements.txt
+
+              echo "=== Build feature-server → ${SERVER_REF} ==="
+              buildah build --isolation chroot \
+                --platform linux/amd64 \
+                -f sdk/python/feast/infra/feature_servers/multicloud/Dockerfile \
+                -t "${SERVER_REF}" \
+                sdk/python/feast/infra/feature_servers/multicloud
+
+              echo "=== Build feast-operator → ${OPERATOR_REF} ==="
+              buildah build --isolation chroot \
+                --platform linux/amd64 \
+                -f infra/feast-operator/Dockerfile \
+                -t "${OPERATOR_REF}" \
+                infra/feast-operator
+
+              echo "=== Push images ==="
+              buildah push "${SERVER_REF}" "docker://${SERVER_REF}"
+              buildah push "${OPERATOR_REF}" "docker://${OPERATOR_REF}"
+
+              echo "=== Resolve digests ==="
+              OPERATOR_DIGEST="$(skopeo inspect --no-tags "docker://${OPERATOR_REF}" | jq -r '.Name + "@" + .Digest')"
+              SERVER_DIGEST="$(skopeo inspect --no-tags "docker://${SERVER_REF}" | jq -r '.Name + "@" + .Digest')"
+
+              echo "Built and pushed:"
+              echo "  Operator: ${OPERATOR_DIGEST}"
+              echo "  Server:   ${SERVER_DIGEST}"
+              echo "  Commit:   ${GIT_SHA}"
+
+              SNAPSHOT="$(jq -n \
+                --arg op_img "${OPERATOR_DIGEST}" \
+                --arg sv_img "${SERVER_DIGEST}" \
+                --arg commit "${GIT_SHA}" \
+                --arg url "${GIT_URL}" \
+                '{
+                  "odh-feast-operator-ci": {
+                    "image": $op_img,
+                    "git.commit": $commit,
+                    "git.url": $url
+                  },
+                  "odh-feature-server-ci": {
+                    "image": $sv_img,
+                    "git.commit": $commit,
+                    "git.url": $url
+                  }
+                }')"
+
+              echo "${SNAPSHOT}" | tee "$(results.SNAPSHOT.path)"
+              echo -n "${GIT_SHA}" > "$(results.git-revision.path)"
+
+    - name: provision-eaas-space
+      runAfter:
+        - build-and-push-images
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+      params:
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+
+    - name: provision-cluster
+      runAfter:
+        - provision-eaas-space
+      taskSpec:
+        results:
+          - name: clusterName
+            value: "$(steps.create-cluster.results.clusterName)"
+        steps:
+          - name: get-supported-versions
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+          - name: pick-version
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+            params:
+              - name: prefix
+                value: "$(steps.get-supported-versions.results.versions[0])."
+          - name: create-cluster
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: version
+                value: "$(steps.pick-version.results.version)"
+              - name: instanceType
+                value: m5.2xlarge
+
+    - name: deploy-and-test
+      workspaces:
+        - name: basic-auth
+          workspace: git-auth
+      runAfter:
+        - provision-cluster
+      taskSpec:
+        volumes:
+          - name: credentials
+            emptyDir: {}
+          - name: test-status
+            emptyDir: {}
+        workspaces:
+          - name: basic-auth
+            optional: true
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+          - name: deploy-and-e2e
+            image: quay.io/rhoai/rhoai-task-toolset:go-its
+            onError: continue
+            computeResources:
+              requests:
+                memory: "4Gi"
+                cpu: "2"
+              limits:
+                memory: "8Gi"
+                cpu: "4"
+            env:
+              - name: KUBECONFIG
+                value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+              - name: SNAPSHOT
+                value: $(tasks.build-and-push-images.results.SNAPSHOT)
+            workingDir: /workspace/source
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              STATUS_FILE="/test-status/deploy-and-e2e-status"
+              echo "failed" > "$STATUS_FILE"
+
+              # Configure KUBECONFIG
+              export KUBECONFIG
+              echo "KUBECONFIG=${KUBECONFIG}"
+              export HOME="${HOME:-/tmp}"
+              mkdir -p "$HOME/.kube"
+              cp "${KUBECONFIG%%:*}" "$HOME/.kube/config"
+              echo "Kubeconfig copied to $HOME/.kube/config"
+
+              oc get pods
+              oc whoami
+
+              echo "=== NIGHTLY TEST RUN ==="
+              echo "SNAPSHOT=${SNAPSHOT}"
+
+              COMPONENT_NAME=odh-feast-operator-ci
+              FEAST_OPERATOR_CONTROLLER_IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name].image' <<< "${SNAPSHOT}")
+              GIT_COMMIT=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.commit"' <<< "${SNAPSHOT}")
+              GIT_URL=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.url"' <<< "${SNAPSHOT}")
+              echo "  FEAST_OPERATOR_CONTROLLER_IMAGE: ${FEAST_OPERATOR_CONTROLLER_IMAGE}"
+              echo "GIT_COMMIT=${GIT_COMMIT}"
+              echo "GIT_URL=${GIT_URL}"
+
+              COMPONENT_NAME=odh-feature-server-ci
+              FEAST_FEATURE_SERVER_IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name].image' <<< "${SNAPSHOT}")
+              GIT_COMMIT=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.commit"' <<< "${SNAPSHOT}")
+              GIT_URL=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.url"' <<< "${SNAPSHOT}")
+              echo "  FEAST_FEATURE_SERVER_IMAGE: ${FEAST_FEATURE_SERVER_IMAGE}"
+              echo "GIT_COMMIT=${GIT_COMMIT}"
+              echo "GIT_URL=${GIT_URL}"
+
+              REPO_URL=${GIT_URL}
+              REVISION=${GIT_COMMIT}
+
+              echo "REPO_URL=${REPO_URL}"
+              echo "REVISION=${REVISION}"
+              git clone "${REPO_URL}" src_code
+              cd src_code
+              git checkout ${REVISION}
+
+              export RUN_ON_OPENSHIFT_CI=true
+
+              echo "=== Feature Store Operator E2E ==="
+              cd infra/feast-operator
+              make install && make deploy IMG=${FEAST_OPERATOR_CONTROLLER_IMAGE} FS_IMG=${FEAST_FEATURE_SERVER_IMAGE}
+              oc wait --for condition=Available -n feast-operator-system deployment feast-operator-controller-manager
+              make test-e2e
+
+              cd ../..
+              echo "=== Registry REST API Tests ==="
+              make install-python-dependencies-ci
+              uv run pytest -c sdk/python/pytest.ini sdk/python/tests/integration/rest_api/test_registry_rest_api.py --integration -s --timeout=600
+
+              cd infra/feast-operator
+              make undeploy IMG=${FEAST_OPERATOR_CONTROLLER_IMAGE} FS_IMG=${FEAST_FEATURE_SERVER_IMAGE}
+
+              echo "=== Previous Version Compatibility ==="
+              make test-previous-version
+              oc delete deployment feast-operator-controller-manager -n feast-operator-system
+
+              echo "=== Upgrade Test ==="
+              make test-upgrade
+
+              echo "success" > "$STATUS_FILE"
+
+          - name: must-gather
+            onError: continue
+            image: quay.io/rhoai/rhoai-task-toolset:go-its
+            env:
+              - name: KUBECONFIG
+                value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+              - name: ARTIFACT_DIR
+                value: /workspace/artifacts-dir
+            workingDir: /workspace/source
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+            script: |
+              # feast-must-gather
+              mkdir -p "${ARTIFACT_DIR}/gather-feast"
+              oc adm must-gather --image=quay.io/modh/must-gather:rhoai-2.24 --dest-dir "${ARTIFACT_DIR}/gather-feast" -- "export COMPONENT=feastoperator; /usr/bin/gather"
+
+              # openshift-must-gather
+              mkdir -p "${ARTIFACT_DIR}/gather-openshift"
+              oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift"
+
+          - name: git-push-artifacts
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/secure-git-push/0.1/secure-git-push.yaml
+            params:
+              - name: source-path
+                value: /workspace/artifacts-dir
+              - name: repo-path
+                value: 'opendatahub-io/odh-build-metadata'
+              - name: repo-branch
+                value: 'ci-artifacts'
+              - name: sparse-file-path
+                value: 'test-artifacts/docs'
+              - name: dest-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+              - name: pipelinerun-name
+                value: $(context.pipelineRun.name)
+
+          - name: fail-if-needed
+            image: alpine
+            volumeMounts:
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              STATUS_FILE="/test-status/deploy-and-e2e-status"
+              if ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
+                echo "Failing pipeline because deploy-and-e2e step failed"
+                exit 1
+              fi
+              echo "All nightly tests passed"
+
+  finally:
+    - name: report-nightly-status
+      params:
+        - name: pipeline-status
+          value: $(tasks.status)
+        - name: git-repo
+          value: $(params.git-repo)
+        - name: git-branch
+          value: $(params.git-branch)
+        - name: git-revision
+          value: $(tasks.build-and-push-images.results.git-revision)
+        - name: oci-artifacts-repo
+          value: $(params.oci-artifacts-repo)
+        - name: artifact-browser-url
+          value: $(params.artifact-browser-url)
+      workspaces:
+        - name: basic-auth
+          workspace: git-auth
+      taskSpec:
+        volumes:
+          - name: odh-registry-secret-volume
+            secret:
+              secretName: odh-registry-secret
+              items:
+                - key: .dockerconfigjson
+                  path: oci-storage-dockerconfigjson
+        params:
+          - name: pipeline-status
+            type: string
+          - name: git-repo
+            type: string
+          - name: git-branch
+            type: string
+          - name: git-revision
+            type: string
+          - name: oci-artifacts-repo
+            type: string
+          - name: artifact-browser-url
+            type: string
+        workspaces:
+          - name: basic-auth
+            optional: true
+        steps:
+          - name: pull-ci-artifacts
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/git-clone/0.1/git-clone.yaml
+            params:
+              - name: repo-path
+                value: 'opendatahub-io/odh-build-metadata'
+              - name: repo-branch
+                value: 'ci-artifacts'
+              - name: sparse-file-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+              - name: dest-path
+                value: /workspace/odh-ci-artifacts
+              - name: artifacts-dir-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+          - name: secure-push-oci
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/secure-push-oci/0.1/secure-push-oci.yaml
+            params:
+              - name: workdir-path
+                value: '/workspace/odh-ci-artifacts/test-artifacts/$(context.pipelineRun.name)'
+              - name: oci-ref
+                value: $(params.oci-artifacts-repo):$(context.pipelineRun.name)
+              - name: credentials-volume-name
+                value: odh-registry-secret-volume
+          - name: set-commit-status
+            image: quay.io/konflux-ci/konflux-test:stable
+            env:
+              - name: PIPELINE_STATUS
+                value: $(params.pipeline-status)
+              - name: GIT_REPO
+                value: $(params.git-repo)
+              - name: GIT_BRANCH
+                value: $(params.git-branch)
+              - name: GIT_REVISION
+                value: $(params.git-revision)
+              - name: PIPELINERUN_NAME
+                value: $(context.pipelineRun.name)
+              - name: OCI_REPO
+                value: $(params.oci-artifacts-repo)
+              - name: ARTIFACT_BROWSER_URL
+                value: $(params.artifact-browser-url)
+            script: |
+              #!/bin/bash
+              set -e
+
+              echo "=== Nightly Test Report ==="
+              echo "Pipeline status: ${PIPELINE_STATUS}"
+              echo "Git repo:        ${GIT_REPO}"
+              echo "Git branch:      ${GIT_BRANCH}"
+              echo "Git revision:    ${GIT_REVISION}"
+              echo "PipelineRun:     ${PIPELINERUN_NAME}"
+
+              if [ "${PIPELINE_STATUS}" = "Succeeded" ]; then
+                STATE="success"
+                DESCRIPTION="Nightly tests passed"
+              else
+                STATE="failure"
+                DESCRIPTION="Nightly tests failed"
+              fi
+
+              ARTIFACTS_URL="${ARTIFACT_BROWSER_URL}/?oci=${OCI_REPO}:${PIPELINERUN_NAME}"
+              echo "Artifacts: ${ARTIFACTS_URL}"
+
+              # Set commit status on the repo if credentials are available
+              if [ -f "/workspace/basic-auth/.git-credentials" ]; then
+                GITHUB_TOKEN=$(cat /workspace/basic-auth/.git-credentials | grep github.com | sed 's|.*://||;s|@.*||;s|.*:||')
+                if [ -n "${GITHUB_TOKEN}" ] && [ -n "${GIT_REVISION}" ] && [ "${GIT_REVISION}" != "master" ]; then
+                  curl -s -X POST \
+                    -H "Authorization: token ${GITHUB_TOKEN}" \
+                    -H "Accept: application/vnd.github.v3+json" \
+                    "https://api.github.com/repos/${GIT_REPO}/statuses/${GIT_REVISION}" \
+                    -d "{
+                      \"state\": \"${STATE}\",
+                      \"target_url\": \"${ARTIFACTS_URL}\",
+                      \"description\": \"${DESCRIPTION}\",
+                      \"context\": \"konflux/nightly-feast\"
+                    }" && echo "Commit status posted" || echo "Failed to post commit status"
+                fi
+              fi
+
+              echo "Nightly report complete"
+          - name: cleanup-artifacts-from-git
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/cleanup-git-repo/0.1/cleanup-git-repo.yaml
+            params:
+              - name: work-dir
+                value: '/workspace/odh-ci-artifacts'
+              - name: artifacts-dir-path
+                value: 'test-artifacts'
+              - name: dir-to-be-deleted
+                value: '$(context.pipelineRun.name)'
+  workspaces:
+    - name: git-auth
+      optional: true

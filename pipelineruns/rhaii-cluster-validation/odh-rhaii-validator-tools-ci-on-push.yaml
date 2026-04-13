@@ -2,22 +2,22 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   annotations:
-    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/pipelines-components?rev={{revision}}
+    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/rhaii-cluster-validation?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
-    pipelinesascode.tekton.dev/on-comment: "^/build-konflux"
-    pipelinesascode.tekton.dev/cancel-in-progress: "true"
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "pull_request"
+      event == "push"
       && target_branch == "$$TARGET_BRANCH$$"
+      && ( "tools/**".pathChanged()
+            || ".tekton/odh-rhaii-validator-tools-ci-on-push.yaml".pathChanged() )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: opendatahub-builds
-    appstudio.openshift.io/component: odh-automl-ci
+    appstudio.openshift.io/component: odh-rhaii-validator-tools-ci
     pipelines.appstudio.openshift.io/type: build
-  name: odh-automl-ci-pull-request
+  name: odh-rhaii-validator-tools-ci-on-push
   namespace: open-data-hub-tenant
 spec:
   params:
@@ -26,16 +26,11 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/opendatahub/odh-automl:odh-pr
+    value: quay.io/opendatahub/odh-rhaii-validator-tools:$$OUTPUT_IMAGE_TAG$$
   - name: dockerfile
-    value: pipelines/training/automl/autogluon_tabular_training_pipeline/Containerfile
+    value: tools/Dockerfile.konflux
   - name: path-context
     value: .
-  - name: pipeline-type
-    value: pull-request
-  - name: additional-tags
-    value:
-    - 'odh-pr-{{revision}}'
   pipelineRef:
     resolver: git
     params:
@@ -46,7 +41,7 @@ spec:
     - name: pathInRepo
       value: pipeline/multi-arch-container-build.yaml
   taskRunTemplate:
-    serviceAccountName: build-pipeline-odh-automl-ci
+    serviceAccountName: build-pipeline-odh-rhaii-validator-tools-ci
   workspaces:
   - name: git-auth
     secret:

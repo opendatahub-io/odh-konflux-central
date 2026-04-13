@@ -1570,8 +1570,8 @@ spec:
   containerImage: quay.io/opendatahub/llm-d-inference-scheduler
   source:
     git:
-      dockerfileUrl: Dockerfile
-      revision: konflux-poc
+      dockerfileUrl: Dockerfile.epp
+      revision: release-v0.7.1
       url: https://github.com/opendatahub-io/llm-d-inference-scheduler.git
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
@@ -1588,8 +1588,27 @@ spec:
   containerImage: quay.io/opendatahub/llm-d-routing-sidecar
   source:
     git:
-      revision: konflux-poc
-      url: https://github.com/opendatahub-io/llm-d-routing-sidecar
+      dockerfileUrl: Dockerfile.sidecar
+      revision: release-v0.7.1
+      url: https://github.com/opendatahub-io/llm-d-inference-scheduler
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-routing-sidecar-konflux
+spec:
+  application: opendatahub-release
+  componentName: llm-d-routing-sidecar-konflux
+  containerImage: quay.io/opendatahub/llm-d-routing-sidecar-konflux
+  source:
+    git:
+      dockerfileUrl: Dockerfile.sidecar.konflux
+      revision: release-v0.7.1
+      url: https://github.com/opendatahub-io/llm-d-inference-scheduler
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
 kind: Component
@@ -1998,7 +2017,7 @@ spec:
     git:
       context: .
       dockerfileUrl: Dockerfile
-      revision: release-v0.5
+      revision: release-v0.6
       url: https://github.com/opendatahub-io/workload-variant-autoscaler
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
@@ -2007,16 +2026,34 @@ metadata:
   annotations:
     build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
     mintmaker.appstudio.redhat.com/disabled: true
-  name: llm-d-kv-cache
+  name: llm-d-uds-tokenizer
 spec:
   application: opendatahub-release
-  componentName: llm-d-kv-cache
-  containerImage: quay.io/opendatahub/llm-d-kv-cache
+  componentName: llm-d-uds-tokenizer
+  containerImage: quay.io/opendatahub/llm-d-uds-tokenizer
   source:
     git:
       context: services/uds_tokenizer
       dockerfileUrl: Dockerfile
-      revision: release-v0.5
+      revision: release-v0.7.1
+      url: https://github.com/opendatahub-io/llm-d-kv-cache
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+  name: llm-d-uds-tokenizer-konflux
+spec:
+  application: opendatahub-release
+  componentName: llm-d-uds-tokenizer-konflux
+  containerImage: quay.io/opendatahub/llm-d-uds-tokenizer-konflux
+  source:
+    git:
+      context: services/uds_tokenizer
+      dockerfileUrl: Dockerfile.konflux
+      revision: release-v0.7.1
       url: https://github.com/opendatahub-io/llm-d-kv-cache
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
