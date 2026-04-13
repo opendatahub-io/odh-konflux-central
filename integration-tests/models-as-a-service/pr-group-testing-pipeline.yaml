@@ -92,6 +92,12 @@ spec:
                   IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name].image' <<< "${SNAPSHOT}")
                   GIT_COMMIT=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.commit"' <<< "${SNAPSHOT}")
                   GIT_URL=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.url"' <<< "${SNAPSHOT}")
+                  if [ -z "${IMAGE}" ] || [ "${IMAGE}" = "null" ] || \
+                     [ -z "${GIT_COMMIT}" ] || [ "${GIT_COMMIT}" = "null" ] || \
+                     [ -z "${GIT_URL}" ] || [ "${GIT_URL}" = "null" ]; then
+                      echo "ERROR: snapshot metadata missing for ${COMPONENT_NAME}" >&2
+                      exit 1
+                  fi
                   echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
                   echo "GIT_COMMIT=${GIT_COMMIT}"
                   echo "GIT_URL=${GIT_URL}"
@@ -217,18 +223,20 @@ spec:
                 fieldRef:
                   fieldPath: metadata.annotations['pipelinesascode.tekton.dev/source-repo-url']
             script: |
-              echo ${source_branch}
-              echo ${repo_url}
-              git clone --depth 50 --no-single-branch ${repo_url} /workspace/source
+              echo "${source_branch}"
+              echo "${repo_url}"
+              git clone --depth 50 --no-single-branch "${repo_url}" /workspace/source
               git config --global --add safe.directory /workspace/source
               cd /workspace/source
-              git checkout ${source_branch}
+              git checkout "${source_branch}"
           - name: e2e-maas
             onError: continue
             image: quay.io/rhoai/rhoai-task-toolset:maas
             env:
               - name: KUBECONFIG
                 value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+              - name: ARTIFACT_DIR
+                value: /workspace/artifacts-dir
               - name: SNAPSHOT
                 value: $(tasks.generate-snapshot.results.SNAPSHOT)
             workingDir: /workspace/source
@@ -266,9 +274,6 @@ spec:
               - name: credentials
                 mountPath: /credentials
             script: |
-              mkdir -p "${ARTIFACT_DIR}/gather-maas"
-              oc adm must-gather --image=quay.io/modh/must-gather:rhoai-2.24 --dest-dir "${ARTIFACT_DIR}/gather-maas" -- "export COMPONENT=maas; /usr/bin/gather"
-
               mkdir -p "${ARTIFACT_DIR}/gather-openshift"
               oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift"
           - name: git-push-artifacts
