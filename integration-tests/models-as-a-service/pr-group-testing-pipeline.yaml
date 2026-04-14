@@ -255,8 +255,13 @@ spec:
               export MAAS_API_IMAGE=$(jq -r '."odh-maas-api-ci".image' <<< "${SNAPSHOT}")
               export MAAS_CONTROLLER_IMAGE=$(jq -r '."odh-maas-controller-ci".image' <<< "${SNAPSHOT}")
 
+              MAAS_API_TAG=$(jq -r '."odh-maas-api-ci".image_tag' <<< "${SNAPSHOT}")
+              MAAS_CONTROLLER_TAG=$(jq -r '."odh-maas-controller-ci".image_tag' <<< "${SNAPSHOT}")
+
               echo "MAAS_API_IMAGE=${MAAS_API_IMAGE}"
+              echo "MAAS_API_IMAGE (tag): ${MAAS_API_IMAGE%%@*}:${MAAS_API_TAG}"
               echo "MAAS_CONTROLLER_IMAGE=${MAAS_CONTROLLER_IMAGE}"
+              echo "MAAS_CONTROLLER_IMAGE (tag): ${MAAS_CONTROLLER_IMAGE%%@*}:${MAAS_CONTROLLER_TAG}"
 
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
