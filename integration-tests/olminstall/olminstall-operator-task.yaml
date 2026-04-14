@@ -1,0 +1,235 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: odh-olminstall-operator
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/categories: Deployment
+    tekton.dev/tags: odh, rhoai, olminstall
+    tekton.dev/displayName: "ODH olminstall Operator"
+    tekton.dev/platforms: "linux/amd64"
+spec:
+  description: >-
+    Installs ODH/RHOAI operator using olminstall setup.sh script.
+    This task clones the olminstall repository and executes the setup
+    script to install the operator from a given FBCF (catalog) image.
+
+  params:
+    - name: FBCF_IMAGE
+      description: Full FBCF (File-Based Catalog Fragment) image URL including tag/digest
+      type: string
+      # Example: quay.io/opendatahub/odh-operator-catalog:odh-stable@sha256:abc123...
+
+    - name: INSTALL_TYPE
+      description: Installation type (operator or addon)
+      type: string
+      default: "operator"
+
+    - name: UPDATE_CHANNEL
+      description: OLM update channel to use
+      type: string
+      default: "odh-stable"
+
+    - name: OPERATOR_NAMESPACE
+      description: Namespace where the operator will be installed
+      type: string
+      default: "opendatahub-operators"
+
+    - name: OPERATOR_NAME
+      description: Name of the operator to install
+      type: string
+      default: "rhods-operator"
+
+    - name: OLMINSTALL_REPO
+      description: Git repository URL for olminstall
+      type: string
+      default: "https://github.com/opendatahub-io/olminstall.git"
+
+    - name: OLMINSTALL_BRANCH
+      description: Branch/tag of olminstall to use
+      type: string
+      default: "main"
+
+    - name: TIMEOUT
+      description: Timeout for operator installation (e.g., 15m)
+      type: string
+      default: "20m"
+
+  workspaces:
+    - name: kubeconfig
+      description: Workspace containing the kubeconfig file for cluster access
+      mountPath: /workspace/kubeconfig
+
+  results:
+    - name: OPERATOR_VERSION
+      description: Installed operator version
+
+    - name: INSTALL_STATUS
+      description: Installation status (SUCCESS or FAILED)
+
+  steps:
+    - name: clone-olminstall
+      image: gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init:v0.40.2
+      workingDir: /workspace
+      script: |
+        #!/bin/sh
+        set -e
+
+        echo "📦 Cloning olminstall repository..."
+        git clone -b $(params.OLMINSTALL_BRANCH) $(params.OLMINSTALL_REPO) olminstall || {
+          echo "FAILED" > $(results.INSTALL_STATUS.path)
+          exit 1
+        }
+        cd olminstall
+        echo "✓ Repository cloned successfully"
+        git log -1 --oneline
+
+    - name: install-operator
+      image: registry.redhat.io/openshift4/ose-cli:latest
+      workingDir: /workspace/olminstall
+      env:
+        - name: KUBECONFIG
+          value: /workspace/kubeconfig/kubeconfig
+      script: |
+        #!/bin/bash
+        set -e
+        set -o pipefail
+
+        echo "========================================="
+        echo "ODH/RHOAI Operator Installation"
+        echo "========================================="
+        echo "FBCF Image:        $(params.FBCF_IMAGE)"
+        echo "Install Type:      $(params.INSTALL_TYPE)"
+        echo "Update Channel:    $(params.UPDATE_CHANNEL)"
+        echo "Operator Name:     $(params.OPERATOR_NAME)"
+        echo "Operator Namespace: $(params.OPERATOR_NAMESPACE)"
+        echo "========================================="
+
+        # Verify cluster connectivity
+        echo ""
+        echo "🔍 Verifying cluster connectivity..."
+        if ! oc version; then
+          echo "❌ Failed to connect to cluster"
+          echo "FAILED" > $(results.INSTALL_STATUS.path)
+          exit 1
+        fi
+        echo "✓ Connected to cluster successfully"
+
+        # Execute olminstall setup.sh
+        echo ""
+        echo "🚀 Starting operator installation..."
+        chmod +x setup.sh
+
+        if ./setup.sh \
+          -t "$(params.INSTALL_TYPE)" \
+          -u "$(params.UPDATE_CHANNEL)" \
+          -i "$(params.FBCF_IMAGE)" \
+          -p "$(params.OPERATOR_NAMESPACE)" \
+          -n "$(params.OPERATOR_NAME)"; then
+          echo "✓ olminstall setup.sh completed successfully"
+        else
+          echo "❌ olminstall setup.sh failed"
+          echo "FAILED" > $(results.INSTALL_STATUS.path)
+          exit 1
+        fi
+
+    - name: verify-installation
+      image: registry.redhat.io/openshift4/ose-cli:latest
+      workingDir: /workspace/olminstall
+      env:
+        - name: KUBECONFIG
+          value: /workspace/kubeconfig/kubeconfig
+        - name: TIMEOUT
+          value: $(params.TIMEOUT)
+      timeout: 20m
+      script: |
+        #!/bin/bash
+        set -e
+        set -o pipefail
+
+        echo ""
+        echo "========================================="
+        echo "Verifying Operator Installation"
+        echo "========================================="
+
+        # Wait for operator deployment to be ready
+        echo "⏳ Waiting for operator deployment to be ready..."
+        if oc wait --for=condition=Available \
+          --timeout="${TIMEOUT}" \
+          -n $(params.OPERATOR_NAMESPACE) \
+          deployment/$(params.OPERATOR_NAME) 2>&1; then
+          echo "✓ Operator deployment is ready"
+        else
+          echo "❌ Operator deployment failed to become ready within timeout"
+          echo "FAILED" > $(results.INSTALL_STATUS.path)
+          exit 1
+        fi
+
+        # Get operator version
+        echo ""
+        echo "📋 Getting operator version..."
+        OPERATOR_VERSION=$(oc get deployment $(params.OPERATOR_NAME) \
+          -n $(params.OPERATOR_NAMESPACE) \
+          -o jsonpath='{.metadata.labels.version}' 2>/dev/null || echo "unknown")
+
+        echo "Operator Version: ${OPERATOR_VERSION}"
+        echo -n "${OPERATOR_VERSION}" > $(results.OPERATOR_VERSION.path)
+
+        # Check operator pod status
+        echo ""
+        echo "🔍 Checking operator pod status..."
+        oc get pods -n $(params.OPERATOR_NAMESPACE) -l name=$(params.OPERATOR_NAME)
+
+        # Verify CatalogSource
+        echo ""
+        echo "📦 Verifying CatalogSource..."
+        if oc get catalogsource -n openshift-marketplace 2>&1 | grep -q "addon-$(params.OPERATOR_NAME)-catalog\|rhods-catalog-dev"; then
+          echo "✓ CatalogSource found"
+        else
+          echo "⚠️  CatalogSource not found (may be expected for some install types)"
+        fi
+
+        # Verify Subscription
+        echo ""
+        echo "📋 Verifying Subscription..."
+        if oc get subscription -n $(params.OPERATOR_NAMESPACE) 2>&1 | grep -q "$(params.OPERATOR_NAME)"; then
+          echo "✓ Subscription found"
+          oc get subscription -n $(params.OPERATOR_NAMESPACE)
+        else
+          echo "⚠️  Subscription not found"
+        fi
+
+        # Verify CSV
+        echo ""
+        echo "📄 Verifying ClusterServiceVersion (CSV)..."
+        CSV_NAME=$(oc get csv -n $(params.OPERATOR_NAMESPACE) \
+          -o jsonpath='{.items[?(@.spec.displayName=="Red Hat OpenShift AI")].metadata.name}' 2>/dev/null || \
+          oc get csv -n $(params.OPERATOR_NAMESPACE) \
+          -o jsonpath='{.items[?(@.spec.displayName=="Open Data Hub Operator")].metadata.name}' 2>/dev/null || \
+          echo "")
+
+        if [ -n "$CSV_NAME" ]; then
+          echo "✓ CSV found: ${CSV_NAME}"
+          CSV_PHASE=$(oc get csv ${CSV_NAME} -n $(params.OPERATOR_NAMESPACE) \
+            -o jsonpath='{.status.phase}')
+          echo "  Phase: ${CSV_PHASE}"
+
+          if [ "$CSV_PHASE" != "Succeeded" ]; then
+            echo "❌ CSV is not in Succeeded phase"
+            echo "FAILED" > $(results.INSTALL_STATUS.path)
+            exit 1
+          fi
+        else
+          echo "❌ CSV not found"
+          echo "FAILED" > $(results.INSTALL_STATUS.path)
+          exit 1
+        fi
+
+        echo ""
+        echo "========================================="
+        echo "✅ Installation Verification Complete"
+        echo "========================================="
+        echo "SUCCESS" > $(results.INSTALL_STATUS.path)

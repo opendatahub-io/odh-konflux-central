@@ -1,0 +1,37 @@
+---
+# Sandbox ITS for development/iteration — bound to testops-playpen so runs
+# are visible in the Konflux UI without requiring access to the production
+# rhoai-fbc-fragment-ocp-421 application.
+# Snapshots are triggered manually (see test-snapshot.yaml).
+# NOT intended for upstream merge.
+#
+# Usage:
+#   oc apply -n rhoai-tenant -f integration-tests/olminstall/its-olminstall-rhoai-testops.yaml
+#   oc create -n rhoai-tenant -f integration-tests/olminstall/test-snapshot.yaml
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "true"
+  name: odh-olminstall-smoke-testops
+  namespace: rhoai-tenant
+spec:
+  application: testops-playpen
+  contexts:
+    - description: Execute olminstall smoke test (sandbox / manual trigger)
+      name: application
+  params:
+    - name: FBCF_COMPONENT_NAME
+      value: "rhoai-fbc-fragment-ocp-421"
+    - name: OPERATOR_NAME
+      value: "rhods-operator"
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/manosnoam/odh-konflux-central.git
+      - name: revision
+        value: add-olminstall-its
+      - name: pathInRepo
+        value: integration-tests/olminstall/olminstall-smoke-pipeline.yaml
+    resolver: git
+    resourceKind: pipeline

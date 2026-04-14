@@ -1,0 +1,413 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: odh-olminstall-smoke-test
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: odh, rhoai, integration-test
+spec:
+  description: >-
+    ODH/RHOAI integration test: provisions an ephemeral cluster via Konflux EaaS (HyperShift),
+    installs the operator with olminstall from the FBCF image in the Konflux snapshot, and runs
+    basic smoke verification. BVT is tracked separately (see README).
+
+  params:
+    - name: SNAPSHOT
+      description: |
+        Spec section of an ApplicationSnapshot as a JSON string.
+        Provided by Konflux Integration Test Scenario.
+      type: string
+
+    - name: FBCF_COMPONENT_NAME
+      description: Name of the FBCF component in the snapshot
+      type: string
+      default: "odh-operator-catalog"
+
+    - name: UPDATE_CHANNEL
+      description: OLM update channel
+      type: string
+      default: "stable"
+
+    - name: OPERATOR_NAMESPACE
+      description: Namespace for operator installation
+      type: string
+      default: "opendatahub-operators"
+
+    - name: OPERATOR_NAME
+      description: OLM package / deployment name (e.g. rhods-operator for RHOAI)
+      type: string
+      default: "rhods-operator"
+
+    - name: HYPERSHIFT_INSTANCE_TYPE
+      description: AWS instance type for ephemeral HyperShift workers
+      type: string
+      default: "m5.2xlarge"
+
+    - name: SCRIPTS_REPO_URL
+      description: Git repo containing the pipeline step scripts
+      type: string
+      default: "https://github.com/manosnoam/odh-konflux-central.git"
+
+    - name: SCRIPTS_REPO_REVISION
+      description: Branch/tag/SHA of the scripts repo to clone
+      type: string
+      default: "add-olminstall-its"
+
+  results:
+    - name: TEST_OUTPUT
+      description: Overall test result (from olminstall task verification)
+      value: $(tasks.install-operator.results.INSTALL_STATUS)
+
+    - name: FBCF_IMAGE
+      description: FBCF image that was tested
+      value: $(tasks.extract-fbcf-image.results.FBCF_IMAGE)
+
+  tasks:
+    - name: extract-fbcf-image
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+            type: string
+          - name: COMPONENT_NAME
+            type: string
+        results:
+          - name: FBCF_IMAGE
+            description: Extracted FBCF image URL
+        steps:
+          - name: parse-snapshot
+            image: quay.io/konflux-ci/konflux-test:stable
+            script: |
+              #!/bin/bash
+              set -e
+
+              echo "Parsing Konflux snapshot..."
+              FBCF_IMAGE=$(echo '$(params.SNAPSHOT)' | \
+                jq -r '.components[] | select(.name=="$(params.COMPONENT_NAME)") | .containerImage')
+
+              if [ -z "$FBCF_IMAGE" ] || [ "$FBCF_IMAGE" == "null" ]; then
+                echo "❌ Failed to extract FBCF image from snapshot for component: $(params.COMPONENT_NAME)"
+                exit 1
+              fi
+
+              echo "✓ Extracted FBCF Image: ${FBCF_IMAGE}"
+              echo -n "${FBCF_IMAGE}" > $(results.FBCF_IMAGE.path)
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: COMPONENT_NAME
+          value: $(params.FBCF_COMPONENT_NAME)
+
+    - name: provision-eaas-space
+      runAfter:
+        - extract-fbcf-image
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+      params:
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+
+    - name: provision-cluster
+      runAfter:
+        - provision-eaas-space
+      taskSpec:
+        results:
+          - name: clusterName
+            value: "$(steps.create-cluster.results.clusterName)"
+        steps:
+          - name: get-supported-versions
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+          - name: pick-version
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+            params:
+              - name: prefix
+                value: "$(steps.get-supported-versions.results.versions[0])."
+          - name: create-cluster
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: version
+                value: "$(steps.pick-version.results.version)"
+              - name: instanceType
+                value: $(params.HYPERSHIFT_INSTANCE_TYPE)
+              - name: imageContentSources
+                value: |
+                  - mirrors:
+                      - quay.io/rhoai
+                    source: registry.redhat.io/rhoai
+
+    - name: install-operator
+      runAfter:
+        - provision-cluster
+      params:
+        - name: FBCF_IMAGE
+          value: $(tasks.extract-fbcf-image.results.FBCF_IMAGE)
+        - name: UPDATE_CHANNEL
+          value: $(params.UPDATE_CHANNEL)
+        - name: OPERATOR_NAMESPACE
+          value: $(params.OPERATOR_NAMESPACE)
+        - name: OPERATOR_NAME
+          value: $(params.OPERATOR_NAME)
+      taskSpec:
+        params:
+          - name: FBCF_IMAGE
+            type: string
+          - name: UPDATE_CHANNEL
+            type: string
+          - name: OPERATOR_NAMESPACE
+            type: string
+          - name: OPERATOR_NAME
+            type: string
+        results:
+          - name: INSTALL_STATUS
+            description: Installation status (SUCCESS or FAILED)
+          - name: OPERATOR_VERSION
+            description: Installed operator version
+        volumes:
+          - name: credentials
+            emptyDir: {}
+          - name: quay-pull-secret
+            secret:
+              secretName: rhoai-quay-secret
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+
+          - name: clone-repo
+            image: quay.io/rhoai/rhoai-task-toolset:its
+            script: |
+              #!/bin/bash
+              set -eo pipefail
+              git clone --depth=1 -b $(params.SCRIPTS_REPO_REVISION) \
+                $(params.SCRIPTS_REPO_URL) /workspace/repo
+              echo "✓ Cloned $(params.SCRIPTS_REPO_URL)@$(params.SCRIPTS_REPO_REVISION)"
+
+          - name: patch-cluster-pull-secret
+            image: quay.io/rhoai/rhoai-task-toolset:its
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: quay-pull-secret
+                mountPath: /var/secret/quay
+                readOnly: true
+
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+            script: |
+              #!/bin/bash
+              exec /workspace/repo/integration-tests/olminstall/scripts/patch-cluster-pull-secret.sh
+
+          - name: install-and-verify
+            image: quay.io/rhoai/rhoai-task-toolset:its
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+              - name: FBCF_IMAGE
+                value: $(params.FBCF_IMAGE)
+              - name: UPDATE_CHANNEL
+                value: $(params.UPDATE_CHANNEL)
+              - name: OPERATOR_NAMESPACE
+                value: $(params.OPERATOR_NAMESPACE)
+              - name: OPERATOR_NAME
+                value: $(params.OPERATOR_NAME)
+              - name: INSTALL_STATUS_PATH
+                value: $(results.INSTALL_STATUS.path)
+              - name: OPERATOR_VERSION_PATH
+                value: $(results.OPERATOR_VERSION.path)
+            script: |
+              #!/bin/bash
+              exec /workspace/repo/integration-tests/olminstall/scripts/install-and-verify.sh
+
+  finally:
+    - name: collect-diagnostics
+      when:
+        - input: "$(tasks.install-operator.status)"
+          operator: in
+          values: ["Failed"]
+      params:
+        - name: OPERATOR_NAMESPACE
+          value: $(params.OPERATOR_NAMESPACE)
+      taskSpec:
+        params:
+          - name: OPERATOR_NAMESPACE
+            type: string
+        volumes:
+          - name: credentials
+            emptyDir: {}
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+          - name: oc-adm-inspect
+            image: quay.io/rhoai/rhoai-task-toolset:its
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+              - name: OPERATOR_NAMESPACE
+                value: $(params.OPERATOR_NAMESPACE)
+            script: |
+              #!/bin/bash
+              set -eux
+              oc adm inspect "ns/${OPERATOR_NAMESPACE}" --dest-dir=/tmp/inspect || true
+              oc get csv -n "${OPERATOR_NAMESPACE}" -o yaml || true
+              echo "=== Bundle-unpack job diagnostics ==="
+              echo "--- jobs in openshift-marketplace ---"
+              oc get jobs -n openshift-marketplace -o wide || true
+              echo "--- bundle-unpack job spec (image + SA) ---"
+              oc get jobs -n openshift-marketplace -o yaml \
+                | grep -E "^\s*(image|serviceAccountName|activeDeadlineSeconds):" \
+                | sort -u || true
+              echo "--- bundle-unpack job events ---"
+              for JOB in $(oc get jobs -n openshift-marketplace \
+                  -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                echo "Job: $JOB"
+                oc describe job "$JOB" -n openshift-marketplace 2>/dev/null \
+                  | grep -E "(Events|Image|Status|Message|Reason):" -A5 || true
+                echo "Job logs (last attempt):"
+                oc logs "job/${JOB}" -n openshift-marketplace \
+                  --tail=20 2>/dev/null || echo "  (no logs)"
+              done
+              echo "--- SAs and imagePullSecrets in openshift-marketplace ---"
+              oc get sa -n openshift-marketplace \
+                -o custom-columns='NAME:.metadata.name,PULL_SECRETS:.imagePullSecrets' || true
+              echo "=== Subscription status ==="
+              oc describe sub -n "${OPERATOR_NAMESPACE}" || true
+
+    - name: post-results
+      when:
+        - input: "$(tasks.install-operator.status)"
+          operator: in
+          values: ["Succeeded", "Failed"]
+      taskSpec:
+        params:
+          - name: FBCF_IMAGE
+            type: string
+          - name: TEST_STATUS
+            type: string
+          - name: OPERATOR_VERSION
+            type: string
+          - name: PIPELINE_RUN_NAME
+            type: string
+        steps:
+          - name: send-notification
+            image: quay.io/konflux-ci/konflux-test:stable
+            env:
+              - name: SLACK_WEBHOOK_URL
+                valueFrom:
+                  secretKeyRef:
+                    name: olminstall-slack-webhook
+                    key: webhook-url
+                    optional: true
+            script: |
+              #!/bin/bash
+              set -e
+
+              if [ "$(params.TEST_STATUS)" == "SUCCESS" ]; then
+                EMOJI="✅"
+                STATUS_TEXT="PASSED"
+              else
+                EMOJI="❌"
+                STATUS_TEXT="FAILED"
+              fi
+
+              MSG="${EMOJI} ODH olminstall smoke test ${STATUS_TEXT}"
+              MSG="${MSG}"$'\n'"Operator : $(params.OPERATOR_VERSION)"
+              MSG="${MSG}"$'\n'"FBCF     : $(params.FBCF_IMAGE)"
+              MSG="${MSG}"$'\n'"Run      : $(params.PIPELINE_RUN_NAME)"
+
+              if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+                PAYLOAD=$(echo "$MSG" | jq -Rs '{text: .}')
+                curl -sS -X POST -H 'Content-type: application/json' \
+                  --data "${PAYLOAD}" \
+                  "${SLACK_WEBHOOK_URL}"
+                echo "✓ Slack notification sent"
+              else
+                echo "SLACK_WEBHOOK_URL not set — skipping Slack"
+                echo "---"
+                echo "$MSG"
+                echo "---"
+              fi
+      params:
+        - name: FBCF_IMAGE
+          value: $(tasks.extract-fbcf-image.results.FBCF_IMAGE)
+        - name: TEST_STATUS
+          value: $(tasks.install-operator.results.INSTALL_STATUS)
+        - name: OPERATOR_VERSION
+          value: $(tasks.install-operator.results.OPERATOR_VERSION)
+        - name: PIPELINE_RUN_NAME
+          value: $(context.pipelineRun.name)
