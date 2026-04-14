@@ -258,6 +258,12 @@ spec:
               MAAS_API_TAG=$(jq -r '."odh-maas-api-ci".image_tag' <<< "${SNAPSHOT}")
               MAAS_CONTROLLER_TAG=$(jq -r '."odh-maas-controller-ci".image_tag' <<< "${SNAPSHOT}")
 
+              if [ -z "${MAAS_API_TAG}" ] || [ "${MAAS_API_TAG}" = "null" ] || \
+                 [ -z "${MAAS_CONTROLLER_TAG}" ] || [ "${MAAS_CONTROLLER_TAG}" = "null" ]; then
+                echo "ERROR: image_tag missing for odh-maas-api-ci or odh-maas-controller-ci in SNAPSHOT" >&2
+                exit 1
+              fi
+
               echo "MAAS_API_IMAGE=${MAAS_API_IMAGE}"
               echo "MAAS_API_IMAGE (tag): ${MAAS_API_IMAGE%%@*}:${MAAS_API_TAG}"
               echo "MAAS_CONTROLLER_IMAGE=${MAAS_CONTROLLER_IMAGE}"
