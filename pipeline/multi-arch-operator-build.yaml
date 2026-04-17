@@ -734,10 +734,6 @@ spec:
             git add --sparse components/odh-operator/${OUTPUT_IMAGE_DIGEST}
             git commit -m "build-meta for operator image ${OUTPUT_IMAGE_DIGEST}"
             git push
-    when:
-    - input: "$(tasks.build-image-index.status)"
-      operator: in
-      values: ["Succeeded"]
     workspaces:
     - name: basic-auth
       workspace: git-auth
