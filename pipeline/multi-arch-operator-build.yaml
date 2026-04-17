@@ -754,8 +754,6 @@ spec:
     - apply-tags
     - push-dockerfile
     - rpms-signature-scan
-    - sast-coverity-check
-    - coverity-availability-check
     - push-build-metadata
     taskSpec:
       steps:
