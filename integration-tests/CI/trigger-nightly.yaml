@@ -172,6 +172,7 @@ spec:
               echo "Operator: $OPERATOR_IMAGE"
       - name: slack-notification
         description: notify slack about new nightly and persist thread_ts for downstream
+        onError: continue
         when:
         - input: $(params.TRIGGER_SLACK)
           operator: in
