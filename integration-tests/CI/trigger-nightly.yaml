@@ -58,6 +58,16 @@ spec:
               echo "$skopeo_inspect" | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"; echo
               echo "$skopeo_inspect" | jq -r '.Labels."build-metadata-url"'  | tr -d '\n' | tee "$(results.latest-build-metadata-url.path)"; echo
               echo "$skopeo_inspect" | jq -r '.Labels."build-url"'  | tr -d '\n' | tee "$(results.latest-catalog-ci-build-url.path)"; echo
+
+              NIGHTLY_IMAGE="${CATALOG_IMAGE%:*}:odh-stable-nightly"
+              PREVIOUS_SHA=$(skopeo inspect --raw "docker://$NIGHTLY_IMAGE" 2>/dev/null | sha256sum | awk '{print "sha256:" $1}' || true)
+              if [ -n "$PREVIOUS_SHA" ]; then
+                printf '%s' "$PREVIOUS_SHA" > "$(results.previous-nightly-sha.path)"
+                echo "Previous nightly SHA: $PREVIOUS_SHA"
+              else
+                echo "No previous nightly found"
+                printf '%s' "" > "$(results.previous-nightly-sha.path)"
+              fi
       - name: tag-nightly
         runAfter:
         - choose-ci-build
