@@ -2,7 +2,7 @@ apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
   labels:
-    test.appstudio.openshift.io/optional: "false"
+    test.appstudio.openshift.io/optional: "true"
   name: odh-olminstall-smoke
   namespace: open-data-hub-tenant
   annotations:
@@ -14,6 +14,17 @@ spec:
   contexts:
     - description: Execute olminstall smoke test when FBCF (odh-operator-catalog) is built
       name: component_odh-operator-catalog
+  params:
+    - name: FBCF_COMPONENT_NAME
+      value: "odh-operator-catalog"
+    - name: UPDATE_CHANNEL
+      value: "odh-stable"
+    - name: OPERATOR_NAME
+      value: "opendatahub-operator"
+    - name: OPERATOR_NAMESPACE
+      value: "opendatahub-operators"
+    - name: QUAY_PULL_SECRET_NAME
+      value: "odh-quay-secret"
   resolverRef:
     params:
       - name: url

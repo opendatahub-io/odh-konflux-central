@@ -4,7 +4,7 @@
 #
 # Prerequisites:
 #   1. The ITS CR must already be applied:
-#      oc apply -n rhoai-tenant -f integration-tests/olminstall/its-olminstall-rhoai-testops.yaml
+#      oc apply -n rhoai-tenant -f integration-tests/olminstall/its-olminstall-rhoai-tenant.yaml
 #
 # Usage:
 #   oc create -n rhoai-tenant -f integration-tests/olminstall/test-snapshot.yaml
@@ -14,14 +14,14 @@
 #     --sort-by=.metadata.creationTimestamp \
 #     -l appstudio.openshift.io/application=rhoai-fbc-fragment-ocp-421 \
 #     -o jsonpath='{.items[-1].spec.components[0].containerImage}')
-#   sed -i "s|containerImage:.*|containerImage: $LATEST|" \
-#     integration-tests/olminstall/test-snapshot.yaml
+#   sed "s|containerImage:.*|containerImage: $LATEST|" \
+#     integration-tests/olminstall/test-snapshot.yaml | oc create -n rhoai-tenant -f -
 #
 # After creation, Konflux detects the Snapshot and triggers a PipelineRun for
 # every matching ITS. Watch the run:
 #   oc get pipelineruns -n rhoai-tenant | grep olminstall
 #   or via the Konflux UI:
-#   https://konflux-ui.apps.stone-prod-p02.hjvn.p1.openshiftapps.com/ns/rhoai-tenant/applications/testops-playpen/activity/pipelineruns
+#   https://konflux-ui.apps.<cluster-domain>/ns/rhoai-tenant/applications/testops-playpen/activity/pipelineruns
 apiVersion: appstudio.redhat.com/v1alpha1
 kind: Snapshot
 metadata:

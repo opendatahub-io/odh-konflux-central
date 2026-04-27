@@ -3,32 +3,52 @@
 # reaches Succeeded status.
 #
 # ** Internal Tekton pipeline step — not meant to be called directly. **
-# To trigger the test from your laptop use:  integration-tests/olminstall/run-test.sh
+# To trigger the test from your laptop use:  integration-tests/olminstall/run-olminstall.sh
 #
-# Strategy: create CatalogSource with securityContextConfig=legacy first so OLM's
-# gRPC client connects in plain mode from the start, avoiding "http2: frame too
-# large" TLS mismatches when Subscription is created before the mode is set.
-#
-# Auth strategy for CRI-O < 1.34 (cri-o/cri-o#4941):
-#   CRI-O does NOT forward pod imagePullSecrets to IDMS mirror registries.
-#   OpenShift docs explicitly state that for IDMS mirrors, only the cluster-wide
-#   global pull secret is supported.  In HyperShift, updating the global pull
-#   secret normally triggers full node replacement (slow).
-#
-#   Fix: patch-cluster-pull-secret.sh creates additional-pull-secret in kube-system.
-#   HyperShift's Hosted Cluster Config Operator (HCCO) detects it and deploys a
-#   global-pull-secret-syncer DaemonSet that updates /var/lib/kubelet/config.json
-#   on every node and restarts kubelet — without full node replacement.  We wait
-#   for that DaemonSet here before creating the Subscription.
+# OLM install manifests and wait/approve utilities are sourced from
+# https://gitlab.cee.redhat.com/data-hub/olminstall (cloned to ${OLMINSTALL_DIR}).
+# This script owns only the FBCF-specific steps that olminstall doesn't cover:
+#   - CatalogSource creation pointing to the Konflux FBCF image
+#   - SA-level pull-secret linking for OLM pods
+#   - HyperShift HCCO global-pull-secret-syncer wait (cri-o/cri-o#4941)
 #
 # Required env vars (injected by the pipeline):
 #   KUBECONFIG            FBCF_IMAGE          UPDATE_CHANNEL
-#   OPERATOR_NAMESPACE    OPERATOR_NAME
+#   OPERATOR_NAMESPACE    OPERATOR_NAME       OLMINSTALL_DIR
 #   INSTALL_STATUS_PATH   OPERATOR_VERSION_PATH
+# Optional env vars:
+#   OLMINSTALL_CATALOG_NAME  CatalogSource name passed to olminstall (default: rhoai-catalog-dev)
 
-set -eo pipefail
+set -euo pipefail
 
-fail() { echo -n "FAILED" > "${INSTALL_STATUS_PATH}"; exit 1; }
+fail() {
+  local msg="${1:-}"
+  [[ -n "${msg}" ]] && echo "${msg}"
+  if [[ -n "${INSTALL_STATUS_PATH:-}" ]]; then
+    echo -n "FAILED" > "${INSTALL_STATUS_PATH}" || true
+  fi
+  exit 1
+}
+
+require_env() {
+  local var_name="$1"
+  if [[ -z "${!var_name:-}" ]]; then
+    fail "❌ Required environment variable is missing: ${var_name}"
+  fi
+}
+
+require_env "INSTALL_STATUS_PATH"
+require_env "OPERATOR_NAMESPACE"
+require_env "OPERATOR_NAME"
+require_env "UPDATE_CHANNEL"
+require_env "FBCF_IMAGE"
+require_env "OLMINSTALL_DIR"
+require_env "OPERATOR_VERSION_PATH"
+OLMINSTALL_CATALOG_NAME="${OLMINSTALL_CATALOG_NAME:-rhoai-catalog-dev}"
+QUAY_PULL_SECRET_NAME="${QUAY_PULL_SECRET_NAME:-rhoai-quay-pull}"
+
+trap 'fail "❌ Unexpected error on line ${LINENO}"' ERR
+trap 'fail "❌ Interrupted"' INT TERM HUP
 
 echo "========================================="
 echo " ODH/RHOAI Operator Installation"
@@ -41,12 +61,18 @@ oc version || { echo "❌ Cannot connect to cluster"; fail; }
 
 oc create namespace "${OPERATOR_NAMESPACE}" --dry-run=client -o yaml | oc apply -f -
 
+# Validate FBCF_IMAGE looks like a container image reference before embedding
+# it in YAML to prevent accidental YAML injection from a malformed snapshot value.
+if ! echo "${FBCF_IMAGE}" | grep -qE '^[A-Za-z0-9./_:@-]+$'; then
+  fail "❌ FBCF_IMAGE contains unexpected characters: ${FBCF_IMAGE}"
+fi
+
 echo "Creating CatalogSource (legacy security context)..."
 oc apply -f - <<EOF
 apiVersion: operators.coreos.com/v1alpha1
 kind: CatalogSource
 metadata:
-  name: rhoai-catalog-dev
+  name: ${OLMINSTALL_CATALOG_NAME}
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
@@ -60,29 +86,34 @@ spec:
     securityContextConfig: legacy
 EOF
 
-echo "Waiting for OLM to create the rhoai-catalog-dev ServiceAccount (up to 2m)..."
+echo "Waiting for OLM to create the ${OLMINSTALL_CATALOG_NAME} ServiceAccount (up to 2m)..."
 SA_DEADLINE=$(($(date +%s) + 120))
 while [ "$(date +%s)" -lt "$SA_DEADLINE" ]; do
-  oc get sa rhoai-catalog-dev -n openshift-marketplace &>/dev/null && break
+  oc get sa "${OLMINSTALL_CATALOG_NAME}" -n openshift-marketplace &>/dev/null && break
   sleep 5
 done
-oc secrets link rhoai-catalog-dev rhoai-quay-pull -n openshift-marketplace --for=pull 2>/dev/null || true
+if ! oc secrets link "${OLMINSTALL_CATALOG_NAME}" "${QUAY_PULL_SECRET_NAME}" -n openshift-marketplace --for=pull 2>/dev/null; then
+  echo "⚠ Could not link ${QUAY_PULL_SECRET_NAME} to ${OLMINSTALL_CATALOG_NAME} SA (SA may not exist yet — non-fatal)"
+fi
 
-echo "Restarting CatalogSource pod to pick up the rhoai-quay-pull SA secret..."
-oc delete pod -n openshift-marketplace -l olm.catalogSource=rhoai-catalog-dev \
+echo "Restarting CatalogSource pod to pick up the ${QUAY_PULL_SECRET_NAME} SA secret..."
+oc delete pod -n openshift-marketplace -l "olm.catalogSource=${OLMINSTALL_CATALOG_NAME}" \
   --ignore-not-found=true
-sleep 30
+# Wait for the deleted pod to disappear rather than a fixed sleep; the 15-minute
+# READY poll that follows handles the "replacement not yet running" case.
+oc wait --for=delete pod -n openshift-marketplace \
+  -l "olm.catalogSource=${OLMINSTALL_CATALOG_NAME}" --timeout=60s 2>/dev/null || true
 
 echo "Waiting for CatalogSource to be READY (up to 15m)..."
 CS_STATUS="" ITER=0 DEADLINE=$(($(date +%s) + 900))
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-  CS_STATUS=$(oc get catalogsource rhoai-catalog-dev -n openshift-marketplace \
+  CS_STATUS=$(oc get catalogsource "${OLMINSTALL_CATALOG_NAME}" -n openshift-marketplace \
     -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || true)
   [ "$CS_STATUS" = "READY" ] && { echo "✓ CatalogSource READY"; break; }
   ITER=$((ITER + 1))
   echo "  CS state: ${CS_STATUS:-unknown} (iter ${ITER})"
   if [ $((ITER % 4)) -eq 0 ]; then
-    CS_POD=$(oc get pods -n openshift-marketplace -l olm.catalogSource=rhoai-catalog-dev \
+    CS_POD=$(oc get pods -n openshift-marketplace -l "olm.catalogSource=${OLMINSTALL_CATALOG_NAME}" \
       --no-headers -o custom-columns=':metadata.name' 2>/dev/null | head -1 || true)
     if [ -n "$CS_POD" ]; then
       oc get pod "$CS_POD" -n openshift-marketplace 2>/dev/null || true
@@ -98,20 +129,34 @@ done
 
 if [ "$CS_STATUS" != "READY" ]; then
   echo "❌ CatalogSource not READY after timeout"
-  oc describe catalogsource rhoai-catalog-dev -n openshift-marketplace || true
-  CS_POD=$(oc get pods -n openshift-marketplace -l olm.catalogSource=rhoai-catalog-dev \
+  oc describe catalogsource "${OLMINSTALL_CATALOG_NAME}" -n openshift-marketplace || true
+  CS_POD=$(oc get pods -n openshift-marketplace -l "olm.catalogSource=${OLMINSTALL_CATALOG_NAME}" \
     -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
   [ -n "$CS_POD" ] && oc describe pod "$CS_POD" -n openshift-marketplace 2>/dev/null | tail -30 || true
   fail
 fi
 
-echo "Copying rhoai-quay-pull to ${OPERATOR_NAMESPACE} and linking to all SAs..."
-oc get secret rhoai-quay-pull -n openshift-marketplace -o yaml \
-  | sed "s/namespace: openshift-marketplace/namespace: ${OPERATOR_NAMESPACE}/" \
-  | oc apply -f - || true
+echo "Copying ${QUAY_PULL_SECRET_NAME} to ${OPERATOR_NAMESPACE} and linking to all SAs..."
+if ! oc get secret "${QUAY_PULL_SECRET_NAME}" -n openshift-marketplace -o json \
+    | jq --arg ns "${OPERATOR_NAMESPACE}" '
+        del(
+          .metadata.uid,
+          .metadata.resourceVersion,
+          .metadata.creationTimestamp,
+          .metadata.managedFields,
+          .metadata.ownerReferences,
+          .metadata.selfLink,
+          .metadata.generation,
+          .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"
+        )
+        | .metadata.namespace = $ns
+      ' \
+    | oc apply -f -; then
+  echo "⚠ Failed to copy ${QUAY_PULL_SECRET_NAME} to ${OPERATOR_NAMESPACE} — OLM SA-level pulls may fail"
+fi
 for SA in $(oc get sa -n "${OPERATOR_NAMESPACE}" --no-headers \
     -o custom-columns=':metadata.name' 2>/dev/null); do
-  oc secrets link "$SA" rhoai-quay-pull -n "${OPERATOR_NAMESPACE}" --for=pull 2>/dev/null || true
+  oc secrets link "$SA" "${QUAY_PULL_SECRET_NAME}" -n "${OPERATOR_NAMESPACE}" --for=pull 2>/dev/null || true
 done
 
 # Wait for HyperShift HCCO to sync quay.io/rhoai credentials to node kubelet config.
@@ -160,101 +205,55 @@ else
   fi
 fi
 
-echo "Creating OperatorGroup and Subscription..."
-oc apply -f - <<EOF
-apiVersion: operators.coreos.com/v1
-kind: OperatorGroup
-metadata:
-  name: rhoai-operator-dev
-  namespace: ${OPERATOR_NAMESPACE}
-spec: {}
----
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: rhoai-operator-dev
-  namespace: ${OPERATOR_NAMESPACE}
-spec:
-  channel: ${UPDATE_CHANNEL}
-  name: ${OPERATOR_NAME}
-  source: rhoai-catalog-dev
-  sourceNamespace: openshift-marketplace
-  installPlanApproval: Manual
-EOF
-echo "✓ OLM resources created"
-
-echo "Waiting for InstallPlan in ${OPERATOR_NAMESPACE} (up to 10m)..."
-PLAN="" ITER=0 DEADLINE=$(($(date +%s) + 600))
-while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-  PLAN=$(oc get installplan -n "${OPERATOR_NAMESPACE}" \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-  if [ -n "$PLAN" ]; then
-    echo "Found InstallPlan: $PLAN"
-    oc patch installplan "${PLAN}" -n "${OPERATOR_NAMESPACE}" \
-      --type=merge -p '{"spec":{"approved":true}}' 2>/dev/null || true
-    break
+# ── OLM install via data-hub/olminstall (same call pattern as Jenkins) ────────
+#
+# Fix olminstall's oc_wait_for_csv default namespace (upstream bug; only affects our copy)
+sed -i 's|local namespace="${2:-default}"|local namespace="${2:-'"${OPERATOR_NAMESPACE}"'}"|' \
+  "${OLMINSTALL_DIR}/utils/oc_wait.sh"
+# Resolve olminstall manifest and operator arg.
+# olminstall's install-operator.sh requires resources/install-<name>.yaml to exist.
+# If no operator-specific manifest exists, fall back to rhods-operator and pass that
+# name to install-operator.sh (the manifest is namespace-patched below).
+OLMINSTALL_OPERATOR="${OPERATOR_NAME}"
+OLMINSTALL_MANIFEST="${OLMINSTALL_DIR}/resources/install-${OPERATOR_NAME}.yaml"
+if [[ ! -f "${OLMINSTALL_MANIFEST}" ]]; then
+  FALLBACK_MANIFEST="${OLMINSTALL_DIR}/resources/install-rhods-operator.yaml"
+  if [[ -f "${FALLBACK_MANIFEST}" ]]; then
+    echo "⚠ Manifest install-${OPERATOR_NAME}.yaml not found — using rhods-operator manifest"
+    OLMINSTALL_MANIFEST="${FALLBACK_MANIFEST}"
+    OLMINSTALL_OPERATOR="rhods-operator"
+  else
+    fail "❌ No olminstall manifest found for operator ${OPERATOR_NAME}"
   fi
-  ITER=$((ITER + 1))
-  echo "  waiting for InstallPlan... (iter ${ITER})"
-  if [ $((ITER % 3)) -eq 0 ]; then
-    UNPACK_JOB=$(oc get jobs -n openshift-marketplace --no-headers 2>/dev/null \
-      | grep -v "catalog-operator\|rhoai-catalog" | awk '{print $1}' | head -1 || true)
-    if [ -n "$UNPACK_JOB" ]; then
-      UNPACK_POD=$(oc get pods -n openshift-marketplace -l "job-name=${UNPACK_JOB}" \
-        --no-headers 2>/dev/null | awk '{print $1}' | head -1 || true)
-      if [ -n "$UNPACK_POD" ]; then
-        echo "  [diag] unpack job=${UNPACK_JOB} pod=${UNPACK_POD}:"
-        oc get pod "$UNPACK_POD" -n openshift-marketplace 2>/dev/null || true
-        oc get pod "$UNPACK_POD" -n openshift-marketplace \
-          -o jsonpath='sa={.spec.serviceAccountName} imagePullSecrets={.spec.imagePullSecrets}{"\n"}' \
-          2>/dev/null || true
-        oc get events -n openshift-marketplace \
-          --field-selector "involvedObject.name=${UNPACK_POD}" 2>/dev/null | tail -3 || true
-      fi
-    fi
-  fi
-  sleep 15
-done
+fi
 
-if [ -z "$PLAN" ]; then
-  echo "❌ No InstallPlan after timeout"
-  oc get sub,catalogsource,installplan -n "${OPERATOR_NAMESPACE}" || true
+# Patch only the namespace field in the manifest, not every occurrence of the
+# string (which would corrupt Subscription/OperatorGroup names and label values).
+sed -i "s|^\(\s*namespace:\s*\)redhat-ods-operator\s*$|\1${OPERATOR_NAMESPACE}|" "${OLMINSTALL_MANIFEST}"
+
+echo "Running olminstall (./install-operator.sh ${OLMINSTALL_OPERATOR} ${UPDATE_CHANNEL} ${OLMINSTALL_CATALOG_NAME})..."
+(cd "${OLMINSTALL_DIR}" && \
+  ./install-operator.sh "${OLMINSTALL_OPERATOR}" "${UPDATE_CHANNEL}" "${OLMINSTALL_CATALOG_NAME}") || {
+  echo "❌ olminstall install-operator.sh failed"
+  oc get sub,csv,installplan -n "${OPERATOR_NAMESPACE}" || true
   oc describe sub -n "${OPERATOR_NAMESPACE}" || true
-  oc get jobs -n openshift-marketplace 2>/dev/null || true
-  UNPACK_POD=$(oc get pods -n openshift-marketplace \
-    -o jsonpath='{.items[*].metadata.name}' 2>/dev/null \
-    | tr ' ' '\n' | grep -i unpack | head -1 || true)
-  [ -n "$UNPACK_POD" ] && oc describe pod "$UNPACK_POD" -n openshift-marketplace 2>/dev/null | tail -40 || true
+  fail
+}
+
+# Match the CSV olminstall actually installed (OLMINSTALL_OPERATOR may be rhods-operator
+# when OPERATOR_NAME is opendatahub-operator and we use the rhods-operator manifest fallback).
+CSV_VERSION=$(oc get csv -n "${OPERATOR_NAMESPACE}" -o json 2>/dev/null \
+  | jq -r --arg op "${OLMINSTALL_OPERATOR}" '
+      [ .items[]
+        | select(.status.phase == "Succeeded")
+        | select((.metadata.name // "" | startswith($op))
+                 or (.spec.displayName // "" | test($op; "i"))) ]
+      | first | .spec.version // empty')
+if [[ -z "${CSV_VERSION}" || "${CSV_VERSION}" == "unknown" ]]; then
+  echo "❌ No CSV reached Succeeded phase in namespace ${OPERATOR_NAMESPACE}"
+  oc get csv -n "${OPERATOR_NAMESPACE}" || true
   fail
 fi
-
-echo "Waiting for CSV to reach Succeeded in ${OPERATOR_NAMESPACE} (up to 15m)..."
-CSV_NAME=""
-if ! oc wait csv -n "${OPERATOR_NAMESPACE}" \
-    -l "operators.coreos.com/${OPERATOR_NAME}.${OPERATOR_NAMESPACE}=" \
-    --for=jsonpath='{.status.phase}'=Succeeded --timeout=15m 2>/dev/null; then
-  CSV_NAME=$(oc get csv -n "${OPERATOR_NAMESPACE}" \
-    -o jsonpath='{.items[?(@.spec.displayName=="Red Hat OpenShift AI")].metadata.name}' \
-    2>/dev/null | awk '{print $1}')
-  [ -z "$CSV_NAME" ] && CSV_NAME=$(oc get csv -n "${OPERATOR_NAMESPACE}" \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-  if [ -z "$CSV_NAME" ]; then
-    echo "❌ No CSV found in ${OPERATOR_NAMESPACE}"
-    oc get sub,csv,installplan -n "${OPERATOR_NAMESPACE}" || true
-    fail
-  fi
-  echo "Retrying wait on CSV: ${CSV_NAME}"
-  if ! oc wait csv "${CSV_NAME}" -n "${OPERATOR_NAMESPACE}" \
-      --for=jsonpath='{.status.phase}'=Succeeded --timeout=15m; then
-    echo "❌ CSV ${CSV_NAME} did not reach Succeeded"
-    oc get csv "${CSV_NAME}" -n "${OPERATOR_NAMESPACE}" -o yaml | tail -40 || true
-    fail
-  fi
-fi
-
-CSV_VERSION=$(oc get csv -n "${OPERATOR_NAMESPACE}" \
-  -o jsonpath="{.items[?(@.spec.displayName=='Red Hat OpenShift AI')].spec.version}" \
-  2>/dev/null || echo "unknown")
 echo -n "${CSV_VERSION}" > "${OPERATOR_VERSION_PATH}"
 
 echo ""
@@ -280,4 +279,5 @@ echo " Installed CRDs (rhoai):"
 oc get crd 2>/dev/null | grep -iE "opendatahub|datasciencecluster|rhoai|kfdef" | awk '{print "  "$1}' || true
 echo "========================================="
 echo "✅ Installation complete — operator version: ${CSV_VERSION}"
+trap - ERR INT TERM HUP
 echo -n "SUCCESS" > "${INSTALL_STATUS_PATH}"

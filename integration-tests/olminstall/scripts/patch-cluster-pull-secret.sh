@@ -18,31 +18,42 @@
 #    pod-level secrets.
 #
 # ** Internal Tekton pipeline step — not meant to be called directly. **
-# To trigger the test from your laptop use:  integration-tests/olminstall/run-test.sh
+# To trigger the test from your laptop use:  integration-tests/olminstall/run-olminstall.sh
 #
 # In Tekton the quay secret is volume-mounted at /var/secret/quay/.dockerconfigjson.
 
-set -eo pipefail
+set -euo pipefail
 
-QUAY=$(cat /var/secret/quay/.dockerconfigjson)
+QUAY_SECRET="/var/secret/quay/.dockerconfigjson"
+if [ ! -f "$QUAY_SECRET" ]; then
+  echo "❌ Quay secret not mounted at ${QUAY_SECRET}"
+  exit 1
+fi
 
-# Extract an auth token from any quay.io/rhoai/* key as the wildcard quay.io auth.
+QUAY=$(cat "$QUAY_SECRET")
+
 QUAY_AUTH=$(echo "$QUAY" | jq -r '
   .auths["quay.io"].auth //
   .auths["quay.io/rhoai"].auth //
   .auths["quay.io/rhoai/rhoai-fbc-fragment"].auth //
   (.auths | to_entries | map(select(.key | startswith("quay.io/rhoai/"))) | first | .value.auth) //
   empty')
-
-# Add bare quay.io entry to cover any quay.io/rhoai/* pull.
-if [ -n "$QUAY_AUTH" ]; then
-  QUAY=$(echo "$QUAY" | jq --arg a "$QUAY_AUTH" '.auths["quay.io"] = {"auth": $a}')
+if [ -z "$QUAY_AUTH" ]; then
+  echo "❌ No quay.io/rhoai auth token found in ${QUAY_SECRET}"
+  exit 1
 fi
+
+QUAY=$(echo "$QUAY" | jq --arg a "$QUAY_AUTH" '.auths["quay.io"] = {"auth": $a}')
 
 echo "Patching cluster global pull secret with quay.io/rhoai credentials..."
 EXISTING=$(oc get secret/pull-secret -n openshift-config \
   -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d)
-MERGED=$(jq -s '.[0].auths * .[1].auths | {auths: .}' <(echo "$EXISTING") <(echo "$QUAY"))
+MERGED=$(jq -s '.[0] * {auths: ((.[0].auths // {}) * (.[1].auths // {}))}' \
+  <(echo "$EXISTING") <(echo "$QUAY"))
+if [ -z "$MERGED" ] || [ "$MERGED" = "null" ]; then
+  echo "❌ jq merge produced empty result"
+  exit 1
+fi
 oc patch secret/pull-secret -n openshift-config \
   --type=merge \
   -p "{\"data\":{\".dockerconfigjson\":\"$(echo -n "$MERGED" | base64 -w0)\"}}"
@@ -67,7 +78,7 @@ if [ -n "$QUAY_AUTH" ]; then
 fi
 oc create secret generic additional-pull-secret \
   -n kube-system \
-  --from-literal=.dockerconfigjson="$(echo "$RHOAI_CREDS")" \
+  --from-literal=.dockerconfigjson="$RHOAI_CREDS" \
   --type=kubernetes.io/dockerconfigjson \
   --dry-run=client -o yaml | oc apply -f -
 echo "✓ additional-pull-secret created in kube-system"

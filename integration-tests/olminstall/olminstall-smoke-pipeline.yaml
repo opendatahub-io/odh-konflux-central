@@ -12,7 +12,7 @@ spec:
   description: >-
     ODH/RHOAI integration test: provisions an ephemeral cluster via Konflux EaaS (HyperShift),
     installs the operator with olminstall from the FBCF image in the Konflux snapshot, and runs
-    basic smoke verification. BVT is tracked separately (see README).
+    basic smoke verification. Post-install BVT is out of scope here; see README (Maintenance).
 
   params:
     - name: SNAPSHOT
@@ -34,12 +34,17 @@ spec:
     - name: OPERATOR_NAMESPACE
       description: Namespace for operator installation
       type: string
-      default: "opendatahub-operators"
+      default: "redhat-ods-operator"
 
     - name: OPERATOR_NAME
       description: OLM package / deployment name (e.g. rhods-operator for RHOAI)
       type: string
       default: "rhods-operator"
+
+    - name: OLMINSTALL_CATALOG_NAME
+      description: CatalogSource name used by olminstall install-operator.sh
+      type: string
+      default: "rhoai-catalog-dev"
 
     - name: HYPERSHIFT_INSTANCE_TYPE
       description: AWS instance type for ephemeral HyperShift workers
@@ -49,12 +54,30 @@ spec:
     - name: SCRIPTS_REPO_URL
       description: Git repo containing the pipeline step scripts
       type: string
-      default: "https://github.com/manosnoam/odh-konflux-central.git"
+      default: "https://github.com/opendatahub-io/odh-konflux-central.git"
 
     - name: SCRIPTS_REPO_REVISION
       description: Branch/tag/SHA of the scripts repo to clone
       type: string
-      default: "add-olminstall-its"
+      default: "main"
+
+    - name: OLMINSTALL_REPO_URL
+      description: |
+        olminstall repo URL — provides tested OLM
+        install manifests (resources/install-rhods-operator.yaml) and utility
+        scripts (utils/oc_wait.sh, utils/oc_approve.sh).
+      type: string
+      default: "https://gitlab.cee.redhat.com/data-hub/olminstall.git"
+
+    - name: OLMINSTALL_REPO_REVISION
+      description: Branch/tag/SHA of data-hub/olminstall to clone
+      type: string
+      default: "main"
+
+    - name: QUAY_PULL_SECRET_NAME
+      description: Name of the namespace secret containing quay.io/rhoai dockerconfigjson
+      type: string
+      default: "rhoai-quay-secret"
 
   results:
     - name: TEST_OUTPUT
@@ -78,22 +101,27 @@ spec:
             description: Extracted FBCF image URL
         steps:
           - name: parse-snapshot
-            image: quay.io/konflux-ci/konflux-test:stable
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+              - name: COMPONENT_NAME
+                value: $(params.COMPONENT_NAME)
             script: |
               #!/bin/bash
-              set -e
+              set -euo pipefail
 
               echo "Parsing Konflux snapshot..."
-              FBCF_IMAGE=$(echo '$(params.SNAPSHOT)' | \
-                jq -r '.components[] | select(.name=="$(params.COMPONENT_NAME)") | .containerImage')
+              FBCF_IMAGE=$(echo "$SNAPSHOT" | \
+                jq -r --arg name "$COMPONENT_NAME" '.components[] | select(.name==$name) | .containerImage')
 
               if [ -z "$FBCF_IMAGE" ] || [ "$FBCF_IMAGE" == "null" ]; then
-                echo "❌ Failed to extract FBCF image from snapshot for component: $(params.COMPONENT_NAME)"
+                echo "❌ Failed to extract FBCF image from snapshot for component: ${COMPONENT_NAME}"
                 exit 1
               fi
 
               echo "✓ Extracted FBCF Image: ${FBCF_IMAGE}"
-              echo -n "${FBCF_IMAGE}" > $(results.FBCF_IMAGE.path)
+              echo -n "${FBCF_IMAGE}" > "$(results.FBCF_IMAGE.path)"
       params:
         - name: SNAPSHOT
           value: $(params.SNAPSHOT)
@@ -153,27 +181,82 @@ spec:
               - name: prefix
                 value: "$(steps.get-supported-versions.results.versions[0])."
           - name: create-cluster
-            ref:
-              resolver: git
-              params:
-                - name: url
-                  value: https://github.com/konflux-ci/build-definitions.git
-                - name: revision
-                  value: main
-                - name: pathInRepo
-                  value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
-            params:
-              - name: eaasSpaceSecretRef
-                value: $(tasks.provision-eaas-space.results.secretRef)
-              - name: version
-                value: "$(steps.pick-version.results.version)"
-              - name: instanceType
+            image: quay.io/konflux-ci/task-runner:1.5.0@sha256:200019314a50be5b6dd06f362c794c92a700583a522c5eee9a41e3eab7f706c5
+            results:
+              - name: clusterName
+                type: string
+            env:
+              - name: INSTANCE_TYPE
                 value: $(params.HYPERSHIFT_INSTANCE_TYPE)
-              - name: imageContentSources
+              - name: VERSION
+                value: "$(steps.pick-version.results.version)"
+              - name: KUBECONFIG_VALUE
+                valueFrom:
+                  secretKeyRef:
+                    name: $(tasks.provision-eaas-space.results.secretRef)
+                    key: kubeconfig
+              - name: TENANT
+                value: "$(context.taskRun.namespace)"
+              - name: TIMEOUT
+                value: "30m"
+              - name: ICS_VALUE
                 value: |
                   - mirrors:
                       - quay.io/rhoai
                     source: registry.redhat.io/rhoai
+            script: |
+              #!/bin/bash
+              set -eo pipefail
+              export KUBECONFIG=/tmp/kubeconfig
+              echo "$KUBECONFIG_VALUE" > "$KUBECONFIG"
+              trap 'rm -f "$KUBECONFIG"' EXIT
+
+              export ICS_VALUE
+              cat > cti.yaml <<EOF
+              ---
+              apiVersion: clustertemplate.openshift.io/v1alpha1
+              kind: ClusterTemplateInstance
+              metadata:
+                generateName: cluster-
+                labels:
+                  eaas.konflux-ci.dev/tenant: $TENANT
+              spec:
+                clusterTemplateRef: hypershift-aws-cluster
+                parameters: []
+              EOF
+              yq -i '.spec.parameters += {"name": "instanceType", "value": strenv(INSTANCE_TYPE)}' cti.yaml
+              yq -i '.spec.parameters += {"name": "version", "value": strenv(VERSION)}' cti.yaml
+              yq -i '.spec.parameters += {"name": "timeout", "value": strenv(TIMEOUT)}' cti.yaml
+              yq -i '.spec.parameters += {"name": "imageContentSources", "value": strenv(ICS_VALUE)}' cti.yaml
+              yq -i '.spec.parameters += {"name": "fips", "value": "false"}' cti.yaml
+
+              echo "Creating ephemeral cluster (OCP ${VERSION}, ${INSTANCE_TYPE})..."
+              cat cti.yaml
+
+              KUBECTL=(kubectl)
+              CTI_NAME=$("${KUBECTL[@]}" create -f cti.yaml -o=jsonpath='{.metadata.name}')
+              echo "Created ClusterTemplateInstance ${CTI_NAME}"
+              echo -n "$CTI_NAME" > "$(step.results.clusterName.path)"
+
+              DEADLINE=$(($(date +%s) + 1800))
+              echo "Waiting for cluster to be ready (up to 30m)..."
+              while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+                PHASE=$("${KUBECTL[@]}" get cti "$CTI_NAME" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                MSG=$("${KUBECTL[@]}" get cti "$CTI_NAME" -o jsonpath='{.status.message}' 2>/dev/null || true)
+                echo "  phase=${PHASE}${MSG:+  ($MSG)}"
+                if [ "$PHASE" = "Ready" ]; then
+                  echo "✓ Successfully provisioned ${CTI_NAME}"
+                  exit 0
+                elif [ "$PHASE" = "Failed" ] || [ "$PHASE" = "Error" ]; then
+                  echo "❌ Cluster provisioning failed"
+                  "${KUBECTL[@]}" get cti "$CTI_NAME" -o yaml
+                  exit 1
+                fi
+                sleep 30
+              done
+              echo "❌ Timed out waiting for cluster"
+              "${KUBECTL[@]}" get cti "$CTI_NAME" -o yaml
+              exit 1
 
     - name: install-operator
       runAfter:
@@ -187,6 +270,16 @@ spec:
           value: $(params.OPERATOR_NAMESPACE)
         - name: OPERATOR_NAME
           value: $(params.OPERATOR_NAME)
+        - name: OLMINSTALL_REPO_URL
+          value: $(params.OLMINSTALL_REPO_URL)
+        - name: OLMINSTALL_REPO_REVISION
+          value: $(params.OLMINSTALL_REPO_REVISION)
+        - name: OLMINSTALL_CATALOG_NAME
+          value: $(params.OLMINSTALL_CATALOG_NAME)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
       taskSpec:
         params:
           - name: FBCF_IMAGE
@@ -196,6 +289,16 @@ spec:
           - name: OPERATOR_NAMESPACE
             type: string
           - name: OPERATOR_NAME
+            type: string
+          - name: OLMINSTALL_REPO_URL
+            type: string
+          - name: OLMINSTALL_REPO_REVISION
+            type: string
+          - name: OLMINSTALL_CATALOG_NAME
+            type: string
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
             type: string
         results:
           - name: INSTALL_STATUS
@@ -207,7 +310,7 @@ spec:
             emptyDir: {}
           - name: quay-pull-secret
             secret:
-              secretName: rhoai-quay-secret
+              secretName: $(params.QUAY_PULL_SECRET_NAME)
         steps:
           - name: get-kubeconfig
             ref:
@@ -228,16 +331,70 @@ spec:
                 value: credentials
 
           - name: clone-repo
-            image: quay.io/rhoai/rhoai-task-toolset:its
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
             script: |
               #!/bin/bash
-              set -eo pipefail
-              git clone --depth=1 -b $(params.SCRIPTS_REPO_REVISION) \
-                $(params.SCRIPTS_REPO_URL) /workspace/repo
-              echo "✓ Cloned $(params.SCRIPTS_REPO_URL)@$(params.SCRIPTS_REPO_REVISION)"
+              set -euo pipefail
+              echo "Cloning ${REPO_URL}@${REPO_REV}..."
+              rm -rf /workspace/repo
+              mkdir -p /workspace/repo
+              cd /workspace/repo
+              git init -q
+              git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}"
+              git checkout -q FETCH_HEAD
+              echo "✓ Cloned ${REPO_URL}@${REPO_REV}"
+
+          - name: clone-olminstall
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            env:
+              - name: REPO_URL
+                value: $(params.OLMINSTALL_REPO_URL)
+              - name: REPO_REV
+                value: $(params.OLMINSTALL_REPO_REVISION)
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+
+              # Trust the Red Hat internal CA chain.
+              if [ -d /etc/pki/ca-trust/source/anchors ]; then
+                update-ca-trust 2>/dev/null || true
+              fi
+              # Verify TLS. For known internal Red Hat hosts (gitlab.cee.redhat.com)
+              # apply a host-scoped sslVerify=false when the CA bundle isn't in the
+              # container image — narrower than a global GIT_SSL_NO_VERIFY env var.
+              # TODO: bake the RH IT root CA into quay.io/rhoai/rhoai-task-toolset:its
+              #       or mount it as a ConfigMap to remove this exception entirely.
+              if ! git ls-remote --exit-code "${REPO_URL}" HEAD &>/dev/null; then
+                _host=$(echo "${REPO_URL}" | grep -oE "https?://[^/]+")
+                if echo "${_host}" | grep -qE "gitlab\.cee\.redhat\.com|git\.corp\.redhat\.com"; then
+                  echo "⚠ TLS verification failed for internal host ${REPO_URL}"
+                  echo "  Applying host-scoped sslVerify=false (TODO: bake RH IT CA into image)"
+                  git config --global "http.${_host}.sslVerify" false
+                else
+                  echo "❌ TLS verification failed for ${REPO_URL}."
+                  echo "   Mount the internal CA bundle into the container so git ls-remote succeeds."
+                  exit 1
+                fi
+              fi
+
+              echo "Cloning ${REPO_URL}@${REPO_REV}..."
+              rm -rf /workspace/olminstall
+              mkdir -p /workspace/olminstall
+              cd /workspace/olminstall
+              git init -q
+              git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}"
+              git checkout -q FETCH_HEAD
+              echo "✓ Cloned ${REPO_URL}@${REPO_REV}"
 
           - name: patch-cluster-pull-secret
-            image: quay.io/rhoai/rhoai-task-toolset:its
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
             volumeMounts:
               - name: credentials
                 mountPath: /credentials
@@ -253,7 +410,7 @@ spec:
               exec /workspace/repo/integration-tests/olminstall/scripts/patch-cluster-pull-secret.sh
 
           - name: install-and-verify
-            image: quay.io/rhoai/rhoai-task-toolset:its
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
             volumeMounts:
               - name: credentials
                 mountPath: /credentials
@@ -268,6 +425,12 @@ spec:
                 value: $(params.OPERATOR_NAMESPACE)
               - name: OPERATOR_NAME
                 value: $(params.OPERATOR_NAME)
+              - name: OLMINSTALL_DIR
+                value: /workspace/olminstall
+              - name: OLMINSTALL_CATALOG_NAME
+                value: $(params.OLMINSTALL_CATALOG_NAME)
+              - name: QUAY_PULL_SECRET_NAME
+                value: $(params.QUAY_PULL_SECRET_NAME)
               - name: INSTALL_STATUS_PATH
                 value: $(results.INSTALL_STATUS.path)
               - name: OPERATOR_VERSION_PATH
@@ -279,9 +442,16 @@ spec:
   finally:
     - name: collect-diagnostics
       when:
-        - input: "$(tasks.install-operator.status)"
+        - input: "$(tasks.status)"
           operator: in
           values: ["Failed"]
+        # Only attempt cluster diagnostics when the cluster was actually provisioned;
+        # this avoids Tekton silently skipping this task due to missing result
+        # references when provision-cluster itself failed or was skipped.
+        # post-results always fires on failure for the notification side.
+        - input: "$(tasks.provision-cluster.status)"
+          operator: in
+          values: ["Succeeded"]
       params:
         - name: OPERATOR_NAMESPACE
           value: $(params.OPERATOR_NAMESPACE)
@@ -311,7 +481,7 @@ spec:
               - name: credentials
                 value: credentials
           - name: oc-adm-inspect
-            image: quay.io/rhoai/rhoai-task-toolset:its
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
             volumeMounts:
               - name: credentials
                 mountPath: /credentials
@@ -322,7 +492,7 @@ spec:
                 value: $(params.OPERATOR_NAMESPACE)
             script: |
               #!/bin/bash
-              set -eux
+              set -eu
               oc adm inspect "ns/${OPERATOR_NAMESPACE}" --dest-dir=/tmp/inspect || true
               oc get csv -n "${OPERATOR_NAMESPACE}" -o yaml || true
               echo "=== Bundle-unpack job diagnostics ==="
@@ -350,39 +520,44 @@ spec:
 
     - name: post-results
       when:
-        - input: "$(tasks.install-operator.status)"
+        - input: "$(tasks.status)"
           operator: in
           values: ["Succeeded", "Failed"]
       taskSpec:
         params:
           - name: FBCF_IMAGE
             type: string
+            default: "(unknown — extract-fbcf-image did not complete)"
           - name: TEST_STATUS
             type: string
+            default: "FAILED"
           - name: OPERATOR_VERSION
             type: string
+            default: "(unknown)"
           - name: PIPELINE_RUN_NAME
             type: string
         steps:
           - name: send-notification
-            image: quay.io/konflux-ci/konflux-test:stable
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
               - name: SLACK_WEBHOOK_URL
                 valueFrom:
                   secretKeyRef:
-                    name: olminstall-slack-webhook
+                    name: slack-webhook
                     key: webhook-url
                     optional: true
             script: |
               #!/bin/bash
               set -e
 
-              if [ "$(params.TEST_STATUS)" == "SUCCESS" ]; then
+              # TEST_STATUS comes from $(tasks.install-operator.status) which
+              # returns Tekton task-status strings: Succeeded, Failed, None, Skipped.
+              if [ "$(params.TEST_STATUS)" == "Succeeded" ]; then
                 EMOJI="✅"
                 STATUS_TEXT="PASSED"
               else
                 EMOJI="❌"
-                STATUS_TEXT="FAILED"
+                STATUS_TEXT="FAILED (task status: $(params.TEST_STATUS))"
               fi
 
               MSG="${EMOJI} ODH olminstall smoke test ${STATUS_TEXT}"
@@ -403,11 +578,23 @@ spec:
                 echo "---"
               fi
       params:
+        # NOTE: Do NOT reference $(tasks.extract-fbcf-image.results.*) here.
+        # In Tekton v1, a finally task that references a result from a
+        # skipped/failed task is itself skipped — so diagnostics and Slack
+        # notifications would silently not fire on the most important failures.
+        # We pass the component name as a human-readable identifier instead;
+        # the pipeline-level FBCF_IMAGE result carries the resolved image if
+        # extract-fbcf-image succeeded, but we cannot safely reference it here.
         - name: FBCF_IMAGE
-          value: $(tasks.extract-fbcf-image.results.FBCF_IMAGE)
+          value: "$(params.FBCF_COMPONENT_NAME)"
+        # Use $(tasks.<name>.status) — not a result reference — so Tekton does
+        # not skip this finally task when install-operator was itself skipped or
+        # failed. "None" is the Tekton status value when the task never ran.
         - name: TEST_STATUS
-          value: $(tasks.install-operator.results.INSTALL_STATUS)
+          value: "$(tasks.install-operator.status)"
+        # OPERATOR_VERSION is a best-effort field: pass a safe literal so the
+        # task is never skipped due to a missing result reference.
         - name: OPERATOR_VERSION
-          value: $(tasks.install-operator.results.OPERATOR_VERSION)
+          value: "(see pipeline run logs)"
         - name: PIPELINE_RUN_NAME
           value: $(context.pipelineRun.name)
