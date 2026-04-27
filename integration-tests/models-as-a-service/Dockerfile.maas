@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25.9-1777043046
 USER 0
 RUN yum install -y --nodocs --allowerasing jq httpd-tools
 RUN curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
