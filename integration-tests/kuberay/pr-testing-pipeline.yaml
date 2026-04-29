@@ -202,7 +202,7 @@ spec:
                   value: $(params.SNAPSHOT)
                 - name: ARTIFACT_DIR
                   value: /workspace/artifacts-dir
-              workingDir: /workspace/source
+              workingDir: /tmp
               volumeMounts:
                 - name: credentials
                   mountPath: /credentials
@@ -250,24 +250,29 @@ spec:
                 oc create namespace ${NAMESPACE} --dry-run=client -o yaml | oc apply -f -
 
                 # Clone kuberay at the PR commit for test source
+                # Use /tmp to avoid workspace permission issues with OpenShift SCC
+                KUBERAY_SRC="/tmp/kuberay_src"
                 echo "Cloning kuberay at commit ${KUBERAY_GIT_COMMIT}..."
-                mkdir kuberay_src
-                git -C kuberay_src init
-                git -C kuberay_src fetch "${KUBERAY_GIT_URL}" "${KUBERAY_GIT_COMMIT}" --depth=1
-                git -C kuberay_src checkout FETCH_HEAD
+                mkdir -p "${KUBERAY_SRC}"
+                git -C "${KUBERAY_SRC}" init
+                git -C "${KUBERAY_SRC}" fetch "${KUBERAY_GIT_URL}" "${KUBERAY_GIT_COMMIT}" --depth=1
+                git -C "${KUBERAY_SRC}" checkout FETCH_HEAD
 
                 # Deploy the operator using the image built by the Konflux PR build pipeline
                 echo "Deploying kuberay operator (image: ${KUBERAY_IMAGE})..."
-                echo "namespace=${NAMESPACE}" > kuberay_src/ray-operator/config/openshift/params.env
+                echo "namespace=${NAMESPACE}" > "${KUBERAY_SRC}/ray-operator/config/openshift/params.env"
                 echo "odh-kuberay-operator-controller-image=${KUBERAY_IMAGE}" \
-                  >> kuberay_src/ray-operator/config/openshift/params.env
-                kubectl apply -k kuberay_src/ray-operator/config/openshift/ \
+                  >> "${KUBERAY_SRC}/ray-operator/config/openshift/params.env"
+                kubectl apply -k "${KUBERAY_SRC}/ray-operator/config/openshift/" \
                   --server-side --force-conflicts
                 oc rollout status deployment/kuberay-operator -n ${NAMESPACE} --timeout=300s
 
+                # Grant anyuid SCC to all service accounts so Ray pods can start in test-ns-* namespaces
+                oc adm policy add-scc-to-group anyuid system:serviceaccounts
+
                 # Run e2e tests directly from the cloned source
                 echo "Running kuberay e2e tests..."
-                cd kuberay_src/ray-operator
+                cd "${KUBERAY_SRC}/ray-operator"
                 # Bump Ray cluster resources to build-image scenario (head: 6G req / 10G limit)
                 go run ../scripts/update-resources.go -scenario build-image test/e2e/support.go
                 # Extend gotestsum timeout to 90m to account for large image pulls on fresh cluster
@@ -296,7 +301,7 @@ spec:
                   value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
                 - name: ARTIFACT_DIR
                   value: /workspace/artifacts-dir
-              workingDir: /workspace/source
+              workingDir: /tmp
               volumeMounts:
                 - name: credentials
                   mountPath: /credentials
@@ -313,6 +318,13 @@ spec:
                   > "${ARTIFACT_DIR}/gather-kuberay/operator-deployment.txt" 2>/dev/null || true
                 oc logs deployment/kuberay-operator -n ${NAMESPACE} \
                   > "${ARTIFACT_DIR}/gather-kuberay/operator-logs.txt" 2>/dev/null || true
+                oc get pods -A --field-selector=metadata.namespace!=${NAMESPACE} \
+                  > "${ARTIFACT_DIR}/gather-kuberay/all-test-pods.txt" 2>/dev/null || true
+                oc describe pods -A --field-selector=metadata.namespace!=${NAMESPACE} \
+                  > "${ARTIFACT_DIR}/gather-kuberay/all-test-pods-describe.txt" 2>/dev/null || true
+                oc get events -A --field-selector=metadata.namespace!=${NAMESPACE} \
+                  --sort-by='.lastTimestamp' \
+                  > "${ARTIFACT_DIR}/gather-kuberay/all-test-events.txt" 2>/dev/null || true
 
             - name: git-push-artifacts
               ref:
