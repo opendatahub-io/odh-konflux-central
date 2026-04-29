@@ -1,0 +1,41 @@
+---
+# Sandbox ITS for development/iteration — bound to testops-playpen so runs
+# are visible in the Konflux UI without requiring access to the production
+# rhoai-fbc-fragment-ocp-421 application.
+# Snapshots are triggered manually (see test-snapshot.yaml).
+# Kept in-tree as a reference manifest for sandbox debugging.
+#
+# Usage:
+#   oc apply -n rhoai-tenant -f integration-tests/olminstall/its-olminstall-rhoai-tenant.yaml
+#   oc create -n rhoai-tenant -f integration-tests/olminstall/test-snapshot.yaml
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "true"
+  name: odh-olminstall-smoke-testops
+  namespace: rhoai-tenant
+spec:
+  application: testops-playpen
+  contexts:
+    - description: Execute olminstall smoke test (sandbox / manual trigger)
+      name: application
+  # Optional SCRIPTS_REPO_URL / SCRIPTS_REPO_REVISION here to override the pipeline
+  # default (opendatahub-io odh-konflux-central @ main). Or: run-olminstall.sh --konflux-repo …
+  params:
+    - name: FBCF_COMPONENT_NAME
+      value: "rhoai-fbc-fragment-ocp-421"
+    - name: OPERATOR_NAME
+      value: "rhods-operator"
+    - name: QUAY_PULL_SECRET_NAME
+      value: "rhoai-quay-secret"
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/olminstall/olminstall-smoke-pipeline.yaml
+    resolver: git
+    resourceKind: pipeline

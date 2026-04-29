@@ -1,0 +1,37 @@
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "true"
+  name: odh-olminstall-smoke
+  namespace: open-data-hub-tenant
+  annotations:
+    openshift.io/description: >
+      FBCF olminstall smoke for opendatahub-builds. For rhoai-tenant or other apps, duplicate this ITS with
+      updated namespace/application/contexts after stakeholder alignment (see README).
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: Execute olminstall smoke test when FBCF (odh-operator-catalog) is built
+      name: component_odh-operator-catalog
+  params:
+    - name: FBCF_COMPONENT_NAME
+      value: "odh-operator-catalog"
+    - name: UPDATE_CHANNEL
+      value: "odh-stable"
+    - name: OPERATOR_NAME
+      value: "opendatahub-operator"
+    - name: OPERATOR_NAMESPACE
+      value: "opendatahub-operators"
+    - name: QUAY_PULL_SECRET_NAME
+      value: "odh-quay-secret"
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/olminstall/olminstall-smoke-pipeline.yaml
+    resolver: git
+    resourceKind: pipeline

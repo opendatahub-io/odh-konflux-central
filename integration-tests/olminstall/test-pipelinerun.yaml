@@ -1,0 +1,46 @@
+---
+# Manual test PipelineRun for olminstall smoke scenario.
+# Usage:
+#   oc create -n rhoai-tenant -f integration-tests/olminstall/test-pipelinerun.yaml
+#
+# The run fetches the pipeline from the git resolver (url/revision below).
+# Update `revision` to your branch while iterating; set to `main` after merge.
+# Update `containerImage` to a known good FBCF image to test against.
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: test-olminstall-
+  labels:
+    appstudio.openshift.io/application: testops-playpen
+spec:
+  pipelineRef:
+    resolver: git
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/olminstall/olminstall-smoke-pipeline.yaml
+  params:
+    - name: SNAPSHOT
+      value: |
+        {
+          "components": [{
+            "name": "odh-operator-catalog",
+            "containerImage": "quay.io/opendatahub/odh-operator-catalog:odh-stable"
+          }]
+        }
+    - name: FBCF_COMPONENT_NAME
+      value: odh-operator-catalog
+    - name: UPDATE_CHANNEL
+      value: odh-stable
+    - name: OPERATOR_NAMESPACE
+      value: opendatahub-operators
+    - name: OPERATOR_NAME
+      value: opendatahub-operator
+    - name: OLMINSTALL_REPO_URL
+      value: https://gitlab.cee.redhat.com/data-hub/olminstall.git
+    # ODH uses a different pull-secret name; the pipeline default is rhoai-quay-secret
+    - name: QUAY_PULL_SECRET_NAME
+      value: odh-quay-secret
