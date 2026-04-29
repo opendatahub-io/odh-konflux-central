@@ -270,9 +270,12 @@ spec:
                 cd kuberay_src/ray-operator
                 # Bump Ray cluster resources to build-image scenario (head: 6G req / 10G limit)
                 go run ../scripts/update-resources.go -scenario build-image test/e2e/support.go
-                # Extend gotestsum timeout to 60m to account for large image pulls on fresh cluster
-                sed -i 's/-timeout 30m/-timeout 60m/' images/tests/run-tests.sh
+                # Extend gotestsum timeout to 90m to account for large image pulls on fresh cluster
+                sed -i 's/-timeout 30m/-timeout 90m/' images/tests/run-tests.sh
                 cp images/tests/.env-odh .
+                # Extend Eventually timeouts: MEDIUM covers RayCluster/RayJob readiness waits
+                sed -i 's/KUBERAY_TEST_TIMEOUT_MEDIUM=10m/KUBERAY_TEST_TIMEOUT_MEDIUM=20m/' .env-odh
+                sed -i 's/KUBERAY_TEST_TIMEOUT_LONG=12m/KUBERAY_TEST_TIMEOUT_LONG=25m/' .env-odh
                 bash images/tests/run-tests.sh -testTier=Tier1 \
                   2>&1 | tee "${ARTIFACT_DIR}/its-tests.log"
                 TEST_EXIT_CODE=${PIPESTATUS[0]}
