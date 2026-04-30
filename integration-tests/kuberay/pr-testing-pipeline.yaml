@@ -258,6 +258,54 @@ spec:
                 git -C "${KUBERAY_SRC}" fetch "${KUBERAY_GIT_URL}" "${KUBERAY_GIT_COMMIT}" --depth=1
                 git -C "${KUBERAY_SRC}" checkout FETCH_HEAD
 
+                echo "Installing cert-manager (required by KubeRay mTLS)..."
+                oc apply -f - <<EOF
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: cert-manager-operator
+                ---
+                apiVersion: operators.coreos.com/v1
+                kind: OperatorGroup
+                metadata:
+                  name: cert-manager-operator
+                  namespace: cert-manager-operator
+                spec:
+                  targetNamespaces:
+                  - cert-manager-operator
+                ---
+                apiVersion: operators.coreos.com/v1alpha1
+                kind: Subscription
+                metadata:
+                  name: openshift-cert-manager-operator
+                  namespace: cert-manager-operator
+                spec:
+                  channel: stable-v1
+                  name: openshift-cert-manager-operator
+                  source: redhat-operators
+                  sourceNamespace: openshift-marketplace
+                EOF
+                echo "Waiting for cert-manager CSV to be created by OLM..."
+                for i in $(seq 1 60); do
+                  CSV=$(oc get csv -n cert-manager-operator \
+                    -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator \
+                    -o name 2>/dev/null | head -1)
+                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
+                  echo "  attempt $i/60, retrying in 10s..."
+                  sleep 10
+                done
+                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
+                  -n cert-manager-operator \
+                  -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator \
+                  --timeout=300s
+                echo "Waiting for cert-manager deployment to be available..."
+                for i in $(seq 1 30); do
+                  oc get deployment cert-manager -n cert-manager 2>/dev/null && break
+                  echo "  attempt $i/30, retrying in 10s..."
+                  sleep 10
+                done
+                oc wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=300s
+
                 # Deploy the operator using the image built by the Konflux PR build pipeline
                 echo "Deploying kuberay operator (image: ${KUBERAY_IMAGE})..."
                 echo "namespace=${NAMESPACE}" > "${KUBERAY_SRC}/ray-operator/config/openshift/params.env"
