@@ -8,7 +8,7 @@ metadata:
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "stable"
+      == "$$TARGET_BRANCH$$"
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: opendatahub-builds
@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/opendatahub/trainer:odh-stable
+    value: quay.io/opendatahub/trainer:$$OUTPUT_IMAGE_TAG$$
   - name: dockerfile
     value: cmd/trainer-controller-manager/Dockerfile.odh
   - name: path-context
