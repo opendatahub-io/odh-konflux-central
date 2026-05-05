@@ -39,6 +39,7 @@ spec:
           - name: git-repo
           - name: git-org
           - name: git-revision
+          - name: trigger-component
           steps:
             - name: audit-snapshot
               image: quay.io/konflux-ci/konflux-test:stable
@@ -72,6 +73,7 @@ spec:
                 echo "SNAPSHOT=${SNAPSHOT}"
 
                 # Parse JSON and iterate through each component
+                TRIGGER_COMPONENT=""
                 while IFS= read -r row; do
                     COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.name')
                     IMAGE=$(echo "$row" | base64 -d | jq -r '.containerImage')
@@ -80,13 +82,18 @@ spec:
                     echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
                     echo "GIT_COMMIT=${GIT_COMMIT}"
                     echo "GIT_URL=${GIT_URL}"
+                    if [ "${GIT_COMMIT}" = "${GIT_REVISION}" ]; then
+                      TRIGGER_COMPONENT="${COMPONENT_NAME}"
+                    fi
                 done < <(echo "$SNAPSHOT" | jq -r '.components[] | @base64')
 
+                echo "TRIGGER_COMPONENT=${TRIGGER_COMPONENT}"
                 echo -n "${PR_AUTHOR}" > "$(results.pull-request-author.path)"
                 echo -n "${PR_NUMBER}" > "$(results.pull-request-number.path)"
                 echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
                 echo -n "${GIT_ORG}" > "$(results.git-org.path)"
                 echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
+                echo -n "${TRIGGER_COMPONENT}" > "$(results.trigger-component.path)"
 
       - name: provision-eaas-space
         runAfter:
@@ -199,6 +206,8 @@ spec:
                   value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
                 - name: SNAPSHOT
                   value: $(params.SNAPSHOT)
+                - name: TRIGGER_COMPONENT
+                  value: $(tasks.audit-snapshot.results.trigger-component)
                 - name: ARTIFACT_DIR
                   value: /workspace/artifacts-dir
                 - name: TEST_OUTPUT_DIR
@@ -232,13 +241,13 @@ spec:
                   GIT_URL=$(echo "$row" | base64 -d | jq -r '.source.git.url')
 
                   # Store git info for cloning DW repo later.
-                  # Prefer the CPU universal image (the ITS trigger component); fall back to any DW component.
+                  # Prefer the trigger component's commit; fall back to any DW component.
                   if echo "${GIT_URL}" | grep -q "distributed-workloads"; then
                     if [ -z "${DW_GIT_COMMIT:-}" ]; then
                       DW_GIT_COMMIT="${GIT_COMMIT}"
                       DW_GIT_URL="${GIT_URL}"
                     fi
-                    if [ "${COMPONENT_NAME}" = "odh-th06-cpu-torch210-py312-ci" ]; then
+                    if [ "${COMPONENT_NAME}" = "${TRIGGER_COMPONENT}" ]; then
                       DW_GIT_COMMIT="${GIT_COMMIT}"
                       DW_GIT_URL="${GIT_URL}"
                     fi
@@ -386,13 +395,20 @@ spec:
                 git -C dw_src checkout FETCH_HEAD
 
                 cd dw_src
-                echo "Running ClusterTrainingRuntime and FashionMNIST CPU tests..."
+                TRIGGER_IMAGE_NAME="${TRIGGER_COMPONENT%-ci}"
+                echo "Trigger component: ${TRIGGER_COMPONENT}"
+                echo "Trigger image name: ${TRIGGER_IMAGE_NAME}"
+                echo "Running TrainJob test for trigger image..."
                 mkdir -p "${ARTIFACT_DIR}"
                 TESTS_PASSED=true
+                TRIGGER_IMAGE_NAME="${TRIGGER_IMAGE_NAME}" \
                 go test -v -timeout 120m \
-                  -run "TestDefaultTrainingHubRuntimesMatchDefaultClusterRuntimes|TestRunTrainJobWithDefaultClusterTrainingRuntimes" \
+                  -run "TestRunTrainJobWithDefaultClusterTrainingRuntimes" \
                   ./tests/trainer/ > "${ARTIFACT_DIR}/its-tests.log" 2>&1 || TESTS_PASSED=false
                 cat "${ARTIFACT_DIR}/its-tests.log"
+                if grep -q '^--- FAIL:' "${ARTIFACT_DIR}/its-tests.log"; then
+                  TESTS_PASSED=false
+                fi
                 if [ "${TESTS_PASSED}" != "true" ]; then
                   echo "Tests failed"
                   exit 1
