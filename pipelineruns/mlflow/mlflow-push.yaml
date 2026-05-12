@@ -58,9 +58,9 @@ spec:
     computeResources:
       requests:
         cpu: '1'
-        memory: 4608Mi
+        memory: 6Gi
       limits:
-        memory: 4608Mi
+        memory: 6Gi
   taskRunTemplate:
     serviceAccountName: build-pipeline-mlflow
   workspaces:
