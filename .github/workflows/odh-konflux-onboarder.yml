@@ -55,12 +55,14 @@ on:
           - odh-kserve-llmisvc-controller
           - odh-model-controller
           - odh-model-metadata-collection
+          - odh-observability
           - ogx-distribution
           - ogx-k8s-operator
           - opendatahub-operator
           - openvino_model_server
           - pipelines-components
           - rest-proxy
+          - rhaii-cluster-validation
           - spark-operator
           - text-generation-inference
           - trainer
@@ -69,8 +71,6 @@ on:
           - trustyai-service-operator
           - vllm-orchestrator-gateway
           - workload-variant-autoscaler
-          - rhaii-cluster-validation
-          - odh-observability
       pr_target_branch:
         description: 'Target branch for the PR (e.g. main)'
         required: true
