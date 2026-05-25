@@ -71,6 +71,7 @@ on:
           - trustyai-service-operator
           - vllm-orchestrator-gateway
           - workload-variant-autoscaler
+          - workbenches-operator
       pr_target_branch:
         description: 'Target branch for the PR (e.g. main)'
         required: true
