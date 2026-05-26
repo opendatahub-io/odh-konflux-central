@@ -562,7 +562,7 @@ flowchart TD
 >
 > :warning: Test results could not be obtained from the expected location:
 > [early-gate-test-summary.yaml](link)
-
+>
 ## 11. Jenkins Job Internals
 
 This section describes what happens inside the Jenkins job that the Tekton test pipeline triggers.
