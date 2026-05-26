@@ -9,3 +9,5 @@ config:
       early-gate-enabled: true
       additional-branches:
         - release-v0.17
+    feast:
+      early-gate-enabled: true
