@@ -38,7 +38,7 @@ spec:
     - name: pathInRepo
       value: pipeline/multi-arch-container-build.yaml
   taskRunTemplate:
-    serviceAccountName: build-pipeline-odh-workbenches-operator
+    serviceAccountName: build-pipeline-odh-workbenches-operator-ci
   workspaces:
   - name: git-auth
     secret:
