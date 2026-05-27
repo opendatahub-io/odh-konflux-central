@@ -268,14 +268,16 @@ start_runners() {
       docker rm "${container_name}" 2>/dev/null || true
     fi
 
-    # Docker-in-Docker fix: when the runner creates job containers, it passes
-    # its _work directory as a host-path bind mount. Since the runner itself is
-    # a container, that path doesn't exist on the host. We solve this by giving
-    # each runner a unique work directory on the host and bind-mounting it at
-    # the same path inside the runner container, so both see the same files.
-    local runner_workdir="/opt/github-runners/${container_name}/_work"
-    sudo mkdir -p "${runner_workdir}"
-    sudo chown 1001:1001 "${runner_workdir}"
+    # Docker-in-Docker path alignment: the runner passes its internal paths
+    # (e.g. _work, externals) as host-path bind mounts when creating job
+    # containers. Since the runner is itself a container, those paths don't
+    # exist on the host. We fix this by giving each runner a unique base
+    # directory on the host and mounting it at the same path in the container.
+    # The entrypoint symlinks externals into this directory. Both the runner
+    # and its job containers then resolve the same host path to the same files.
+    local runner_dir="/opt/actions-runner-${i}"
+    sudo mkdir -p "${runner_dir}"
+    sudo chown -R 1001:1001 "${runner_dir}"
 
     log "Starting runner '${runner_name}' (container: ${container_name})..."
     # shellcheck disable=SC2086
@@ -287,7 +289,7 @@ start_runners() {
       --restart unless-stopped \
       --network "${CONTAINER_NETWORK}" \
       -v /var/run/docker.sock:/var/run/docker.sock \
-      -v "${runner_workdir}:${runner_workdir}" \
+      -v "${runner_dir}:${runner_dir}" \
       ${docker_gid:+--group-add "${docker_gid}"} \
       -e GITHUB_ORG="${GITHUB_ORG}" \
       -e RUNNER_TOKEN="${reg_token}" \
@@ -295,7 +297,7 @@ start_runners() {
       -e RUNNER_GROUP="${RUNNER_GROUP}" \
       -e RUNNER_LABELS="${RUNNER_LABELS}" \
       -e RUNNER_EPHEMERAL="${RUNNER_EPHEMERAL}" \
-      -e RUNNER_WORKDIR="${runner_workdir}" \
+      -e RUNNER_WORKDIR="${runner_dir}/_work" \
       ${CONTAINER_EXTRA_ARGS} \
       "${CONTAINER_IMAGE}" || {
         log "WARNING: Failed to start '${runner_name}'. Continuing with next runner."
@@ -346,10 +348,10 @@ stop_runners() {
 
     log "Removed '${container_name}'."
 
-    local runner_workdir="/opt/github-runners/${container_name}/_work"
-    if [[ -d "${runner_workdir}" ]]; then
-      sudo rm -rf "/opt/github-runners/${container_name}"
-      log "Cleaned up work directory '${runner_workdir}'."
+    local runner_dir="/opt/actions-runner-${i}"
+    if [[ -d "${runner_dir}" ]]; then
+      sudo rm -rf "${runner_dir}"
+      log "Cleaned up runner directory '${runner_dir}'."
     fi
   done
 

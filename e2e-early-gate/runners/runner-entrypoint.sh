@@ -55,6 +55,25 @@ cleanup() {
 trap cleanup SIGTERM SIGINT EXIT
 
 # ---------------------------------------------------------------
+# Docker-in-Docker: align externals path with the host-mounted dir
+# so job containers can bind-mount the same path and find Node.js.
+# ---------------------------------------------------------------
+if [[ -n "${RUNNER_WORKDIR:-}" ]]; then
+  RUNNER_BASE=$(dirname "${RUNNER_WORKDIR}")
+  HOST_EXTERNALS="${RUNNER_BASE}/externals"
+  LOCAL_EXTERNALS="/home/runner/actions-runner/externals"
+  if [[ "${HOST_EXTERNALS}" != "${LOCAL_EXTERNALS}" ]]; then
+    mkdir -p "${HOST_EXTERNALS}"
+    if [[ -d "${LOCAL_EXTERNALS}" && ! -L "${LOCAL_EXTERNALS}" ]]; then
+      cp -a "${LOCAL_EXTERNALS}/." "${HOST_EXTERNALS}/"
+      rm -rf "${LOCAL_EXTERNALS}"
+    fi
+    ln -sfn "${HOST_EXTERNALS}" "${LOCAL_EXTERNALS}"
+    echo "Linked externals: ${LOCAL_EXTERNALS} -> ${HOST_EXTERNALS}" >&2
+  fi
+fi
+
+# ---------------------------------------------------------------
 # Configure runner
 # ---------------------------------------------------------------
 echo "Configuring runner '${RUNNER_NAME}' for org '${GITHUB_ORG}'..." >&2
