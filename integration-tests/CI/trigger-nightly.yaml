@@ -18,10 +18,10 @@ spec:
         name: CATALOG_IMAGE
         type: string
         default: quay.io/opendatahub/opendatahub-operator-catalog:odh-stable
-      - description: Trigger Nightly Tests
-        name: TRIGGER_NIGHTLY_TESTS
+      - description: "Trigger nightly tests: true (always), false (never), auto (only if changed)"
+        name: TRIGGER_TESTS
         type: string
-        default: "true"
+        default: "auto"
       - description: Trigger Slack Notification
         name: TRIGGER_SLACK
         type: string
@@ -47,6 +47,8 @@ spec:
             description: "the build url for the latest catalog"
           - name: previous-nightly-sha
             description: "the previous nightly"
+          - name: nightly-changed
+            description: "whether the catalog has changed since the last nightly"
           steps:
           - image: quay.io/rhoai-devops/base-runner:latest
             name: get-latest-catalog-ci-build-sha
@@ -58,11 +60,19 @@ spec:
             script: |
               #!/bin/bash
               set -e
-              skopeo_inspect=$(skopeo inspect "docker://$CATALOG_IMAGE" --no-tags)
+
+              # Pin the floating tag to a digest via --raw (single resolution)
+              CATALOG_SHA=$(skopeo inspect --raw "docker://$CATALOG_IMAGE" | sha256sum | awk '{print "sha256:" $1}')
+              CATALOG_BY_DIGEST="${CATALOG_IMAGE%:*}@${CATALOG_SHA}"
+              echo "Pinned $CATALOG_IMAGE -> $CATALOG_BY_DIGEST"
+
+              # Inspect the pinned image for metadata
+              skopeo_inspect=$(skopeo inspect "docker://$CATALOG_BY_DIGEST" --no-tags)
               echo "$skopeo_inspect" | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"; echo
               echo "$skopeo_inspect" | jq -r '.Labels."build-metadata-url"'  | tr -d '\n' | tee "$(results.latest-build-metadata-url.path)"; echo
               echo "$skopeo_inspect" | jq -r '.Labels."build-url"'  | tr -d '\n' | tee "$(results.latest-catalog-ci-build-url.path)"; echo
 
+              # Compare with previous nightly
               NIGHTLY_IMAGE="${CATALOG_IMAGE%:*}:odh-stable-nightly"
               PREVIOUS_SHA=$(skopeo inspect --raw "docker://$NIGHTLY_IMAGE" 2>/dev/null | sha256sum | awk '{print "sha256:" $1}' || true)
               if [ -n "$PREVIOUS_SHA" ]; then
@@ -72,12 +82,26 @@ spec:
                 echo "No previous nightly found"
                 printf '%s' "" > "$(results.previous-nightly-sha.path)"
               fi
-      - name: resolve-slack-channel
-        description: resolves the Slack channel, applying override if set
+
+              if [ -n "$PREVIOUS_SHA" ] && [ "$CATALOG_SHA" = "$PREVIOUS_SHA" ]; then
+                echo "No changes: catalog SHA matches previous nightly ($CATALOG_SHA)"
+                printf 'false' > "$(results.nightly-changed.path)"
+              else
+                echo "Changes detected (new=$CATALOG_SHA, previous=${PREVIOUS_SHA:-none})"
+                printf 'true' > "$(results.nightly-changed.path)"
+              fi
+      - name: resolve-params
+        description: resolves pipeline parameters for downstream tasks
+        runAfter:
+        - choose-ci-build
         taskSpec:
           results:
           - name: channel
             description: "the resolved Slack channel to use"
+          - name: should-trigger-tests
+            description: "whether smoke tests should be triggered"
+          - name: trigger-tests-reason
+            description: "explanation when tests are forced or disabled"
           steps:
           - image: quay.io/rhoai-devops/base-runner:latest
             name: resolve
@@ -89,15 +113,37 @@ spec:
                   key: odh-notification-channel
             - name: OVERRIDE_CHANNEL
               value: $(params.OVERRIDE_CHANNEL)
+            - name: TRIGGER_TESTS
+              value: $(params.TRIGGER_TESTS)
+            - name: NIGHTLY_CHANGED
+              value: $(tasks.choose-ci-build.results.nightly-changed)
             script: |
               #!/bin/bash
               set -e
+
+              # Resolve Slack channel
               CHANNEL="$DEFAULT_CHANNEL"
               if [ -n "$OVERRIDE_CHANNEL" ]; then
                 CHANNEL="$OVERRIDE_CHANNEL"
               fi
               echo "Resolved channel: $CHANNEL"
               printf '%s' "$CHANNEL" > "$(results.channel.path)"
+
+              # Resolve test trigger decision
+              TRIGGER_TESTS_REASON=""
+              if [ "$TRIGGER_TESTS" = "false" ]; then
+                SHOULD_TRIGGER_TESTS=false
+                TRIGGER_TESTS_REASON="smoke tests disabled via TRIGGER_TESTS=false"
+              elif [ "$TRIGGER_TESTS" = "true" ]; then
+                SHOULD_TRIGGER_TESTS=true
+                TRIGGER_TESTS_REASON="smoke tests forced via TRIGGER_TESTS=true"
+              elif [ "$NIGHTLY_CHANGED" = "true" ]; then
+                SHOULD_TRIGGER_TESTS=true
+              else
+                SHOULD_TRIGGER_TESTS=false
+              fi
+              printf '%s' "$SHOULD_TRIGGER_TESTS" > "$(results.should-trigger-tests.path)"
+              printf '%s' "$TRIGGER_TESTS_REASON" > "$(results.trigger-tests-reason.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
@@ -138,6 +184,8 @@ spec:
               value: /workspace/.docker/config.json
             - name: TRIGGER_NIGHTLY_TAG
               value: $(params.TRIGGER_NIGHTLY_TAG)
+            - name: NIGHTLY_CHANGED
+              value: $(tasks.choose-ci-build.results.nightly-changed)
             script: |
               #!/bin/bash
               set -e
@@ -145,6 +193,11 @@ spec:
               if [[ "$TRIGGER_NIGHTLY_TAG" != "true" ]]; then
                 echo "TRIGGER_NIGHTLY_TAG=$TRIGGER_NIGHTLY_TAG"
                 echo "proceeding without tagging a new nightly"
+                exit 0
+              fi
+
+              if [[ "$NIGHTLY_CHANGED" != "true" ]]; then
+                echo "Catalog unchanged from previous nightly, skipping tag"
                 exit 0
               fi
 
@@ -210,7 +263,7 @@ spec:
           - "true"
         runAfter:
         - tag-nightly
-        - resolve-slack-channel
+        - resolve-params
         workspaces:
         - name: data
           workspace: data
@@ -239,7 +292,11 @@ spec:
             - name: PREVIOUS_NIGHTLY_SHA
               value: $(tasks.choose-ci-build.results.previous-nightly-sha)
             - name: CHANNEL
-              value: $(tasks.resolve-slack-channel.results.channel)
+              value: $(tasks.resolve-params.results.channel)
+            - name: NIGHTLY_CHANGED
+              value: $(tasks.choose-ci-build.results.nightly-changed)
+            - name: TRIGGER_TESTS_REASON
+              value: $(tasks.resolve-params.results.trigger-tests-reason)
             - name: MESSAGE_TEMPLATE
               valueFrom:
                 configMapKeyRef:
@@ -250,18 +307,30 @@ spec:
               #!/bin/bash
               set -eo pipefail
 
-              tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
+              SLACK_ARGS=(-c "$CHANNEL")
 
-              tracer-diff.sh --mode 2 --only-changes \
-                --old-label "previous nightly catalog" --new-label "this catalog" \
-                "--odh --digest $PREVIOUS_NIGHTLY_SHA" "--odh -i $LATEST_CATALOG_CI_IMAGE" \
-                  | tee tracer-diff.txt
+              if [ "$NIGHTLY_CHANGED" = "true" ]; then
+                tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
 
-              SUBST_VARS='$LATEST_CATALOG_CI_IMAGE $LATEST_BUILD_METADATA_URL $BUILD_URL'
-              slack_message=$(echo "$MESSAGE_TEMPLATE" | envsubst "$SUBST_VARS")
+                tracer-diff.sh --mode 2 --only-changes \
+                  --old-label "previous nightly catalog" --new-label "this catalog" \
+                  "--odh --digest $PREVIOUS_NIGHTLY_SHA" "--odh -i $LATEST_CATALOG_CI_IMAGE" \
+                    | tee tracer-diff.txt
+
+                SUBST_VARS='$LATEST_CATALOG_CI_IMAGE $LATEST_BUILD_METADATA_URL $BUILD_URL'
+                slack_message=$(echo "$MESSAGE_TEMPLATE" | envsubst "$SUBST_VARS")
+
+                SLACK_ARGS+=(-m "$slack_message" -m "$(cat tracer-diff.txt)" -f tracer-output.txt)
+              else
+                SLACK_ARGS+=(-m ":moon: No new nightly: no new catalog CI builds have run since the previous nightly.")
+              fi
+
+              if [ -n "$TRIGGER_TESTS_REASON" ]; then
+                SLACK_ARGS+=(-m "$TRIGGER_TESTS_REASON")
+              fi
 
               SLACK_RC=0
-              OUTPUT=$(send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -m "$(cat tracer-diff.txt)" -f tracer-output.txt -v 2>&1) || SLACK_RC=$?
+              OUTPUT=$(send-slack-message.sh "${SLACK_ARGS[@]}" -v 2>&1) || SLACK_RC=$?
 
               THREAD_TS=$(printf '%s\n' "$OUTPUT" | grep -oP 'Setting new thread id:\s*\K[0-9]+\.[0-9]+' | head -1 || true)
 
@@ -283,14 +352,14 @@ spec:
       - name: trigger-nightly-tests
         description: trigger nightly tests via rhods-devops-infra smoke-trigger workflow
         when:
-        - input: $(params.TRIGGER_NIGHTLY_TESTS)
+        - input: $(tasks.resolve-params.results.should-trigger-tests)
           operator: in
           values:
           - "true"
         runAfter:
         - tag-nightly
         - slack-notification
-        - resolve-slack-channel
+        - resolve-params
         workspaces:
         - name: data
           workspace: data
@@ -311,7 +380,7 @@ spec:
                   name: rhods-ci
                   key: secret
             - name: CHANNEL
-              value: $(tasks.resolve-slack-channel.results.channel)
+              value: $(tasks.resolve-params.results.channel)
             script: |
               #!/bin/bash
               set -e
