@@ -150,6 +150,7 @@ spec:
                 SHOULD_TRIGGER_NIGHTLY_TESTS=true
               else
                 SHOULD_TRIGGER_NIGHTLY_TESTS=false
+                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests skipped (catalog unchanged)"
               fi
               printf '%s' "$SHOULD_TRIGGER_NIGHTLY_TESTS" > "$(results.should-trigger-tests.path)"
               printf '%s' "$TRIGGER_NIGHTLY_TESTS_REASON" > "$(results.trigger-tests-reason.path)"
@@ -320,7 +321,6 @@ spec:
               tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
 
               if [ "$NIGHTLY_CHANGED" = "true" ]; then
-
                 tracer-diff.sh --mode 2 --only-changes \
                   --old-label "previous nightly catalog" --new-label "this catalog" \
                   "--odh --digest $PREVIOUS_NIGHTLY_SHA" "--odh -i $LATEST_CATALOG_CI_IMAGE" \
