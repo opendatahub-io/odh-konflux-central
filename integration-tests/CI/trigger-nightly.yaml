@@ -308,9 +308,9 @@ spec:
               set -eo pipefail
 
               SLACK_ARGS=(-c "$CHANNEL")
+              tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
 
               if [ "$NIGHTLY_CHANGED" = "true" ]; then
-                tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
 
                 tracer-diff.sh --mode 2 --only-changes \
                   --old-label "previous nightly catalog" --new-label "this catalog" \
@@ -322,7 +322,8 @@ spec:
 
                 SLACK_ARGS+=(-m "$slack_message" -m "$(cat tracer-diff.txt)" -f tracer-output.txt)
               else
-                SLACK_ARGS+=(-m ":moon: No new nightly: no new catalog CI builds have run since the previous nightly.")
+                slack_message=":moon: No new nightly: no new catalog CI builds have run since the previous nightly."
+                SLACK_ARGS+=(-m "$slack_message" -f tracer-output.txt )
               fi
 
               if [ -n "$TRIGGER_TESTS_REASON" ]; then
