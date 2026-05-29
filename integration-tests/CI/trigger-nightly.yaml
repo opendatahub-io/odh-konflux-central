@@ -350,7 +350,7 @@ spec:
                 SLACK_ARGS+=(-f tracer-output.txt)
               else
                 slack_message=":moon: No new nightly: no new catalog CI builds have run since the previous nightly."
-                SLACK_ARGS+=(-m "$slack_message" -f tracer-output.txt )
+                SLACK_ARGS+=(-m "$slack_message" -f tracer-output.txt)
               fi
 
               if [ -n "$TRIGGER_NIGHTLY_TESTS_REASON" ]; then
