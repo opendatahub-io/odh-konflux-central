@@ -74,7 +74,12 @@ spec:
 
               # Compare with previous nightly
               NIGHTLY_IMAGE="${CATALOG_IMAGE%:*}:odh-stable-nightly"
-              PREVIOUS_SHA=$(skopeo inspect --raw "docker://$NIGHTLY_IMAGE" 2>/dev/null | sha256sum | awk '{print "sha256:" $1}' || true)
+              RAW_OUTPUT=$(skopeo inspect --raw "docker://$NIGHTLY_IMAGE" 2>/dev/null || true)
+              if [ -n "$RAW_OUTPUT" ]; then
+                PREVIOUS_SHA=$(printf '%s' "$RAW_OUTPUT" | sha256sum | awk '{print "sha256:" $1}')
+              else
+                PREVIOUS_SHA=""
+              fi
               if [ -n "$PREVIOUS_SHA" ]; then
                 printf '%s' "$PREVIOUS_SHA" > "$(results.previous-nightly-sha.path)"
                 echo "Previous nightly SHA: $PREVIOUS_SHA"
