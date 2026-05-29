@@ -319,6 +319,8 @@ spec:
               value: $(tasks.resolve-params.results.channel)
             - name: NIGHTLY_CHANGED
               value: $(tasks.choose-ci-build.results.nightly-changed)
+            - name: SHOULD_TAG_NIGHTLY
+              value: $(tasks.resolve-params.results.should-tag-nightly)
             - name: TRIGGER_NIGHTLY_TESTS_REASON
               value: $(tasks.resolve-params.results.trigger-tests-reason)
             - name: MESSAGE_TEMPLATE
@@ -334,7 +336,7 @@ spec:
               SLACK_ARGS=(-c "$CHANNEL")
               tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
 
-              if [ "$NIGHTLY_CHANGED" = "true" ]; then
+              if [ "$NIGHTLY_CHANGED" = "true" ] && [ "$SHOULD_TAG_NIGHTLY" = "true" ]; then
                 SUBST_VARS='$LATEST_CATALOG_CI_IMAGE $LATEST_BUILD_METADATA_URL $BUILD_URL'
                 slack_message=$(echo "$MESSAGE_TEMPLATE" | envsubst "$SUBST_VARS")
                 SLACK_ARGS+=(-m "$slack_message")
@@ -348,6 +350,9 @@ spec:
                 fi
 
                 SLACK_ARGS+=(-f tracer-output.txt)
+              elif [ "$NIGHTLY_CHANGED" = "true" ]; then
+                slack_message=":no_entry_sign: Nightly tagging skipped (TRIGGER_NIGHTLY_TAG=false), but new catalog CI builds are available."
+                SLACK_ARGS+=(-m "$slack_message" -f tracer-output.txt)
               else
                 slack_message=":moon: No new nightly: no new catalog CI builds have run since the previous nightly."
                 SLACK_ARGS+=(-m "$slack_message" -f tracer-output.txt)
