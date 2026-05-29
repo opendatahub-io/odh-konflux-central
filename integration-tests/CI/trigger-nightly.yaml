@@ -72,6 +72,32 @@ spec:
                 echo "No previous nightly found"
                 printf '%s' "" > "$(results.previous-nightly-sha.path)"
               fi
+      - name: resolve-slack-channel
+        description: resolves the Slack channel, applying override if set
+        taskSpec:
+          results:
+          - name: channel
+            description: "the resolved Slack channel to use"
+          steps:
+          - image: quay.io/rhoai-devops/base-runner:latest
+            name: resolve
+            env:
+            - name: DEFAULT_CHANNEL
+              valueFrom:
+                configMapKeyRef:
+                  name: slack-config
+                  key: odh-notification-channel
+            - name: OVERRIDE_CHANNEL
+              value: $(params.OVERRIDE_CHANNEL)
+            script: |
+              #!/bin/bash
+              set -e
+              CHANNEL="$DEFAULT_CHANNEL"
+              if [ -n "$OVERRIDE_CHANNEL" ]; then
+                CHANNEL="$OVERRIDE_CHANNEL"
+              fi
+              echo "Resolved channel: $CHANNEL"
+              printf '%s' "$CHANNEL" > "$(results.channel.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
@@ -184,6 +210,7 @@ spec:
           - "true"
         runAfter:
         - tag-nightly
+        - resolve-slack-channel
         workspaces:
         - name: data
           workspace: data
@@ -212,12 +239,7 @@ spec:
             - name: PREVIOUS_NIGHTLY_SHA
               value: $(tasks.choose-ci-build.results.previous-nightly-sha)
             - name: CHANNEL
-              valueFrom:
-                configMapKeyRef:
-                  name: slack-config
-                  key: odh-notification-channel
-            - name: OVERRIDE_CHANNEL
-              value: $(params.OVERRIDE_CHANNEL)
+              value: $(tasks.resolve-slack-channel.results.channel)
             - name: MESSAGE_TEMPLATE
               valueFrom:
                 configMapKeyRef:
@@ -227,10 +249,6 @@ spec:
             script: |
               #!/bin/bash
               set -eo pipefail
-
-              if [ -n "$OVERRIDE_CHANNEL" ]; then
-                CHANNEL="$OVERRIDE_CHANNEL"
-              fi
 
               tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
 
@@ -272,6 +290,7 @@ spec:
         runAfter:
         - tag-nightly
         - slack-notification
+        - resolve-slack-channel
         workspaces:
         - name: data
           workspace: data
@@ -292,19 +311,10 @@ spec:
                   name: rhods-ci
                   key: secret
             - name: CHANNEL
-              valueFrom:
-                configMapKeyRef:
-                  name: slack-config
-                  key: odh-notification-channel
-            - name: OVERRIDE_CHANNEL
-              value: $(params.OVERRIDE_CHANNEL)
+              value: $(tasks.resolve-slack-channel.results.channel)
             script: |
               #!/bin/bash
               set -e
-
-              if [ -n "$OVERRIDE_CHANNEL" ]; then
-                CHANNEL="$OVERRIDE_CHANNEL"
-              fi
 
               TARGET=odh-stable
 
