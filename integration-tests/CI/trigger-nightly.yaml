@@ -19,7 +19,7 @@ spec:
         type: string
         default: quay.io/opendatahub/opendatahub-operator-catalog:odh-stable
       - description: "Trigger nightly tests: true (always), false (never), auto (only if changed)"
-        name: TRIGGER_TESTS
+        name: TRIGGER_NIGHTLY_TESTS
         type: string
         default: "auto"
       - description: Trigger Slack Notification
@@ -113,8 +113,8 @@ spec:
                   key: odh-notification-channel
             - name: OVERRIDE_CHANNEL
               value: $(params.OVERRIDE_CHANNEL)
-            - name: TRIGGER_TESTS
-              value: $(params.TRIGGER_TESTS)
+            - name: TRIGGER_NIGHTLY_TESTS
+              value: $(params.TRIGGER_NIGHTLY_TESTS)
             - name: NIGHTLY_CHANGED
               value: $(tasks.choose-ci-build.results.nightly-changed)
             script: |
@@ -130,20 +130,20 @@ spec:
               printf '%s' "$CHANNEL" > "$(results.channel.path)"
 
               # Resolve test trigger decision
-              TRIGGER_TESTS_REASON=""
-              if [ "$TRIGGER_TESTS" = "false" ]; then
-                SHOULD_TRIGGER_TESTS=false
-                TRIGGER_TESTS_REASON="smoke tests disabled via TRIGGER_TESTS=false"
-              elif [ "$TRIGGER_TESTS" = "true" ]; then
-                SHOULD_TRIGGER_TESTS=true
-                TRIGGER_TESTS_REASON="smoke tests forced via TRIGGER_TESTS=true"
+              TRIGGER_NIGHTLY_TESTS_REASON=""
+              if [ "$TRIGGER_NIGHTLY_TESTS" = "false" ]; then
+                SHOULD_TRIGGER_NIGHTLY_TESTS=false
+                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests disabled via TRIGGER_NIGHTLY_TESTS=false"
+              elif [ "$TRIGGER_NIGHTLY_TESTS" = "true" ]; then
+                SHOULD_TRIGGER_NIGHTLY_TESTS=true
+                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests forced via TRIGGER_NIGHTLY_TESTS=true"
               elif [ "$NIGHTLY_CHANGED" = "true" ]; then
-                SHOULD_TRIGGER_TESTS=true
+                SHOULD_TRIGGER_NIGHTLY_TESTS=true
               else
-                SHOULD_TRIGGER_TESTS=false
+                SHOULD_TRIGGER_NIGHTLY_TESTS=false
               fi
-              printf '%s' "$SHOULD_TRIGGER_TESTS" > "$(results.should-trigger-tests.path)"
-              printf '%s' "$TRIGGER_TESTS_REASON" > "$(results.trigger-tests-reason.path)"
+              printf '%s' "$SHOULD_TRIGGER_NIGHTLY_TESTS" > "$(results.should-trigger-tests.path)"
+              printf '%s' "$TRIGGER_NIGHTLY_TESTS_REASON" > "$(results.trigger-tests-reason.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
@@ -295,7 +295,7 @@ spec:
               value: $(tasks.resolve-params.results.channel)
             - name: NIGHTLY_CHANGED
               value: $(tasks.choose-ci-build.results.nightly-changed)
-            - name: TRIGGER_TESTS_REASON
+            - name: TRIGGER_NIGHTLY_TESTS_REASON
               value: $(tasks.resolve-params.results.trigger-tests-reason)
             - name: MESSAGE_TEMPLATE
               valueFrom:
@@ -326,8 +326,8 @@ spec:
                 SLACK_ARGS+=(-m "$slack_message" -f tracer-output.txt )
               fi
 
-              if [ -n "$TRIGGER_TESTS_REASON" ]; then
-                SLACK_ARGS+=(-m "$TRIGGER_TESTS_REASON")
+              if [ -n "$TRIGGER_NIGHTLY_TESTS_REASON" ]; then
+                SLACK_ARGS+=(-m "$TRIGGER_NIGHTLY_TESTS_REASON")
               fi
 
               SLACK_RC=0
