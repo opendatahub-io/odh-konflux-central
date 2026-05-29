@@ -47,8 +47,8 @@ spec:
             description: "the build url for the latest catalog"
           - name: previous-nightly-sha
             description: "the previous nightly"
-          - name: nightly-changed
-            description: "whether the catalog has changed since the last nightly"
+          - name: new-builds-available
+            description: "whether new CI builds are available since the last nightly"
           steps:
           - image: quay.io/rhoai-devops/base-runner:latest
             name: get-latest-catalog-ci-build-sha
@@ -90,10 +90,10 @@ spec:
 
               if [ -n "$PREVIOUS_SHA" ] && [ "$CATALOG_SHA" = "$PREVIOUS_SHA" ]; then
                 echo "No changes: catalog SHA matches previous nightly ($CATALOG_SHA)"
-                printf 'false' > "$(results.nightly-changed.path)"
+                printf 'false' > "$(results.new-builds-available.path)"
               else
                 echo "Changes detected (new=$CATALOG_SHA, previous=${PREVIOUS_SHA:-none})"
-                printf 'true' > "$(results.nightly-changed.path)"
+                printf 'true' > "$(results.new-builds-available.path)"
               fi
       - name: resolve-params
         description: resolves pipeline parameters for downstream tasks
@@ -122,8 +122,8 @@ spec:
               value: $(params.OVERRIDE_CHANNEL)
             - name: TRIGGER_NIGHTLY_TESTS
               value: $(params.TRIGGER_NIGHTLY_TESTS)
-            - name: NIGHTLY_CHANGED
-              value: $(tasks.choose-ci-build.results.nightly-changed)
+            - name: NEW_BUILDS_AVAILABLE
+              value: $(tasks.choose-ci-build.results.new-builds-available)
             - name: TRIGGER_NIGHTLY_TAG
               value: $(params.TRIGGER_NIGHTLY_TAG)
             script: |
@@ -138,6 +138,22 @@ spec:
               echo "Resolved channel: $CHANNEL"
               printf '%s' "$CHANNEL" > "$(results.channel.path)"
 
+              # Resolve tag decision
+              case "$TRIGGER_NIGHTLY_TAG" in
+                true|false|auto) ;;
+                *) echo "ERROR: invalid TRIGGER_NIGHTLY_TAG='$TRIGGER_NIGHTLY_TAG' (must be true/false/auto)"; exit 1 ;;
+              esac
+              if [ "$TRIGGER_NIGHTLY_TAG" = "false" ]; then
+                SHOULD_TAG_NIGHTLY=false
+              elif [ "$TRIGGER_NIGHTLY_TAG" = "true" ]; then
+                SHOULD_TAG_NIGHTLY=true
+              elif [ "$NEW_BUILDS_AVAILABLE" = "true" ]; then
+                SHOULD_TAG_NIGHTLY=true
+              else
+                SHOULD_TAG_NIGHTLY=false
+              fi
+              printf '%s' "$SHOULD_TAG_NIGHTLY" > "$(results.should-tag-nightly.path)"
+
               # Resolve test trigger decision
               case "$TRIGGER_NIGHTLY_TESTS" in
                 true|false|auto) ;;
@@ -150,31 +166,15 @@ spec:
               elif [ "$TRIGGER_NIGHTLY_TESTS" = "true" ]; then
                 SHOULD_TRIGGER_NIGHTLY_TESTS=true
                 TRIGGER_NIGHTLY_TESTS_REASON="smoke tests forced via TRIGGER_NIGHTLY_TESTS=true"
-              elif [ "$NIGHTLY_CHANGED" = "true" ]; then
+              elif [ "$SHOULD_TAG_NIGHTLY" = "true" ] && [ "$NEW_BUILDS_AVAILABLE" = "true" ]; then
                 SHOULD_TRIGGER_NIGHTLY_TESTS=true
-                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests triggered (catalog changed)"
+                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests triggered (new nightly tagged)"
               else
                 SHOULD_TRIGGER_NIGHTLY_TESTS=false
-                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests skipped (catalog unchanged)"
+                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests skipped (no new nightly to test)"
               fi
               printf '%s' "$SHOULD_TRIGGER_NIGHTLY_TESTS" > "$(results.should-trigger-tests.path)"
               printf '%s' "$TRIGGER_NIGHTLY_TESTS_REASON" > "$(results.trigger-tests-reason.path)"
-
-              # Resolve tag decision
-              case "$TRIGGER_NIGHTLY_TAG" in
-                true|false|auto) ;;
-                *) echo "ERROR: invalid TRIGGER_NIGHTLY_TAG='$TRIGGER_NIGHTLY_TAG' (must be true/false/auto)"; exit 1 ;;
-              esac
-              if [ "$TRIGGER_NIGHTLY_TAG" = "false" ]; then
-                SHOULD_TAG_NIGHTLY=false
-              elif [ "$TRIGGER_NIGHTLY_TAG" = "true" ]; then
-                SHOULD_TAG_NIGHTLY=true
-              elif [ "$NIGHTLY_CHANGED" = "true" ]; then
-                SHOULD_TAG_NIGHTLY=true
-              else
-                SHOULD_TAG_NIGHTLY=false
-              fi
-              printf '%s' "$SHOULD_TAG_NIGHTLY" > "$(results.should-tag-nightly.path)"
       - name: tag-nightly
         runAfter:
         - choose-ci-build
@@ -317,8 +317,8 @@ spec:
               value: $(tasks.choose-ci-build.results.previous-nightly-sha)
             - name: CHANNEL
               value: $(tasks.resolve-params.results.channel)
-            - name: NIGHTLY_CHANGED
-              value: $(tasks.choose-ci-build.results.nightly-changed)
+            - name: NEW_BUILDS_AVAILABLE
+              value: $(tasks.choose-ci-build.results.new-builds-available)
             - name: SHOULD_TAG_NIGHTLY
               value: $(tasks.resolve-params.results.should-tag-nightly)
             - name: TRIGGER_NIGHTLY_TESTS_REASON
@@ -350,7 +350,7 @@ spec:
                 fi
 
                 SLACK_ARGS+=(-f tracer-output.txt)
-              elif [ "$NIGHTLY_CHANGED" = "true" ] ; then
+              elif [ "$NEW_BUILDS_AVAILABLE" = "true" ] ; then
                 slack_message=":no_entry_sign: Nightly tagging skipped due to override (TRIGGER_NIGHTLY_TAG=false)"
                 SLACK_ARGS+=(-m "$slack_message")
               else
