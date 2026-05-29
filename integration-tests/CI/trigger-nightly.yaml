@@ -135,6 +135,10 @@ spec:
               printf '%s' "$CHANNEL" > "$(results.channel.path)"
 
               # Resolve test trigger decision
+              case "$TRIGGER_NIGHTLY_TESTS" in
+                true|false|auto) ;;
+                *) echo "ERROR: invalid TRIGGER_NIGHTLY_TESTS='$TRIGGER_NIGHTLY_TESTS' (must be true/false/auto)"; exit 1 ;;
+              esac
               TRIGGER_NIGHTLY_TESTS_REASON=""
               if [ "$TRIGGER_NIGHTLY_TESTS" = "false" ]; then
                 SHOULD_TRIGGER_NIGHTLY_TESTS=false
