@@ -1,0 +1,405 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: opendatahub-operator-e2e-test
+spec:
+  pipelineSpec:
+    description: |
+      An integration test which provisions an ephemeral Hypershift cluster, deploys opendatahub-operator
+      from a Konflux snapshot and runs the e2e tests against it.
+    params:
+      - description: Snapshot of the application
+        name: SNAPSHOT
+  #      default: '{"components": [{"name":"odh-operator", "containerImage": "quay.io/opendatahub/opendatahub-operator:latest"}]}'
+        type: string
+      - name: NAMESPACE
+        type: string
+        default: opendatahub-operator-system
+      - name: BUILD_TYPE
+        type: string
+        default: "CI"
+      - name: repo-owner
+        type: string
+        default: "opendatahub-io"
+        description: "Owner of the FBC processor repository"
+      - name: repo-name
+        type: string
+        default: "opendatahub-operator"
+        description: "Name of the FBC processor repository"
+      - name: fbc-workflow
+        type: string
+        default: "release-process-fbc-fragment.yaml"
+        description: "GitHub Actions workflow file to trigger"
+      - name: fbc-enabled
+        type: string
+        default: "true"
+        description: "Whether to trigger FBC processing after successful E2E"
+    tasks:
+      - name: parse-metadata
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/konflux-ci/integration-examples
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: tasks/test_metadata.yaml
+        params:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+      - name: find-component-image
+        description: Placeholder task that prints the Snapshot and outputs standard TEST_OUTPUT
+        runAfter:
+          - parse-metadata
+        params:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+        taskSpec:
+          params:
+          - name: SNAPSHOT
+          steps:
+          - image: quay.io/konflux-ci/konflux-test:stable
+            workingDir: /workspace
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+              - name: COMPONENT_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['appstudio.openshift.io/component']
+            script: |
+              #!/bin/sh
+
+              # Extract the component container image from the SNAPSHOT JSON data
+              COMPONENT_CONTAINER_IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.components[] | select(.name == $component_name) | .containerImage' <<< "${SNAPSHOT}")
+
+              # Log the extracted variable
+              echo "  COMPONENT_CONTAINER_IMAGE: ${COMPONENT_CONTAINER_IMAGE}"
+      - name: check-prerequisites
+        description: check prerequisites if the ITS needs to execute
+        runAfter:
+          - find-component-image
+        params:
+          - name: BUILD_TYPE
+            value: $(params.BUILD_TYPE)
+          - name: TARGET_BRANCH
+            value: $(tasks.parse-metadata.results.target-git-branch)
+        taskSpec:
+          params:
+          - name: BUILD_TYPE
+          - name: TARGET_BRANCH
+          results:
+          - name: event-type
+            description: "stores info about event type"
+          - name: pr-number
+            description: "stores info about pr number"
+          - name: prerequisites-met
+            description: "whether prerequisites are met to run the tests"
+          steps:
+          - image: quay.io/konflux-ci/konflux-test:stable
+            name: check-prerequisites
+            env:
+              - name: EVENT_TYPE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['pac.test.appstudio.openshift.io/event-type']
+              - name: PR_NUMBER
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['pac.test.appstudio.openshift.io/pull-request']
+              - name: TARGET_BRANCH
+                value: $(params.TARGET_BRANCH)
+              - name: BUILD_TYPE
+                value: $(params.BUILD_TYPE)
+            script: |
+              #!/bin/bash
+              set -e
+              echo "EVENT_TYPE=${EVENT_TYPE}"
+              echo "PR_NUMBER=${PR_NUMBER}"
+              echo "TARGET_BRANCH=${TARGET_BRANCH}"
+              echo "BUILD_TYPE=${BUILD_TYPE}"
+              echo -n "${EVENT_TYPE}" > $(results.event-type.path)
+              echo -n "${PR_NUMBER}" > $(results.pr-number.path)
+
+              # Check if target branch matches ODH release pattern (odh-x.y.z or odh-x.y.z-anything)
+              ODH_RELEASE_BRANCH=""
+              if [[ "${TARGET_BRANCH}" =~ ^odh-[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+                ODH_RELEASE_BRANCH="true"
+                echo "Target branch matches ODH release pattern: ${TARGET_BRANCH}"
+              fi
+
+              if [ -n "${PR_NUMBER}" ] || [ "${BUILD_TYPE}" = "Release" ] || [ "${ODH_RELEASE_BRANCH}" = "true" ]; then
+                echo "Prerequisites met: PR_NUMBER is set, BUILD_TYPE is Release, or TARGET_BRANCH matches ODH release pattern"
+                echo -n "true" > $(results.prerequisites-met.path)
+              else
+                echo "Prerequisites not met: PR_NUMBER is empty, BUILD_TYPE is not Release, and TARGET_BRANCH doesn't match ODH release pattern"
+                echo -n "false" > $(results.prerequisites-met.path)
+              fi
+
+      - name: provision-eaas-space
+        runAfter:
+          - check-prerequisites
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/konflux-ci/build-definitions.git
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+        params:
+          - name: ownerName
+            value: $(context.pipelineRun.name)
+          - name: ownerUid
+            value: $(context.pipelineRun.uid)
+        when:
+          - input: "$(tasks.check-prerequisites.results.prerequisites-met)"
+            operator: in
+            values: ["true"]
+
+      - name: provision-cluster
+        runAfter:
+          - provision-eaas-space
+        taskSpec:
+          results:
+            - name: clusterName
+              value: "$(steps.create-cluster.results.clusterName)"
+          steps:
+            - name: get-supported-versions
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+              params:
+                - name: eaasSpaceSecretRef
+                  value: $(tasks.provision-eaas-space.results.secretRef)
+            - name: pick-version
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+              params:
+                - name: prefix
+                  value: "$(steps.get-supported-versions.results.versions[0])."
+            - name: create-cluster
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
+              params:
+                - name: eaasSpaceSecretRef
+                  value: $(tasks.provision-eaas-space.results.secretRef)
+                - name: version
+                  value: "$(steps.pick-version.results.version)"
+                - name: instanceType
+                  value: m5.2xlarge
+        when:
+          - input: "$(tasks.check-prerequisites.results.prerequisites-met)"
+            operator: in
+            values: ["true"]
+      - name: deploy-and-test
+        runAfter:
+          - provision-cluster
+        params:
+        - name: git-url
+          value: "$(tasks.parse-metadata.results.source-git-url)"
+        - name: git-rev
+          value: "$(tasks.parse-metadata.results.source-git-revision)"
+        - name: namespace
+          value: "$(params.NAMESPACE)"
+        - name: operator-image
+          value: "$(tasks.parse-metadata.results.component-container-image)"
+        taskSpec:
+          params:
+            - name: git-url
+              type: string
+            - name: git-rev
+              type: string
+            - name: namespace
+              type: string
+            - name: operator-image
+              type: string
+          volumes:
+            - name: credentials
+              emptyDir: {}
+          steps:
+            - name: get-kubeconfig
+              ref:
+                resolver: git
+                params:
+                  - name: url
+                    value: https://github.com/konflux-ci/build-definitions.git
+                  - name: revision
+                    value: main
+                  - name: pathInRepo
+                    value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+              params:
+                - name: eaasSpaceSecretRef
+                  value: $(tasks.provision-eaas-space.results.secretRef)
+                - name: clusterName
+                  value: "$(tasks.provision-cluster.results.clusterName)"
+                - name: credentials
+                  value: credentials
+
+            - name: clone-repo
+              image: alpine/git
+              script: |
+                echo $(params.git-url)
+                echo $(params.git-rev)
+                git config --global --add safe.directory /workspace/source
+                git init /workspace/source
+                git -C /workspace/source fetch --depth 1 $(params.git-url) $(params.git-rev)
+                git -C /workspace/source checkout FETCH_HEAD
+
+            - name: deploy-and-e2e
+              image: quay.io/rhoai/rhoai-task-toolset:operator
+              imagePullPolicy: Always
+              computeResources:
+                requests:
+                  memory: "16Gi"
+                  cpu: "4"
+                limits:
+                  memory: "24Gi"
+                  cpu: "6"
+              env:
+                - name: KUBECONFIG
+                  value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+                - name: GOMEMLIMIT
+                  value: "10GiB"
+              workingDir: /workspace/source
+              volumeMounts:
+                - name: credentials
+                  mountPath: /credentials
+              script: |
+                set -ex  # Show commands and exit on error
+
+                git config --global --add safe.directory /workspace/source
+                echo "=== Latest commit ==="
+                git log -1 --format="Commit: %H%nAuthor: %an%nDate:   %ci%nMessage: %s"
+
+                # Install kubectl
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                chmod +x kubectl
+                mv kubectl /tmp/kubectl
+
+                # Deploy the operator
+                echo "Deploying operator..."
+                make deploy IMG=$(params.operator-image) OPERATOR_NAMESPACE=$(params.namespace)
+
+                # Wait for operator to be ready
+                echo "Waiting for operator to be ready..."
+                /tmp/kubectl wait --for=condition=available --timeout=60s deployment/opendatahub-operator-controller-manager -n $(params.namespace)
+
+                # Run e2e tests
+                echo "Running e2e tests..."
+                make e2e-test -e E2E_TEST_OPERATOR_NAMESPACE=$(params.namespace) || {
+                  EXIT_CODE=$?
+                  echo "============================================"
+                  echo "E2E tests failed with exit code: $EXIT_CODE"
+                  echo "Pods in namespace $(params.namespace):"
+                  /tmp/kubectl get pods -n $(params.namespace) || true
+                  echo "Operator logs:"
+                  /tmp/kubectl logs -n $(params.namespace) -l control-plane=controller-manager --tail=100 || true
+                  exit $EXIT_CODE
+                }
+        when:
+          - input: "$(tasks.check-prerequisites.results.prerequisites-met)"
+            operator: in
+            values: ["true"]
+
+    finally:
+      - name: trigger-fbc-processor
+        when:
+          - input: "$(tasks.status)"
+            operator: in
+            values: ["Succeeded"]
+          - input: "$(params.BUILD_TYPE)"
+            operator: in
+            values: ["Release"]
+          - input: "$(params.fbc-enabled)"
+            operator: in
+            values: ["true"]
+        params:
+          - name: release-branch
+            value: "$(tasks.parse-metadata.results.target-git-branch)"
+          - name: build-commit
+            value: "$(tasks.parse-metadata.results.source-git-revision)"
+          - name: pr-number
+            value: "$(tasks.parse-metadata.results.pull-request-number)"
+          - name: component-image
+            value: "$(tasks.parse-metadata.results.component-container-image)"
+          - name: test-event-type
+            value: "$(tasks.parse-metadata.results.test-event-type)"
+        taskSpec:
+          params:
+            - name: release-branch
+            - name: build-commit
+            - name: pr-number
+            - name: component-image
+            - name: test-event-type
+          steps:
+            - name: trigger-fbc-workflow
+              image: quay.io/rhoai/rhoai-task-toolset:its
+              env:
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: rhods-ci
+                      key: secret
+                - name: FBC_REPO_OWNER
+                  value: "$(params.repo-owner)"
+                - name: FBC_REPO_NAME
+                  value: "$(params.repo-name)"
+                - name: FBC_WORKFLOW_FILE
+                  value: "$(params.fbc-workflow)"
+              script: |
+                #!/bin/bash
+                set -e
+
+                # For Release builds, use the release branch (e.g., odh-3.4.0)
+                TARGET_REF="$(params.release-branch)"
+
+                echo "Triggering FBC processor workflow for successful E2E completion"
+                echo "Repository: $FBC_REPO_OWNER/$FBC_REPO_NAME"
+                echo "Workflow: $FBC_WORKFLOW_FILE"
+                echo "Target ref: $TARGET_REF"
+                echo "Build type: Release"
+                echo "Release branch: $(params.release-branch)"
+                echo "Build commit: $(params.build-commit)"
+
+                # Validate that target ref follows ODH release pattern
+                if [[ ! "$TARGET_REF" =~ ^odh-[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+                  echo "WARNING: Target ref '$TARGET_REF' does not match ODH release pattern (odh-x.y.z)"
+                  echo "FBC processor workflow requires branches starting with 'odh-' and will not run otherwise"
+                  exit 0
+                fi
+
+                curl -f -X POST "https://api.github.com/repos/$FBC_REPO_OWNER/$FBC_REPO_NAME/actions/workflows/$FBC_WORKFLOW_FILE/dispatches" \
+                  -H "Accept: application/vnd.github.v3+json" \
+                  -H "Authorization: Bearer $GITHUB_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"ref\": \"$TARGET_REF\"}" || {
+                    echo "WARNING: Failed to trigger FBC processor workflow, but continuing pipeline"
+                    echo "This may be due to network issues or insufficient permissions"
+                    exit 0
+                  }
+
+                echo "FBC processor workflow triggered successfully on branch: $TARGET_REF"

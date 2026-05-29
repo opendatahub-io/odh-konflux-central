@@ -1,0 +1,480 @@
+name: ODH Konflux Onboarder
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Repository name'
+        required: true
+        type: choice
+        options:
+          # Add all valid components here in alphabetical order
+          - agents-operator
+          - ai-gateway-payload-processing
+          - batch-gateway
+          - caikit-nlp
+          - caikit-tgis-serving
+          - codeflare-operator
+          - data-science-pipelines
+          - data-science-pipelines-operator
+          - distributed-workloads
+          - eval-hub
+          - feast
+          - fms-guardrails-orchestrator
+          - guardrails-detectors
+          - guardrails-regex-detector
+          - ilab-on-ocp
+          - kserve
+          - kserve-autogluon-server
+          - kube-auth-proxy
+          - kube-rbac-proxy
+          - kubeflow
+          - kuberay
+          - llama-stack-k8s-operator
+          - llama-stack-provider-ragas
+          - llama-stack-provider-trustyai-garak
+          - llm-d-inference-scheduler
+          - llm-d-kv-cache
+          - llm-d-routing-sidecar
+          - lm-evaluation-harness
+          - ml-metadata
+          - mlflow
+          - mlflow-operator
+          - mlserver
+          - model-registry
+          - model-registry-operator
+          - modelmesh
+          - modelmesh-runtime-adapter
+          - modelmesh-serving
+          - models-as-a-service
+          - NeMo-Guardrails
+          - notebooks
+          - odh-dashboard
+          - odh-data-science-pipelines-argo-argoexec
+          - odh-data-science-pipelines-argo-workflowcontroller
+          - odh-kserve-llmisvc-controller
+          - odh-model-controller
+          - odh-model-metadata-collection
+          - odh-observability
+          - ogx-distribution
+          - ogx-k8s-operator
+          - opendatahub-operator
+          - openvino_model_server
+          - pipelines-components
+          - rest-proxy
+          - rhaii-cluster-validation
+          - spark-operator
+          - text-generation-inference
+          - trainer
+          - training-operator
+          - trustyai-explainability
+          - trustyai-service-operator
+          - vllm-orchestrator-gateway
+          - workload-variant-autoscaler
+          - workbenches-operator
+      pr_target_branch:
+        description: 'Target branch for the PR (e.g. main)'
+        required: true
+        type: string
+
+      build_type:
+        description: 'Select build type'
+        required: true
+        type: choice
+        options:
+          - CI
+          - Release
+
+      version:
+        description: 'New version (Required only for Release builds)'
+        required: false
+        type: string
+
+      build_branch:
+        description: 'Branch that images are built from (e.g. stable). Defaults to PR target branch.'
+        required: false
+        type: string
+
+jobs:
+  update-tekton-pipelines-and-create-pr:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
+
+    steps:
+      - name: Checkout OKC repository
+        uses: actions/checkout@v4
+        with:
+          path: okc-repo
+
+      - name: Generate github-app token
+        id: app-token
+        uses: getsentry/action-github-app-token@v2
+        with:
+          app_id: ${{ secrets.ODH_DEVOPS_APP_ID }}
+          private_key: ${{ secrets.ODH_DEVOPS_APP_PRIVATE_KEY }}
+
+      - name: Set environment variables
+        run: |
+          echo "REPOSITORY=opendatahub-io/${{ inputs.component }}" >> $GITHUB_ENV
+          echo "OKC_FOLDER=${{ inputs.component }}" >> $GITHUB_ENV
+
+      - name: Determine build branch
+        run: |
+          if [ -n "${{ inputs.build_branch }}" ]; then
+            BUILD_BRANCH="${{ inputs.build_branch }}"
+            echo "Using provided build branch: $BUILD_BRANCH"
+          else
+            BUILD_BRANCH="${{ inputs.pr_target_branch }}"
+            echo "No build_branch provided. Using PR target branch: $BUILD_BRANCH"
+          fi
+
+          echo "BUILD_BRANCH=$BUILD_BRANCH" >> $GITHUB_ENV
+
+      - name: Validate and set tag
+        run: |
+          BUILD_TYPE="${{ inputs.build_type }}"
+          VERSION="${{ inputs.version }}"
+          BASE_COMPONENT="odh-${{ inputs.component }}"
+
+          echo "Build type: $BUILD_TYPE"
+          echo "Version: $VERSION"
+
+          if [ "$BUILD_TYPE" = "CI" ]; then
+            EFFECTIVE_TAG="odh-stable"
+            COMPONENT_NAME="${BASE_COMPONENT}-ci"
+
+          elif [ "$BUILD_TYPE" = "Release" ]; then
+            if [ -z "$VERSION" ]; then
+              echo "ERROR: Version is required for Release build"
+              exit 1
+            fi
+
+            EFFECTIVE_TAG="$VERSION"
+            COMPONENT_NAME="${BASE_COMPONENT}"
+
+          else
+            echo "ERROR: Invalid build_type value"
+            exit 1
+          fi
+
+          echo "EFFECTIVE_TAG=$EFFECTIVE_TAG" >> $GITHUB_ENV
+          echo "COMPONENT_NAME=$COMPONENT_NAME" >> $GITHUB_ENV
+
+
+      - name: Prepare Tekton files
+        run: |
+          set -e
+
+          BUILD_TYPE="${{ inputs.build_type }}"
+          VERSION="${{ inputs.version }}"
+          OKC_FOLDER="${{ inputs.component }}"
+          TARGET_BRANCH="${BUILD_BRANCH}"
+
+          repo_folder="okc-repo/pipelineruns/${OKC_FOLDER}"
+          echo "Repo folder: $repo_folder"
+          echo "Build type: $BUILD_TYPE"
+          echo "Version: $VERSION"
+
+          if [ ! -d "$repo_folder" ]; then
+            echo "ERROR: $repo_folder does not exist"
+            exit 1
+          fi
+
+          mkdir -p .tekton
+
+          ##################################################
+          # CI BUILD
+          ##################################################
+          if [ "$BUILD_TYPE" = "CI" ]; then
+
+            echo "CI build → syncing all pipelineruns"
+
+            find "$repo_folder" -type f -name "*.yaml" | while read src_file; do
+
+              filename=$(basename "$src_file")
+              target_file=".tekton/$filename"
+
+              echo "Processing pipeline file: $filename"
+
+              cp "$src_file" "$target_file"
+
+              ########################################
+              # Pull pipelines
+              ########################################
+              if [[ "$filename" == *pull* ]]; then
+                EFFECTIVE_TAG="odh-pr"
+                echo "Detected pull pipeline → using tag $EFFECTIVE_TAG"
+
+                sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${EFFECTIVE_TAG}"'|g' "$target_file"
+                sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+
+              ########################################
+              # Push pipelines
+              ########################################
+              elif [[ "$filename" == *push* ]]; then
+                EFFECTIVE_TAG="odh-stable"
+                echo "Detected push pipeline → using tag $EFFECTIVE_TAG"
+
+                sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${EFFECTIVE_TAG}"'|g' "$target_file"
+                sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+                sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
+
+              ########################################
+              # Other pipelines
+              ########################################
+              else
+                echo "Generic pipeline detected → copying as-is: $filename"
+              fi
+
+            done
+          fi
+
+          ##################################################
+          # RELEASE BUILD
+          ##################################################
+          if [ "$BUILD_TYPE" = "Release" ]; then
+
+            if [ -z "$VERSION" ]; then
+              echo "ERROR: Version is required for Release build"
+              exit 1
+            fi
+
+            echo "Release build → ensuring release-push file exists"
+
+            find "$repo_folder" -type f -name "*-push.yaml" ! -name "*release*" | while read src_file; do
+
+              base_name=$(basename "$src_file")
+              release_name="${base_name%-push.yaml}-release-push.yaml"
+              target_file=".tekton/$release_name"
+
+              if [ ! -f "$target_file" ]; then
+                echo "Creating new release file $target_file"
+                cp "$src_file" "$target_file"
+              else
+                echo "Release file exists → updating $target_file"
+              fi
+
+              sed -i -E 's|(name: .*)-on-push|\1-on-release-push|' "$target_file"
+              sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${VERSION}"'|g' "$target_file"
+              sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+              sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
+              sed -i -E 's|Dockerfiles/rhoai\.Dockerfile|Dockerfiles/Dockerfile|g' "$target_file"
+
+            done
+          fi
+
+          ##################################################
+          # ODH OPERATOR RELEASE BUNDLE/FBC PIPELINES
+          ##################################################
+
+          # Process bundle and FBC pipelines for opendatahub-operator only
+          if [ "${{ inputs.component }}" = "opendatahub-operator" ] && [ "$BUILD_TYPE" = "Release" ]; then
+            echo "Processing opendatahub-operator release bundle/FBC pipelines"
+
+            # Extract VERSION from OUTPUT_IMAGE_TAG (remove 'v' prefix if present)
+            VERSION_VALUE=$(echo "${VERSION}" | sed 's/^v//')
+
+            release_folder="$repo_folder/release"
+
+            if [ -d "$release_folder" ]; then
+              find "$release_folder" -type f -name "*-release-push.yaml" | while read src_file; do
+
+                base_name=$(basename "$src_file")
+                target_file=".tekton/$base_name"
+
+                echo "Processing release template: $target_file"
+                cp "$src_file" "$target_file"
+
+                # Apply standard substitutions
+                sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${VERSION}"'|g' "$target_file"
+                sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+                sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
+                sed -i -E 's|\$\$VERSION\$\$|'"${VERSION_VALUE}"'|g' "$target_file"
+
+              done
+            else
+              echo "No release/ folder found for opendatahub-operator"
+            fi
+          fi
+
+          ##################################################
+          # INVALID TYPE GUARD
+          ##################################################
+          if [ "$BUILD_TYPE" != "CI" ] && [ "$BUILD_TYPE" != "Release" ]; then
+            echo "ERROR: Invalid build_type"
+            exit 1
+          fi
+
+          echo "Tekton processing complete."
+
+
+      - name: Prepare GitHub workflow files (if applicable)
+        run: |
+          src_dir="okc-repo/workflows/${{ inputs.component }}"
+          dest_dir="extracted/.github/workflows"
+          mkdir -p "$dest_dir"
+
+          if [ -d "$src_dir" ]; then
+            echo "Copying workflow files from $src_dir to $dest_dir"
+            find "$src_dir" -type f -name "*.yaml" -exec cp {} "$dest_dir/" \;
+
+            echo "Updating $$TARGET_BRANCH$$ to ${{ inputs.build_branch }} in GitHub workflow files"
+            find "$dest_dir" -type f -name "*.yaml" | while read file; do
+            # Replace $$TARGET_BRANCH$$ with the build branch (the branch images are built from)
+            perl -0777 -i -pe 's/\$\$TARGET_BRANCH\$\$/'"${{ inputs.build_branch }}"'/g' "$file"
+          done
+          else
+            echo "No workflows directory found for component '${{ inputs.component }}'. Skipping."
+          fi
+
+      - name: Clone and push Tekton changes
+        run: |
+          set -e
+
+          WORKSPACE_DIR="$GITHUB_WORKSPACE"
+          SOURCE_TEKTON="$WORKSPACE_DIR/.tekton"
+
+          git clone https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/${REPOSITORY} repo-workspace
+          cd repo-workspace
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin ${{ inputs.pr_target_branch }}
+          git checkout -B ${{ inputs.pr_target_branch }} origin/${{ inputs.pr_target_branch }}
+
+          ########################################
+          # Branch naming
+          ########################################
+
+          if [ "${{ inputs.build_type }}" = "Release" ]; then
+            branch_name="release-${{ inputs.component }}-${{ inputs.version }}-$(date +%s)"
+          else
+            branch_name="ci-${{ inputs.component }}-$(date +%s)"
+          fi
+
+          echo "BRANCH_NAME=$branch_name" >> $GITHUB_ENV
+
+          git checkout -B "$branch_name" ${{ inputs.pr_target_branch }}
+
+          ########################################
+          # Copy .tekton files
+          ########################################
+
+          mkdir -p .tekton
+
+          if compgen -G "$SOURCE_TEKTON/*.yaml" > /dev/null; then
+            echo "Copying Tekton files from $SOURCE_TEKTON"
+
+            for file in "$SOURCE_TEKTON"/*.yaml; do
+              target=".tekton/$(basename "$file")"
+              cp "$file" "$target"
+              git add -f "$target"
+            done
+          else
+            echo "ERROR: No Tekton YAML files found in $SOURCE_TEKTON"
+            exit 1
+          fi
+
+          ########################################
+          # Copy workflows if they exist
+          ########################################
+
+          WORKFLOW_SRC="$WORKSPACE_DIR/.github/workflows"
+          WORKFLOW_DEST=".github/workflows"
+
+          if [ -d "$WORKFLOW_SRC" ]; then
+            echo "Copying workflow files"
+            mkdir -p "$WORKFLOW_DEST"
+            rsync -av "$WORKFLOW_SRC/" "$WORKFLOW_DEST/"
+            git add -f "$WORKFLOW_DEST"
+          else
+            echo "No workflow updates found."
+          fi
+
+          ########################################
+          # Commit logic
+          ########################################
+
+          ########################################
+          # Commit logic
+          ########################################
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            echo "commit=false" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          if [ "${{ inputs.build_type }}" = "Release" ]; then
+
+            cat <<EOF > commit_message.txt
+          Release: update Tekton release-push pipeline to ${{ inputs.version }}
+
+          - Ensured release-push file exists
+          - Updated output-image tag to ${{ inputs.version }}
+          - Updated metadata.name to on-release-push
+          - Target branch: ${{ inputs.pr_target_branch }}
+          EOF
+
+            cat <<EOF > pr_body.txt
+          This PR prepares Tekton pipelines for a Release build.
+
+          - Version: ${{ inputs.version }}
+          - Ensured *-release-push.yaml exists
+          - Updated output-image tag to ${{ inputs.version }}
+          - PR target branch: ${{ inputs.pr_target_branch }}
+          - Build branch: ${{ inputs.build_branch }}
+          EOF
+
+            PR_TITLE="Release: Tekton pipelines → ${{ inputs.version }}"
+
+          else
+
+            cat <<EOF > commit_message.txt
+          CI: update Tekton pipelines
+
+          - Pull pipelines use odh-pr tag
+          - Push pipelines use odh-stable tag
+          - Target branch: ${{ inputs.pr_target_branch }}
+          EOF
+
+            cat <<EOF > pr_body.txt
+          This PR updates Tekton pipelines for a CI build.
+
+          - Pull pipelines → odh-pr
+          - Push pipelines → odh-stable
+          - PR target branch: ${{ inputs.pr_target_branch }}
+          - Build branch: ${{ inputs.build_branch }}
+          EOF
+
+            PR_TITLE="CI: Tekton pipeline sync"
+
+          fi
+
+          git commit -F commit_message.txt
+          git push --set-upstream origin "$branch_name"
+
+          echo "commit=true" >> $GITHUB_ENV
+          echo "PR_TITLE=$PR_TITLE" >> $GITHUB_ENV
+
+          echo "PR_BODY<<EOF" >> $GITHUB_ENV
+          cat pr_body.txt >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+
+      - name: Create Pull Request
+        if: env.commit == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh pr create \
+            --repo "${REPOSITORY}" \
+            --base "${{ inputs.pr_target_branch }}" \
+            --head "${BRANCH_NAME}" \
+            --title "${PR_TITLE}" \
+            --body "${PR_BODY}"

@@ -1,0 +1,67 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: check-prerequisites
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  description: |
+    Verifies that the quay catalog and bundle images built for this PR exist
+    before triggering the early-gate test pipeline.
+  steps:
+  - name: check-images
+    image: quay.io/konflux-ci/konflux-test:stable
+    env:
+    - name: PR_NUMBER
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+    - name: REPO_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-repository']
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+
+      # Extract just the repo name from org/repo format
+      REPO_NAME="${REPO_URL##*/}"
+
+      CATALOG_IMAGE="quay.io/opendatahub/opendatahub-operator-catalog:odh-pr-${PR_NUMBER}-${REPO_NAME}"
+      BUNDLE_IMAGE="quay.io/opendatahub/opendatahub-operator-bundle:odh-pr-${PR_NUMBER}-${REPO_NAME}"
+
+      echo "Checking prerequisites for PR #${PR_NUMBER} in repo ${REPO_NAME}"
+      echo "Catalog image: ${CATALOG_IMAGE}"
+      echo "Bundle image:  ${BUNDLE_IMAGE}"
+
+      check_image() {
+        local image="$1"
+        local label="$2"
+        for attempt in 1 2 3; do
+          if skopeo inspect --no-creds "docker://${image}" &>/dev/null; then
+            echo "✓ ${label} exists: ${image}"
+            return 0
+          fi
+          if [ "${attempt}" -lt 3 ]; then
+            echo "  ${label} check failed (attempt ${attempt}/3), retrying in 15s..."
+            sleep 15
+          fi
+        done
+        echo "✗ ${label} NOT found after 3 attempts: ${image}"
+        return 1
+      }
+
+      MISSING=0
+      check_image "${CATALOG_IMAGE}" "Catalog image" || MISSING=1
+      check_image "${BUNDLE_IMAGE}" "Bundle image"   || MISSING=1
+
+      if [ "${MISSING}" -eq 1 ]; then
+        echo ""
+        echo "Prerequisites not met. Both quay images must exist before running early-gate tests."
+        echo "Ensure the early-gate-component-pipeline has completed successfully for this PR."
+        exit 1
+      fi
+
+      echo ""
+      echo "All prerequisites met. Proceeding with early-gate test pipeline."

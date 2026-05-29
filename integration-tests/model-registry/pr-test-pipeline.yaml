@@ -1,0 +1,265 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: model-registry-e2e-test
+spec:
+  description: |
+    An integration test which provisions an ephemeral Hypershift cluster, deploys opendatahub-operator
+    from a Konflux snapshot and runs the e2e tests against it.
+  params:
+    - description: Snapshot of the application
+      name: SNAPSHOT
+      type: string
+  tasks:
+    - name: parse-metadata
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/integration-examples
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/test_metadata.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+    - name: find-component-image
+      description: Placeholder task that prints the Snapshot and outputs standard TEST_OUTPUT
+      runAfter:
+        - parse-metadata
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+      taskSpec:
+        params:
+        - name: SNAPSHOT
+        steps:
+        - image: quay.io/konflux-ci/konflux-test:stable
+          workingDir: /workspace
+          env:
+            - name: SNAPSHOT
+              value: $(params.SNAPSHOT)
+            - name: COMPONENT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['appstudio.openshift.io/component']
+          script: |
+            #!/bin/sh
+
+            # Extract the component container image from the SNAPSHOT JSON data
+            COMPONENT_CONTAINER_IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.components[] | select(.name == $component_name) | .containerImage' <<< "${SNAPSHOT}")
+
+            # Log the extracted variable
+            echo "  COMPONENT_CONTAINER_IMAGE: ${COMPONENT_CONTAINER_IMAGE}"
+    - name: check-prerequisites
+      description: check prerequisites if the ITS needs to execute
+      runAfter:
+        - find-component-image
+      taskSpec:
+        results:
+        - name: event-type
+          description: "stores info about event type"
+        steps:
+        - image: quay.io/konflux-ci/konflux-test:stable
+          env:
+            - name: EVENT_TYPE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['pac.test.appstudio.openshift.io/event-type']
+          script: |
+            #!/bin/bash
+            set -e
+            echo "EVENT_TYPE=${EVENT_TYPE}"
+            echo -n "${EVENT_TYPE}" > $(results.event-type.path)
+
+    - name: provision-eaas-space
+      runAfter:
+        - check-prerequisites
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+      params:
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+      when:
+        - input: "$(tasks.check-prerequisites.results.event-type)"
+          operator: in
+          values: ["pull_request", "retest-all-comment", "on-comment", "test-comment"]
+    - name: provision-cluster
+      runAfter:
+        - provision-eaas-space
+      taskSpec:
+        results:
+          - name: clusterName
+            value: "$(steps.create-cluster.results.clusterName)"
+        steps:
+          - name: get-supported-versions
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+          - name: pick-version
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+            params:
+              - name: prefix
+                value: "$(steps.get-supported-versions.results.versions[0])."
+          - name: create-cluster
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: version
+                value: "$(steps.pick-version.results.version)"
+              - name: instanceType
+                value: m5.2xlarge
+      when:
+        - input: "$(tasks.check-prerequisites.results.event-type)"
+          operator: in
+          values: ["pull_request", "retest-all-comment", "on-comment", "test-comment"]
+    - name: e2e-model-registry
+      runAfter:
+        - provision-cluster
+      params:
+      - name: git-url
+        value: "$(tasks.parse-metadata.results.source-git-url)"
+      - name: git-rev
+        value: "$(tasks.parse-metadata.results.target-git-branch)"
+      - name: component-image
+        value: "$(tasks.parse-metadata.results.component-container-image)"
+      taskSpec:
+        params:
+          - name: git-url
+            type: string
+          - name: git-rev
+            type: string
+          - name: component-image
+            type: string
+        volumes:
+          - name: credentials
+            emptyDir: {}
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+
+          - name: clone-repo
+            image: alpine/git
+            script: |
+              echo $(params.git-url)
+              echo $(params.git-rev)
+              git clone --depth 1 --branch $(params.git-rev) $(params.git-url) /workspace/source
+              git config --global --add safe.directory /workspace/source
+              cd /workspace/source
+
+          - name: e2e-model-registry
+            image: quay.io/rhoai/rhoai-task-toolset:model-registry
+            env:
+              - name: KUBECONFIG
+                value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+            workingDir: /workspace/source
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+            script: |
+              set -euxo pipefail
+              ### PREPARE NECESSARY VARIABLES ###
+              # Set name of pod to run Python client tests in
+              POD_NAME="test-python-client"
+              # Set name of namespace for pod to run Python client tests in
+              POD_NAMESPACE_NAME="opendatahub"
+              # Construct script to run in Python client tests pod
+              SCRIPT="""
+              # Print last commit of current code
+              git config --global --add safe.directory /workspace/source
+              # git show
+              # Install Robot Framework tests requirements
+              pip3.9 install -r test/robot/requirements.txt
+              # Install Python client for model-registry
+              pip3.9 install -e clients/python
+              # Update host for tests in Python files
+              sed -i -e \"s/localhost/modelregistry-sample/g\" test/robot/*.py
+              # Run Robot Framework tests
+              TEST_MODE=Python python3.9 -m robot test/robot/MRandLogicalModel.robot
+              """
+
+              ### RUN TEST CODE ###
+              # Print last commit of current code
+              # git config --global --add safe.directory /workspace/source
+              # git show
+              # Check state of ODH operator source
+              oc describe catalogsource -n openshift-marketplace community-operators
+              # Deploy ODH operator and other necessary resources
+              ./openshift-ci/scripts/oci-model-registry-deploy.sh
+              # Create Python client tests pod
+              oc run "${POD_NAME}" -n "${POD_NAMESPACE_NAME}" --image=ubi8/python-39 sleep 99d
+              # Wait for Python client tests pod to be ready
+              oc wait pod --for=condition=Ready -n "${POD_NAMESPACE_NAME}" "${POD_NAME}"
+              # Copy model-registry repo to pod
+              oc rsync . "${POD_NAME}":. -n "${POD_NAMESPACE_NAME}"
+              # Run script to test Python client in pod
+              oc exec "${POD_NAME}" -n "${POD_NAMESPACE_NAME}" -- /bin/bash -c "${SCRIPT}"
+              # Save return code of the last command
+              EXIT_STATUS=$?
+              # Save artifacts
+              oc rsync "${POD_NAME}":./output.xml "${ARTIFACT_DIR}" -n "${POD_NAMESPACE_NAME}"
+              oc rsync "${POD_NAME}":./log.html "${ARTIFACT_DIR}" -n "${POD_NAMESPACE_NAME}"
+              oc rsync "${POD_NAME}":./report.html "${ARTIFACT_DIR}" -n "${POD_NAMESPACE_NAME}"
+              # Delete Python client tests pod
+              oc delete pod -n "${POD_NAMESPACE_NAME}" "${POD_NAME}"
+              # Exit with return code of tests
+              exit $EXIT_STATUS
+      when:
+        - input: "$(tasks.check-prerequisites.results.event-type)"
+          operator: in
+          values: ["pull_request", "retest-all-comment", "on-comment", "test-comment"]
+
+
+

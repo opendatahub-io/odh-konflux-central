@@ -1,0 +1,252 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: 'true'
+    git-provider: github
+    git-provider-url: https://github.com
+  name: feast-group
+  namespace: open-data-hub-tenant
+spec:
+  application: group-testing
+  componentName: feast-group
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/feast-group
+  source:
+    git:
+      dockerfileUrl: Dockerfile
+      url: https://github.com/opendatahub-io/feast
+      revision: "stable"
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: 'true'
+    git-provider: github
+    git-provider-url: https://github.com
+  name: kserve-group
+  namespace: open-data-hub-tenant
+spec:
+  application: group-testing
+  componentName: kserve-group
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/kserve-group
+  source:
+    git:
+      dockerfileUrl: Dockerfile
+      url: https://github.com/opendatahub-io/kserve
+      revision: "master"
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: 'true'
+    git-provider: github
+    git-provider-url: https://github.com
+  name: kubeflow-group
+  namespace: open-data-hub-tenant
+spec:
+  application: group-testing
+  componentName: kubeflow-group
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/kubeflow-group
+  source:
+    git:
+      context: components
+      dockerfileUrl: notebook-controller/Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/kubeflow.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: 'true'
+    git-provider: github
+    git-provider-url: https://github.com
+  name: maas-group
+  namespace: open-data-hub-tenant
+spec:
+  application: group-testing
+  componentName: maas-group
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/maas-group
+  source:
+    git:
+      dockerfileUrl: maas-api/Dockerfile
+      url: https://github.com/opendatahub-io/models-as-a-service.git
+      revision: "main"
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: 'true'
+    git-provider: github
+    git-provider-url: https://github.com
+  name: ai-gateway-group
+  namespace: open-data-hub-tenant
+spec:
+  application: group-testing
+  componentName: ai-gateway-group
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/ai-gateway-group
+  source:
+    git:
+      dockerfileUrl: Dockerfile
+      url: https://github.com/opendatahub-io/ai-gateway-payload-processing.git
+      revision: "main"
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: odh-model-controller-ci-its-manual
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute the integration test when component odh-operator updates
+      name: component_odh-model-controller-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/odh-model-controller/pr-test-pipelinerun.yaml
+    resolver: git
+    resourceKind: pipelinerun
+
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: odh-operator-ci-e2e-its-manual
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute the integration test when component odh-operator updates
+      name: component_odh-operator-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/opendatahub-operator/pr-test-pipelinerun.yaml
+    resolver: git
+    resourceKind: pipelinerun
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: trainer-ci-its-manual
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute the integration test when component trainer-ci updates
+      name: component_trainer-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/trainer/pr-testing-pipeline.yaml
+    resolver: git
+    resourceKind: pipelinerun
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: kuberay-ci-its-manual
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute the integration test when component odh-kuberay-operator-controller-ci updates
+      name: component_odh-kuberay-operator-controller-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/kuberay/pr-testing-pipeline.yaml
+    resolver: git
+    resourceKind: pipelinerun
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: distributed-workloads-its-manual
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute the integration test when component odh-th06-cpu-torch210-py312-ci updates
+      name: component_odh-th06-cpu-torch210-py312-ci
+    - description: execute the integration test when component odh-training-rocm64-torch28-py312-ci updates
+      name: component_odh-training-rocm64-torch28-py312-ci
+    - description: execute the integration test when component odh-training-rocm62-torch25-py311-ci updates
+      name: component_odh-training-rocm62-torch25-py311-ci
+    - description: execute the integration test when component odh-training-rocm62-torch24-py311-ci updates
+      name: component_odh-training-rocm62-torch24-py311-ci
+    - description: execute the integration test when component odh-training-cuda128-torch28-py312-ci updates
+      name: component_odh-training-cuda128-torch28-py312-ci
+    - description: execute the integration test when component odh-training-cuda124-torch25-py311-ci updates
+      name: component_odh-training-cuda124-torch25-py311-ci
+    - description: execute the integration test when component odh-training-cuda121-torch24-py311-ci updates
+      name: component_odh-training-cuda121-torch24-py311-ci
+    - description: execute the integration test when component odh-th06-cuda130-torch210-py312-ci updates
+      name: component_odh-th06-cuda130-torch210-py312-ci
+    - description: execute the integration test when component odh-th06-rocm64-torch291-py312-ci updates
+      name: component_odh-th06-rocm64-torch291-py312-ci
+    - description: execute the integration test when component odh-training-cuda128-torch29-py312-ci updates
+      name: component_odh-training-cuda128-torch29-py312-ci
+    - description: execute the integration test when component odh-training-rocm64-torch29-py312-ci updates
+      name: component_odh-training-rocm64-torch29-py312-ci
+    - description: execute the integration test when component training-cuda updates
+      name: component_training-cuda
+    - description: execute the integration test when component training-rocm updates
+      name: component_training-rocm
+    - description: execute the integration test when component py312-cuda128-torch290 updates
+      name: component_py312-cuda128-torch290
+    - description: execute the integration test when component py312-rocm64-torch290 updates
+      name: component_py312-rocm64-torch290
+    - description: execute the integration test when component odh-training-cuda130-torch210-py312-openmpi41-ci updates
+      name: component_odh-training-cuda130-torch210-py312-openmpi41-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/distributed-workloads/pr-testing-pipeline.yaml
+    resolver: git
+    resourceKind: pipelinerun

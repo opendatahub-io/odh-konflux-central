@@ -1,0 +1,218 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: trigger-group-testing
+spec:
+  workspaces:
+    - name: basic-auth
+      optional: true
+  params:
+    - name: COMPONENTS
+      description: List of components in the group (JSON). If empty, fetched from component_repo_map.json using REPO_NAME.
+      default: ""
+    - name: fallback-tag
+      type: string
+      default: odh-stable
+      description: Quay tag when PR image is missing
+    - name: ociStorage
+      type: string
+      description: OCI repository for storing the SNAPSHOT trusted artifact
+    - name: ociArtifactExpiresAfter
+      type: string
+      default: "1h"
+      description: Expiration for the SNAPSHOT OCI artifact
+  results:
+  - description: OCI trusted artifact URI containing the generated snapshot JSON
+    name: SNAPSHOT_ARTIFACT
+  - description: Resolved COMPONENTS JSON used to generate the snapshot
+    name: group-components
+  volumes:
+  - name: workdir
+    emptyDir: {}
+  stepTemplate:
+    volumeMounts:
+    - mountPath: /var/workdir
+      name: workdir
+  steps:
+    - name: generate-snapshot
+      image: quay.io/konflux-ci/konflux-test:stable
+      workingDir: /workspace
+      env:
+        - name: COMPONENTS
+          value: $(params.COMPONENTS)
+        - name: FALLBACK_TAG
+          value: $(params.fallback-tag)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+          value: $(workspaces.basic-auth.bound)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+          value: $(workspaces.basic-auth.path)
+        - name: PR_NUMBER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+        - name: REPO_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
+      script: |
+        #!/bin/bash
+        set -e
+        cat /etc/*release
+
+        # --- Fetch COMPONENTS from component_repo_map.json if not provided ---
+        if [[ -z "${COMPONENTS}" ]]; then
+          if [[ -z "${REPO_NAME}" ]]; then
+            echo "ERROR: Both COMPONENTS and REPO_NAME are empty. Provide at least one." >&2
+            exit 1
+          fi
+          echo "COMPONENTS not provided, fetching from component_repo_map.json for REPO_NAME=${REPO_NAME}" >&2
+          COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+          COMPONENT_MAP=$(curl -sSf "${COMPONENT_MAP_URL}")
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          if [[ -z "${COMPONENTS}" || "${COMPONENTS}" == "null" ]]; then
+            echo "ERROR: No entry found for REPO_NAME=${REPO_NAME} in component_repo_map.json" >&2
+            exit 1
+          fi
+          echo "Fetched COMPONENTS for ${REPO_NAME}: ${COMPONENTS}" >&2
+        fi
+
+        echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+
+        json_string="$COMPONENTS"
+        echo ${COMPONENTS}
+        
+        # Temporary file to store results
+        temp_file=$(mktemp)
+        echo "{}" > "$temp_file"
+
+        # Parse JSON and iterate through each component
+        while IFS= read -r row; do
+            # Tag to search for
+            TAG="odh-pr-${PR_NUMBER}"
+        
+            # Decode the base64 encoded row
+            component=$(echo "$row" | base64 -d | jq -r '.key')
+            repo_path=$(echo "$row" | base64 -d | jq -r '.value')
+            
+            echo "component=${component}"
+            echo "repo_path=${repo_path}"
+        
+            if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
+              echo "found the image with tag ${TAG}"
+            else
+              echo "No image found with tag ${TAG}, falling back to the ${FALLBACK_TAG} image for ${repo_path}"
+              TAG=${FALLBACK_TAG}
+            fi
+                
+            
+            # Construct full quay URL
+            full_repo="quay.io/${repo_path}"
+
+            echo "Processing component: $component" >&2
+            echo "Repository: $full_repo" >&2
+
+            # Extract namespace and repository name from repo_path
+            # Format: namespace/project/repository
+            namespace=${repo_path%/*}
+            repository=${repo_path##*/}
+
+            # Query Quay API to get the digest for the tag
+            api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/tag/?specificTag=${TAG}"
+
+            echo "Querying: $api_url" >&2
+
+            # Make API request and extract the manifest digest
+            response=$(curl -s "$api_url")
+
+            # Get the latest (first) tag's manifest digest
+            manifest_digest=$(echo "$response" | jq -r '.tags[0].manifest_digest // empty')
+
+            if [ -z "$manifest_digest" ]; then
+                echo "Warning: No digest found for $component with tag $TAG" >&2
+                full_image_uri="${full_repo}:${TAG}"
+                git_url=""
+                git_commit=""
+            else
+                echo "Found digest: $manifest_digest" >&2
+                full_image_uri="${full_repo}@${manifest_digest}"
+
+                # Query Quay API to get the manifest details and extract labels
+                manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${manifest_digest}"
+                echo "Querying manifest: $manifest_api_url" >&2
+
+                manifest_response=$(curl -s "$manifest_api_url")
+                echo "manifest_response=${manifest_response}" >&2
+
+                # Check if this is a manifest list (multi-arch image)
+                is_manifest_list=$(echo "$manifest_response" | jq -r '.is_manifest_list // false')
+                echo "Is manifest list: $is_manifest_list" >&2
+
+                if [ "$is_manifest_list" = "true" ]; then
+                    echo "Multi-arch image detected, extracting first manifest digest" >&2
+
+                    # Get the digest of the first manifest in the list
+                    first_manifest_digest=$(echo "$manifest_response" | jq -r '.manifest_data' | jq -r '.manifests[0].digest // empty')
+
+                    if [ -z "$first_manifest_digest" ]; then
+                        echo "Warning: No manifest found in manifest list" >&2
+                        git_url=""
+                        git_commit=""
+                    else
+                        echo "First manifest digest: $first_manifest_digest" >&2
+
+                        # Query API again with the specific manifest digest
+                        specific_manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${first_manifest_digest}/labels"
+                        echo "Querying specific manifest: $specific_manifest_api_url" >&2
+
+                        specific_manifest_response=$(curl -s "$specific_manifest_api_url")
+                        echo "specific_manifest_response=${specific_manifest_response}"
+                        # Extract git.url and git.commit labels from the specific manifest
+                        git_url=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.url") | .value// empty')
+                        git_commit=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.commit") | .value// empty')
+                    fi
+                else
+                    echo "Single-arch image, extracting labels directly" >&2
+
+                    # Extract git.url and git.commit labels from current manifest
+                    git_url=$(echo "$manifest_response" | jq -r '.config.config.Labels["git.url"] // empty')
+                    git_commit=$(echo "$manifest_response" | jq -r '.config.config.Labels["git.commit"] // empty')
+                fi
+
+                echo "Git URL: $git_url" >&2
+                echo "Git Commit: $git_commit" >&2
+            fi
+
+            # Add to output JSON with image URI, git.url, and git.commit
+            jq --arg key "$component" \
+               --arg image "$full_image_uri" \
+               --arg giturl "$git_url" \
+               --arg gitcommit "$git_commit" \
+               --arg image_tag "$TAG" \
+               '. + {($key): {image: $image, "git.url": $giturl, "git.commit": $gitcommit, "image_tag": $image_tag}}' \
+               "$temp_file" > "${temp_file}.tmp" && mv "${temp_file}.tmp" "$temp_file"
+
+            echo "" >&2
+        done < <(echo "$json_string" | jq -r 'to_entries[] | @base64')
+
+        # Print final output JSON
+        echo "Output JSON:" >&2
+        cat "$temp_file" | jq '.'
+
+        # Write snapshot to trusted artifact directory
+        mkdir -p /var/workdir/snapshot
+        cp "$temp_file" /var/workdir/snapshot/snapshot.json
+        echo "Snapshot written to /var/workdir/snapshot/snapshot.json" >&2
+
+        # Cleanup
+        rm -f "$temp_file"
+
+    - name: create-trusted-artifact
+      image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+      args:
+      - create
+      - --store
+      - $(params.ociStorage)
+      - $(results.SNAPSHOT_ARTIFACT.path)=/var/workdir/snapshot
+      env:
+      - name: IMAGE_EXPIRES_AFTER
+        value: $(params.ociArtifactExpiresAfter)

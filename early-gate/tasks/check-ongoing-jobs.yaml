@@ -1,0 +1,479 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: check-ongoing-jobs
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  description: |
+    Scans PR comments to detect a previously triggered but incomplete early-gate
+    Jenkins job. Groups comments by correlation-id (queue-url, job-url, complete)
+    and processes groups in descending order of creation time.
+
+    For each incomplete group, dispatches the Monitor Jenkins Job workflow to
+    verify the Jenkins job is still running before deciding to resume. Only
+    resumes if the job is confirmed in-progress; abandons the group on any
+    error or if the job has already completed.
+
+    Emits resume-from, queue-url, job-url, and correlation-id results.
+  params:
+  - name: github-workflow-repo
+    description: Owner/repo of the GitHub repo containing the monitor workflow
+    type: string
+    default: red-hat-data-services/rhods-devops-infra
+  - name: monitor-workflow-file
+    description: Workflow filename for monitoring the Jenkins job
+    type: string
+    default: monitor-jenkins-job.yaml
+  - name: workflow-token-secret-name
+    description: Name of the Kubernetes secret containing the GitHub token for interacting with GitHub Actions workflows
+    type: string
+    default: rhods-ci
+  - name: workflow-token-secret-key
+    description: Key in the secret that holds the GitHub token for workflow operations
+    type: string
+    default: secret
+  - name: pr-token-secret-name
+    description: Name of the Kubernetes secret containing the GitHub token for PR comment operations
+    type: string
+    default: odh-github-secret
+  - name: pr-token-secret-key
+    description: Key in the secret that holds the GitHub token for PR comment operations
+    type: string
+    default: commenter-token
+  - name: jenkins-url-secret-name
+    description: Name of the Kubernetes secret containing the Jenkins base URL
+    type: string
+    default: rhods-ci
+  - name: jenkins-url-secret-key
+    description: Key in the secret that holds the Jenkins base URL (e.g. https://host)
+    type: string
+    default: jenkins-url
+  results:
+  - name: resume-from
+    description: "One of: none, job-url"
+  - name: queue-url
+    description: Relative Jenkins queue path from the resumed correlation group (empty if starting fresh)
+  - name: job-url
+    description: Relative Jenkins job path from the resumed correlation group (empty if starting fresh)
+  - name: correlation-id
+    description: Correlation ID of the group being resumed (empty if starting fresh)
+  steps:
+  - name: scan-pr-comments
+    image: quay.io/konflux-ci/konflux-test:stable
+    env:
+    - name: PR_NUMBER
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+    - name: REPO_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-repository']
+    - name: REPO_ORG
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
+    - name: WORKFLOW_GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: $(params.workflow-token-secret-name)
+          key: $(params.workflow-token-secret-key)
+    - name: PR_GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: $(params.pr-token-secret-name)
+          key: $(params.pr-token-secret-key)
+    - name: JENKINS_BASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: $(params.jenkins-url-secret-name)
+          key: $(params.jenkins-url-secret-key)
+    - name: SENDER
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sender']
+    - name: WORKFLOW_REPO
+      value: $(params.github-workflow-repo)
+    - name: MONITOR_WORKFLOW
+      value: $(params.monitor-workflow-file)
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+
+      OWNER="${REPO_ORG}"
+      REPO="${REPO_URL}"
+      JENKINS_BASE_URL="${JENKINS_BASE_URL%/}"
+
+      # ---------------------------------------------------------------
+      # Auto-triggered runs (sender=rhods-ci-bot) always start fresh
+      # ---------------------------------------------------------------
+      if [ "${SENDER}" = "rhods-ci-bot" ]; then
+        echo "Sender is rhods-ci-bot (auto-trigger). Forcing fresh Jenkins job."
+        printf '%s' "none"  > "$(results.resume-from.path)"
+        printf '%s' ""      > "$(results.queue-url.path)"
+        printf '%s' ""      > "$(results.job-url.path)"
+        printf '%s' ""      > "$(results.correlation-id.path)"
+        exit 0
+      fi
+
+      # ---------------------------------------------------------------
+      # Helper functions
+      # ---------------------------------------------------------------
+
+      gh_pr_api() {
+        local method="$1"
+        local url="$2"
+        shift 2
+        curl -sSf \
+          -X "${method}" \
+          -H "Authorization: Bearer ${PR_GITHUB_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          "${@}" \
+          "${url}"
+      }
+
+      gh_workflow_api() {
+        local method="$1"
+        local url="$2"
+        shift 2
+        curl -sSfL \
+          -X "${method}" \
+          -H "Authorization: Bearer ${WORKFLOW_GITHUB_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          "${@}" \
+          "${url}"
+      }
+
+      # Dispatches the monitor workflow, waits for completion, and extracts a
+      # named output from the job logs. Returns the value on stdout.
+      # Returns non-zero if the dispatch, run, or extraction fails.
+      dispatch_and_get_output() {
+        local input_key="$1"
+        local input_value="$2"
+        local output_name="$3"
+
+        local DISPATCH_TIME
+        DISPATCH_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        gh_workflow_api POST \
+          "https://api.github.com/repos/${WORKFLOW_REPO}/actions/workflows/${MONITOR_WORKFLOW}/dispatches" \
+          -d "{\"ref\":\"main\",\"inputs\":{\"${input_key}\":\"${input_value}\"}}" \
+          2>/dev/null || return 1
+
+        local RUN_ID=""
+        for attempt in $(seq 1 20); do
+          sleep 10
+          local RUNS
+          RUNS=$(gh_workflow_api GET \
+            "https://api.github.com/repos/${WORKFLOW_REPO}/actions/workflows/${MONITOR_WORKFLOW}/runs?per_page=5&event=workflow_dispatch" \
+            2>/dev/null || echo '{"workflow_runs":[]}')
+          RUN_ID=$(echo "${RUNS}" | jq -r \
+            --arg since "${DISPATCH_TIME}" \
+            '[.workflow_runs[] | select(.created_at >= $since)] | sort_by(.created_at) | last | .id // empty')
+          if [ -n "${RUN_ID}" ]; then break; fi
+        done
+
+        if [ -z "${RUN_ID}" ]; then
+          echo "Could not find dispatched workflow run" >&2
+          return 1
+        fi
+
+        local RUN_STATUS=""
+        for attempt in $(seq 1 40); do
+          sleep 15
+          local RUN_JSON
+          RUN_JSON=$(gh_workflow_api GET \
+            "https://api.github.com/repos/${WORKFLOW_REPO}/actions/runs/${RUN_ID}" \
+            2>/dev/null || echo '{}')
+          RUN_STATUS=$(echo "${RUN_JSON}" | jq -r '.status // "unknown"')
+          local RUN_CONCLUSION
+          RUN_CONCLUSION=$(echo "${RUN_JSON}" | jq -r '.conclusion // ""')
+          if [ "${RUN_STATUS}" = "completed" ]; then
+            if [ "${RUN_CONCLUSION}" != "success" ]; then
+              echo "Workflow run ${RUN_ID} completed with conclusion: ${RUN_CONCLUSION}" >&2
+              return 1
+            fi
+            break
+          fi
+        done
+
+        if [ "${RUN_STATUS}" != "completed" ]; then
+          echo "Workflow run ${RUN_ID} timed out" >&2
+          return 1
+        fi
+
+        local JOBS
+        JOBS=$(gh_workflow_api GET \
+          "https://api.github.com/repos/${WORKFLOW_REPO}/actions/runs/${RUN_ID}/jobs" \
+          2>/dev/null || echo '{"jobs":[]}')
+
+        local ALL_JOB_IDS
+        ALL_JOB_IDS=$(echo "${JOBS}" | jq -r '.jobs[].id')
+
+        for JOB_ID in ${ALL_JOB_IDS}; do
+          local JOB_LOGS
+          JOB_LOGS=$(gh_workflow_api GET \
+            "https://api.github.com/repos/${WORKFLOW_REPO}/actions/jobs/${JOB_ID}/logs" \
+            2>/dev/null || true)
+          local VALUE
+          VALUE=$(echo "${JOB_LOGS}" | grep -v '\[36;1m' | grep -oP "(?<=${output_name}=)[^\s]+" | head -1 || true)
+          if [ -n "${VALUE}" ]; then
+            echo "${VALUE}"
+            return 0
+          fi
+        done
+
+        echo "Output '${output_name}' not found in workflow logs" >&2
+        return 1
+      }
+
+      is_terminal_status() {
+        local s
+        s=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+        [[ "$s" == "success" || "$s" == "failure" || "$s" == "failed" || "$s" == "aborted" || "$s" == "unstable" || "$s" == "not_built" ]]
+      }
+
+      # Extracts correlation_id from a comment body.
+      # Tries HTML marker first, then falls back to body text for backward compat.
+      extract_correlation_id() {
+        local body="$1"
+        local corr_id
+        corr_id=$(echo "$body" | grep -oP '(?<=correlation_id=)[^ >]+' | head -1 || true)
+        if [ -z "$corr_id" ]; then
+          corr_id=$(echo "$body" | grep -oP '(?<=\*\*Correlation ID:\*\* )\S+' | head -1 || true)
+        fi
+        # Table format used by complete comments: | **Correlation ID** | value |
+        if [ -z "$corr_id" ]; then
+          corr_id=$(echo "$body" | grep -oP '(?<=\*\*Correlation ID\*\* \| )\S+' | head -1 || true)
+        fi
+        echo "$corr_id"
+      }
+
+      # ---------------------------------------------------------------
+      # 1. Scan all PR comments and group by correlation-id
+      # ---------------------------------------------------------------
+
+      echo "Scanning comments on PR #${PR_NUMBER} in ${OWNER}/${REPO}"
+
+      CURRENT_USER=$(gh_pr_api GET "https://api.github.com/user" | jq -r '.login')
+      echo "Authenticated as: ${CURRENT_USER}"
+
+      declare -A CORR_QUEUE_URL
+      declare -A CORR_JOB_URL
+      declare -A CORR_COMPLETE
+      declare -A CORR_LATEST_TIME
+
+      FIRST_CORR_ID=""
+      DONE_SCANNING=false
+
+      # GitHub Issues Comments API returns ascending order and does not
+      # support sort/direction params. To scan newest-first we find the
+      # last page, then iterate pages backwards, reversing each page.
+      FIRST_PAGE=$(gh_pr_api GET \
+        "https://api.github.com/repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments?per_page=100&page=1" \
+        2>/dev/null | jq 'length')
+      if [ "${FIRST_PAGE}" -eq 100 ]; then
+        # More than one page — probe to find the last page (cap at 5)
+        LAST_PAGE=1
+        for p in 2 3 4 5; do
+          PROBE=$(gh_pr_api GET \
+            "https://api.github.com/repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments?per_page=100&page=${p}" \
+            2>/dev/null | jq 'length')
+          if [ "${PROBE}" -eq 0 ]; then break; fi
+          LAST_PAGE=${p}
+        done
+      else
+        LAST_PAGE=1
+      fi
+
+      PAGE=${LAST_PAGE}
+      while [ "${PAGE}" -ge 1 ]; do
+        RESPONSE=$(gh_pr_api GET \
+          "https://api.github.com/repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments?per_page=100&page=${PAGE}")
+
+        COUNT=$(echo "${RESPONSE}" | jq 'length')
+        if [ "${COUNT}" -eq 0 ]; then
+          PAGE=$((PAGE - 1))
+          continue
+        fi
+
+        while IFS= read -r COMMENT_JSON; do
+          BODY=$(echo "${COMMENT_JSON}" | jq -r '.body')
+          CREATED_AT=$(echo "${COMMENT_JSON}" | jq -r '.created_at')
+          CORR_ID=""
+
+          if echo "${BODY}" | grep -q "^<!-- early-gate-queue-url "; then
+            CORR_ID=$(extract_correlation_id "${BODY}")
+            Q_URL=$(echo "${BODY}" | grep -oP '(?<=queue_url=)[^ >]+' | head -1 || true)
+            if [ -n "${CORR_ID}" ] && [ -n "${Q_URL}" ]; then
+              CORR_QUEUE_URL["${CORR_ID}"]="${Q_URL}"
+            fi
+          elif echo "${BODY}" | grep -q "^<!-- early-gate-job-url "; then
+            CORR_ID=$(extract_correlation_id "${BODY}")
+            J_URL=$(echo "${BODY}" | grep -oP '(?<=job_url=)[^ >]+' | head -1 || true)
+            if [ -n "${CORR_ID}" ] && [ -n "${J_URL}" ]; then
+              CORR_JOB_URL["${CORR_ID}"]="${J_URL}"
+            fi
+          elif echo "${BODY}" | grep -q "^<!-- early-gate-job-complete "; then
+            CORR_ID=$(extract_correlation_id "${BODY}")
+            if [ -n "${CORR_ID}" ]; then
+              CORR_COMPLETE["${CORR_ID}"]="true"
+            fi
+          fi
+
+          if [ -n "${CORR_ID}" ]; then
+            if [ -z "${FIRST_CORR_ID}" ]; then
+              FIRST_CORR_ID="${CORR_ID}"
+            elif [ "${CORR_ID}" != "${FIRST_CORR_ID}" ]; then
+              echo "  Reached older correlation-id ${CORR_ID}, stopping scan."
+              DONE_SCANNING=true
+              break
+            fi
+
+            if [ -z "${CORR_LATEST_TIME[${CORR_ID}]:-}" ] || [[ "${CREATED_AT}" > "${CORR_LATEST_TIME[${CORR_ID}]}" ]]; then
+              CORR_LATEST_TIME["${CORR_ID}"]="${CREATED_AT}"
+            fi
+          fi
+
+        done < <(echo "${RESPONSE}" | jq -c --arg user "${CURRENT_USER}" '[.[] | select(.user.login == $user)] | reverse | .[]')
+
+        if [ "${DONE_SCANNING}" = true ]; then
+          break
+        fi
+
+        PAGE=$((PAGE - 1))
+      done
+
+      # ---------------------------------------------------------------
+      # 2. Sort correlation-ids by most recent comment time (descending)
+      # ---------------------------------------------------------------
+
+      SORTED_CORR_IDS=()
+      while IFS= read -r line; do
+        [ -n "${line}" ] && SORTED_CORR_IDS+=("${line#* }")
+      done < <(for cid in "${!CORR_LATEST_TIME[@]}"; do
+        echo "${CORR_LATEST_TIME[${cid}]} ${cid}"
+      done | sort -r)
+
+      echo "Found ${#SORTED_CORR_IDS[@]} correlation group(s)"
+
+      # ---------------------------------------------------------------
+      # 3. Process groups in descending order, find first resumable one
+      # ---------------------------------------------------------------
+
+      RESUME_FROM="none"
+      FOUND_QUEUE_URL=""
+      FOUND_JOB_URL=""
+      FOUND_CORR_ID=""
+
+      for CID in "${SORTED_CORR_IDS[@]}"; do
+        Q="${CORR_QUEUE_URL[${CID}]:-}"
+        J="${CORR_JOB_URL[${CID}]:-}"
+        C="${CORR_COMPLETE[${CID}]:-}"
+
+        echo ""
+        echo "Checking correlation group: ${CID}"
+        echo "  queue-url: ${Q:-<none>}"
+        echo "  job-url: ${J:-<none>}"
+        echo "  complete: ${C:-<none>}"
+
+        # Skip if no actionable markers (e.g. orphaned complete comment)
+        if [ -z "${Q}" ] && [ -z "${J}" ]; then
+          echo "  No queue-url or job-url. Skipping."
+          continue
+        fi
+
+        # All 3 found (or complete exists) -> job previously completed, skip
+        if [ -n "${C}" ]; then
+          echo "  Completion comment found. Job previously completed. Skipping."
+          continue
+        fi
+
+        # Queue-url + job-url found, no complete -> verify job status
+        if [ -n "${Q}" ] && [ -n "${J}" ]; then
+          echo "  Queue-url and job-url found without completion. Verifying job status..."
+
+          STATUS=$(dispatch_and_get_output "job-url" "${JENKINS_BASE_URL}${J}" "jenkins-job-status") || {
+            echo "  Status check failed. Abandoning this group."
+            continue
+          }
+
+          if is_terminal_status "${STATUS}"; then
+            echo "  Job already completed (status=${STATUS}). Abandoning."
+            continue
+          fi
+
+          echo "  Job still in-progress (status=${STATUS}). Resuming."
+          RESUME_FROM="job-url"
+          FOUND_JOB_URL="${J}"
+          FOUND_QUEUE_URL="${Q}"
+          FOUND_CORR_ID="${CID}"
+          break
+        fi
+
+        # Queue-url only, no job-url, no complete -> resolve queue and verify
+        if [ -n "${Q}" ] && [ -z "${J}" ]; then
+          echo "  Queue-url found without job-url. Resolving via monitor workflow..."
+
+          JOB_URL_RESULT=$(dispatch_and_get_output "queue-url" "${JENKINS_BASE_URL}${Q}" "jenkins-job-url") || {
+            echo "  Queue resolution failed. Abandoning this group."
+            continue
+          }
+
+          JOB_URL_REL="${JOB_URL_RESULT#${JENKINS_BASE_URL}}"
+          [[ "${JOB_URL_REL}" == /* ]] || JOB_URL_REL="/${JOB_URL_REL}"
+          echo "  Resolved job URL: ${JOB_URL_REL}. Checking status..."
+
+          STATUS=$(dispatch_and_get_output "job-url" "${JENKINS_BASE_URL}${JOB_URL_REL}" "jenkins-job-status") || {
+            echo "  Status check failed. Abandoning this group."
+            continue
+          }
+
+          if is_terminal_status "${STATUS}"; then
+            echo "  Job already completed (status=${STATUS}). Abandoning."
+            continue
+          fi
+
+          echo "  Job still in-progress (status=${STATUS}). Resuming."
+          RESUME_FROM="job-url"
+          FOUND_JOB_URL="${JOB_URL_REL}"
+          FOUND_QUEUE_URL="${Q}"
+          FOUND_CORR_ID="${CID}"
+          break
+        fi
+
+        # Job-url only (queue-url comment may have been deleted) -> verify status
+        if [ -z "${Q}" ] && [ -n "${J}" ]; then
+          echo "  Job-url found without queue-url. Verifying job status..."
+
+          STATUS=$(dispatch_and_get_output "job-url" "${JENKINS_BASE_URL}${J}" "jenkins-job-status") || {
+            echo "  Status check failed. Abandoning this group."
+            continue
+          }
+
+          if is_terminal_status "${STATUS}"; then
+            echo "  Job already completed (status=${STATUS}). Abandoning."
+            continue
+          fi
+
+          echo "  Job still in-progress (status=${STATUS}). Resuming."
+          RESUME_FROM="job-url"
+          FOUND_JOB_URL="${J}"
+          FOUND_CORR_ID="${CID}"
+          break
+        fi
+      done
+
+      echo ""
+      echo "Final decision:"
+      echo "  resume-from: ${RESUME_FROM}"
+      echo "  queue-url: ${FOUND_QUEUE_URL}"
+      echo "  job-url: ${FOUND_JOB_URL}"
+      echo "  correlation-id: ${FOUND_CORR_ID}"
+
+      printf '%s' "${RESUME_FROM}" > "$(results.resume-from.path)"
+      printf '%s' "${FOUND_QUEUE_URL}" > "$(results.queue-url.path)"
+      printf '%s' "${FOUND_JOB_URL}" > "$(results.job-url.path)"
+      printf '%s' "${FOUND_CORR_ID}" > "$(results.correlation-id.path)"

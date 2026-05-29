@@ -1,0 +1,1355 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: odh-olminstall-test
+  labels:
+    app.kubernetes.io/version: "1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: odh, rhoai, integration-test
+spec:
+  description: >-
+    ODH/RHOAI integration test: provisions an ephemeral cluster via Konflux EaaS (HyperShift),
+    installs the operator with olminstall from the FBCF image in the Konflux snapshot, verifies
+    CSV Succeeded, then runs post-install BVT (opendatahub-tests cluster_health and operator_health).
+
+  params:
+    - name: SNAPSHOT
+      description: |
+        Spec section of an ApplicationSnapshot as a JSON string.
+        Provided by Konflux Integration Test Scenario.
+      type: string
+
+    - name: FBCF_COMPONENT_NAME
+      description: Name of the FBCF component in the snapshot
+      type: string
+      default: "odh-operator-catalog"
+
+    - name: UPDATE_CHANNEL
+      description: OLM update channel
+      type: string
+      default: "stable"
+
+    - name: OPERATOR_NAMESPACE
+      description: Namespace for operator installation
+      type: string
+      default: "redhat-ods-operator"
+
+    - name: OPERATOR_NAME
+      description: OLM package / deployment name (e.g. rhods-operator for RHOAI)
+      type: string
+      default: "rhods-operator"
+
+    - name: OLMINSTALL_CATALOG_NAME
+      description: CatalogSource name used by olminstall install-operator.sh
+      type: string
+      default: "rhoai-catalog-dev"
+
+    - name: HYPERSHIFT_INSTANCE_TYPE
+      description: AWS instance type for ephemeral HyperShift workers
+      type: string
+      default: "m5.2xlarge"
+
+    - name: OCP_VERSION_PREFIX
+      description: |
+        OpenShift version prefix for the ephemeral cluster (e.g. 4.20. or 4.19.). Latest patch is resolved via EaaS.
+        Leave empty to use the newest supported major.minor from the environment.
+      type: string
+      default: ""
+
+    - name: SCRIPTS_REPO_URL
+      description: Git repo containing the pipeline step scripts
+      type: string
+      default: "https://github.com/opendatahub-io/odh-konflux-central.git"
+
+    - name: SCRIPTS_REPO_REVISION
+      description: Branch/tag/SHA of the scripts repo to clone
+      type: string
+      default: "main"
+
+    - name: OLMINSTALL_REPO_URL
+      description: |
+        olminstall repo URL — provides tested OLM
+        install manifests (resources/install-rhods-operator.yaml) and utility
+        scripts (utils/oc_wait.sh, utils/oc_approve.sh).
+      type: string
+      default: "https://gitlab.cee.redhat.com/data-hub/olminstall.git"
+
+    - name: OLMINSTALL_REPO_REVISION
+      description: Branch/tag/SHA of data-hub/olminstall to clone
+      type: string
+      default: "main"
+
+    - name: QUAY_PULL_SECRET_NAME
+      description: Name of the namespace secret containing quay.io/rhoai dockerconfigjson
+      type: string
+      default: "rhoai-quay-secret"
+
+    - name: OCI_ARTIFACTS_PUSH_SECRET_NAME
+      description: |
+        Secret (type kubernetes.io/dockerconfigjson, key .dockerconfigjson) mounted for BVT
+        `oras push` to OCI_ARTIFACTS_REPO (e.g. quay.io/opendatahub/odh-ci-artifacts). Separate from
+        QUAY_PULL_SECRET_NAME which is used for rhoai catalog/image pulls in install-operator.
+      type: string
+      default: "odh-registry-secret"
+
+    - name: OPENDATAHUB_TESTS_REPO
+      description: |
+        Container image repository (no tag) for BVT — quay.io/opendatahub/opendatahub-tests.
+        Tag is derived from installed CSV version with skopeo fallback to latest.
+      type: string
+      default: "quay.io/opendatahub/opendatahub-tests"
+
+    - name: TESTS
+      description: |
+        Comma-separated phase ids declared in integration-tests/olminstall/olminstall-tests-config.yaml
+        inside SCRIPTS_REPO. parse-pipeline-tests clones that repo and evaluates RUN_* flags from the file.
+        Default must stay in sync with in-repo ITS examples (bvt,smoke).
+      type: string
+      default: "bvt,smoke"
+
+    - name: OCI_ARTIFACTS_REPO
+      description: |
+        OCI repository for BVT test artifacts (JUnit XML + console logs).
+        Uses the same shared repo as other integration test pipelines in this project.
+      type: string
+      default: "quay.io/opendatahub/odh-ci-artifacts"
+
+    - name: ARTIFACT_BROWSER_URL
+      description: |
+        Base URL of the OCI artifact browser used to view published test artifacts.
+        Per-run artifacts are at <ARTIFACT_BROWSER_URL>/<ARTIFACT_BROWSER_REPO_PATH>/<run>-bvt/.
+      type: string
+      default: "https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com"
+
+    - name: ARTIFACT_BROWSER_REPO_PATH
+      description: |
+        Path segment (repo slug) in the artifact browser for OCI_ARTIFACTS_REPO.
+        Default "odh-ci-artifacts" matches the shared QE browser layout for that repo name; override if your OCI target maps to a different slug.
+      type: string
+      default: "odh-ci-artifacts"
+
+    - name: PRODUCT
+      description: |
+        Product selector: "rhoai", "odh", or "none".
+        When "none", cluster provisioning and operator installation are skipped
+        (useful for running tests against an existing cluster in the future).
+      type: string
+      default: "rhoai"
+
+    - name: SLACK_CHANNEL_ID
+      description: |
+        Optional Slack channel ID (e.g. C01234ABCDE) to receive a run notification.
+        Leave empty (the default) to suppress all Slack messages. When set, the
+        slack-webhook secret must be present in the namespace; the channel field
+        in the payload overrides the webhook's default destination.
+      type: string
+      default: ""
+
+  results:
+    - name: TEST_OUTPUT
+      description: Overall test result (BVT TEST_OUTPUT or install-operator INSTALL_STATUS, aggregated in finally)
+      value: $(finally.propagate-pipeline-test-output.results.PROPAGATED_TEST_OUTPUT)
+
+    - name: FBCF_IMAGE
+      description: FBCF image that was tested
+      value: $(tasks.extract-fbcf-image.results.FBCF_IMAGE)
+
+    - name: ARTIFACTS_URL
+      description: BVT JUnit and logs in the OCI artifact browser (Konflux task Results panel)
+      value: $(finally.post-results.results.ARTIFACTS_URL)
+
+    - name: OLMINSTALL_SUMMARY_TEST_OUTPUT
+      description: Aggregated TEST_OUTPUT / install status (same as pipeline TEST_OUTPUT)
+      value: $(finally.post-results.results.TEST_OUTPUT)
+
+    - name: OLMINSTALL_OPERATOR_VERSION
+      description: Installed operator CSV version from install-operator
+      value: $(finally.post-results.results.OPERATOR_VERSION)
+
+    - name: EPHEMERAL_CLUSTER
+      description: EaaS ClusterTemplateInstance name from provision-cluster
+      value: $(finally.post-results.results.EPHEMERAL_CLUSTER)
+
+  tasks:
+    - name: parse-pipeline-tests
+      params:
+        - name: TESTS
+          value: $(params.TESTS)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+      taskSpec:
+        params:
+          - name: TESTS
+            type: string
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+        results:
+          - name: RUN_SMOKE
+            description: '"true" or "false"'
+          - name: RUN_BVT
+            description: '"true" or "false"'
+          - name: RUN_TIER1
+            description: '"true" or "false"'
+        steps:
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              echo "Cloning ${REPO_URL}@${REPO_REV} for olminstall-tests-config.yaml..."
+              rm -rf "${DEST_DIR}"
+              mkdir -p "${DEST_DIR}"
+              cd "${DEST_DIR}"
+              git init -q
+              git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}"
+              git checkout -q FETCH_HEAD
+              echo "✓ Cloned scripts repo"
+
+          - name: eval-tests-from-config
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: TESTS
+                value: $(params.TESTS)
+              - name: REPO_ROOT
+                value: /workspace/repo
+              - name: RUN_SMOKE_PATH
+                value: $(results.RUN_SMOKE.path)
+              - name: RUN_BVT_PATH
+                value: $(results.RUN_BVT.path)
+              - name: RUN_TIER1_PATH
+                value: $(results.RUN_TIER1.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/write_pipeline_test_flags.py"])
+
+    - name: smoke-placeholder
+      runAfter:
+        - parse-pipeline-tests
+      when:
+        - input: "$(tasks.parse-pipeline-tests.results.RUN_SMOKE)"
+          operator: in
+          values: ["true"]
+      taskSpec:
+        steps:
+          - name: noop
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            script: |
+              #!/usr/bin/env python3
+              print("smoke: placeholder — no smoke pytest suite is wired in this pipeline yet.")
+
+    - name: extract-fbcf-image
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+            type: string
+          - name: COMPONENT_NAME
+            type: string
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+        results:
+          - name: FBCF_IMAGE
+            description: Extracted FBCF image URL
+        steps:
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          - name: parse-snapshot
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+              - name: COMPONENT_NAME
+                value: $(params.COMPONENT_NAME)
+              - name: RESULT_PATH
+                value: $(results.FBCF_IMAGE.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              p = "/workspace/repo/integration-tests/olminstall/helpers/extract_fbcf_image.py"
+              os.execvp(sys.executable, [sys.executable, p])
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: COMPONENT_NAME
+          value: $(params.FBCF_COMPONENT_NAME)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+
+    - name: provision-eaas-space
+      runAfter:
+        - extract-fbcf-image
+      when:
+        - input: "$(params.PRODUCT)"
+          operator: notin
+          values: ["none"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+      params:
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+
+    - name: provision-cluster
+      runAfter:
+        - provision-eaas-space
+      when:
+        - input: "$(params.PRODUCT)"
+          operator: notin
+          values: ["none"]
+      params:
+        - name: OCP_VERSION_PREFIX
+          value: $(params.OCP_VERSION_PREFIX)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+        - name: HYPERSHIFT_INSTANCE_TYPE
+          value: $(params.HYPERSHIFT_INSTANCE_TYPE)
+      taskSpec:
+        params:
+          - name: OCP_VERSION_PREFIX
+            type: string
+            default: ""
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+          - name: HYPERSHIFT_INSTANCE_TYPE
+            type: string
+            default: "m5.2xlarge"
+        results:
+          - name: clusterName
+            value: "$(steps.create-cluster.results.clusterName)"
+        steps:
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          - name: get-supported-versions
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+          - name: resolve-ocp-prefix
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            results:
+              - name: prefix
+                type: string
+            env:
+              - name: OVERRIDE
+                value: $(params.OCP_VERSION_PREFIX)
+              - name: DEFAULT_MINOR
+                value: $(steps.get-supported-versions.results.versions[0])
+              - name: PREFIX_RESULT_PATH
+                value: $(step.results.prefix.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              p = "/workspace/repo/integration-tests/olminstall/helpers/resolve_ocp_prefix.py"
+              os.execvp(sys.executable, [sys.executable, p])
+          - name: pick-version
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+            params:
+              - name: prefix
+                value: "$(steps.resolve-ocp-prefix.results.prefix)"
+          - name: create-cluster
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            results:
+              - name: clusterName
+                type: string
+            env:
+              - name: INSTANCE_TYPE
+                value: $(params.HYPERSHIFT_INSTANCE_TYPE)
+              - name: VERSION
+                value: "$(steps.pick-version.results.version)"
+              - name: KUBECONFIG_VALUE
+                valueFrom:
+                  secretKeyRef:
+                    name: $(tasks.provision-eaas-space.results.secretRef)
+                    key: kubeconfig
+              - name: TENANT
+                value: "$(context.taskRun.namespace)"
+              - name: TIMEOUT
+                value: "30m"
+              - name: ICS_VALUE
+                value: |
+                  - mirrors:
+                      - quay.io/rhoai
+                    source: registry.redhat.io/rhoai
+              - name: CLUSTER_NAME_RESULT_PATH
+                value: "$(step.results.clusterName.path)"
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              p = "/workspace/repo/integration-tests/olminstall/helpers/create_eaas_cluster.py"
+              os.execvp(sys.executable, [sys.executable, p])
+
+    - name: install-operator
+      runAfter:
+        - provision-cluster
+        - parse-pipeline-tests
+      when:
+        - input: "$(params.PRODUCT)"
+          operator: notin
+          values: ["none"]
+      params:
+        - name: FBCF_IMAGE
+          value: $(tasks.extract-fbcf-image.results.FBCF_IMAGE)
+        - name: UPDATE_CHANNEL
+          value: $(params.UPDATE_CHANNEL)
+        - name: OPERATOR_NAMESPACE
+          value: $(params.OPERATOR_NAMESPACE)
+        - name: OPERATOR_NAME
+          value: $(params.OPERATOR_NAME)
+        - name: OLMINSTALL_REPO_URL
+          value: $(params.OLMINSTALL_REPO_URL)
+        - name: OLMINSTALL_REPO_REVISION
+          value: $(params.OLMINSTALL_REPO_REVISION)
+        - name: OLMINSTALL_CATALOG_NAME
+          value: $(params.OLMINSTALL_CATALOG_NAME)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+        - name: QUAY_PULL_SECRET_NAME
+          value: $(params.QUAY_PULL_SECRET_NAME)
+      taskSpec:
+        params:
+          - name: FBCF_IMAGE
+            type: string
+          - name: UPDATE_CHANNEL
+            type: string
+          - name: OPERATOR_NAMESPACE
+            type: string
+          - name: OPERATOR_NAME
+            type: string
+          - name: OLMINSTALL_REPO_URL
+            type: string
+          - name: OLMINSTALL_REPO_REVISION
+            type: string
+          - name: OLMINSTALL_CATALOG_NAME
+            type: string
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+          - name: QUAY_PULL_SECRET_NAME
+            type: string
+        results:
+          - name: INSTALL_STATUS
+            description: Installation status (SUCCESS or FAILED)
+          - name: OPERATOR_VERSION
+            description: Installed operator version
+        volumes:
+          - name: credentials
+            emptyDir: {}
+          - name: quay-pull-secret
+            secret:
+              secretName: $(params.QUAY_PULL_SECRET_NAME)
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+
+          - name: clone-repo
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          - name: clone-olminstall
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            env:
+              - name: REPO_URL
+                value: $(params.OLMINSTALL_REPO_URL)
+              - name: REPO_REV
+                value: $(params.OLMINSTALL_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/olminstall
+              - name: TLS_WORKAROUND
+                value: "true"
+              - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
+                value: "1"
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              sys.path.insert(0, "/workspace/repo/integration-tests/olminstall")
+              from helpers.tekton_util import git_clone
+
+              tls = os.environ.get("TLS_WORKAROUND", "").strip().lower() in ("1", "true", "yes")
+              git_clone(os.environ["REPO_URL"], os.environ["REPO_REV"], os.environ["DEST_DIR"], tls_workaround=tls)
+
+          - name: patch-cluster-pull-secret
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: quay-pull-secret
+                mountPath: /var/secret/quay
+                readOnly: true
+
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              p = "/workspace/repo/integration-tests/olminstall/helpers/patch_cluster_pull_secret.py"
+              os.execvp(sys.executable, [sys.executable, p])
+
+          - name: install-and-verify
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+              - name: FBCF_IMAGE
+                value: $(params.FBCF_IMAGE)
+              - name: UPDATE_CHANNEL
+                value: $(params.UPDATE_CHANNEL)
+              - name: OPERATOR_NAMESPACE
+                value: $(params.OPERATOR_NAMESPACE)
+              - name: OPERATOR_NAME
+                value: $(params.OPERATOR_NAME)
+              - name: OLMINSTALL_DIR
+                value: /workspace/olminstall
+              - name: OLMINSTALL_CATALOG_NAME
+                value: $(params.OLMINSTALL_CATALOG_NAME)
+              - name: QUAY_PULL_SECRET_NAME
+                value: $(params.QUAY_PULL_SECRET_NAME)
+              - name: INSTALL_STATUS_PATH
+                value: $(results.INSTALL_STATUS.path)
+              - name: OPERATOR_VERSION_PATH
+                value: $(results.OPERATOR_VERSION.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              p = "/workspace/repo/integration-tests/olminstall/helpers/install_and_verify.py"
+              os.execvp(sys.executable, [sys.executable, p])
+
+    # resolve-opendatahub-tests-image-after-install supplies the opendatahub-tests image when
+    # PRODUCT is rhoai/odh (EaaS-backed BVT). PRODUCT=none uses placeholder JUnit only — see
+    # bvt-health-checks-no-eaas (Konflux worker has no DataScienceCluster API).
+
+    - name: resolve-opendatahub-tests-image-after-install
+      runAfter:
+        - install-operator
+      when:
+        - input: "$(tasks.parse-pipeline-tests.results.RUN_BVT)"
+          operator: in
+          values: ["true"]
+        - input: "$(params.PRODUCT)"
+          operator: notin
+          values: ["none"]
+      params:
+        - name: OPERATOR_VERSION
+          value: $(tasks.install-operator.results.OPERATOR_VERSION)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+        - name: OPENDATAHUB_TESTS_REPO
+          value: $(params.OPENDATAHUB_TESTS_REPO)
+      taskSpec:
+        params:
+          - name: OPERATOR_VERSION
+            type: string
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+          - name: OPENDATAHUB_TESTS_REPO
+            type: string
+        results:
+          - name: OPENDATAHUB_TESTS_IMAGE
+            description: Full image reference for opendatahub-tests BVT (tag or latest)
+        steps:
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          - name: resolve
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: OPERATOR_VERSION
+                value: $(params.OPERATOR_VERSION)
+              - name: OPENDATAHUB_TESTS_REPO
+                value: $(params.OPENDATAHUB_TESTS_REPO)
+              - name: RESULT_PATH
+                value: $(results.OPENDATAHUB_TESTS_IMAGE.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/resolve_opendatahub_tests_image.py"])
+
+    - name: bvt-health-checks-no-eaas
+      runAfter:
+        - parse-pipeline-tests
+      when:
+        - input: "$(tasks.parse-pipeline-tests.results.RUN_BVT)"
+          operator: in
+          values: ["true"]
+        - input: "$(params.PRODUCT)"
+          operator: in
+          values: ["none"]
+      params:
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+        - name: OCI_ARTIFACTS_REPO
+          value: $(params.OCI_ARTIFACTS_REPO)
+        - name: ARTIFACT_BROWSER_URL
+          value: $(params.ARTIFACT_BROWSER_URL)
+        - name: ARTIFACT_BROWSER_REPO_PATH
+          value: $(params.ARTIFACT_BROWSER_REPO_PATH)
+        - name: OCI_ARTIFACTS_PUSH_SECRET_NAME
+          value: $(params.OCI_ARTIFACTS_PUSH_SECRET_NAME)
+      taskSpec:
+        params:
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+          - name: OCI_ARTIFACTS_REPO
+            type: string
+          - name: ARTIFACT_BROWSER_URL
+            type: string
+          - name: ARTIFACT_BROWSER_REPO_PATH
+            type: string
+          - name: OCI_ARTIFACTS_PUSH_SECRET_NAME
+            type: string
+        results:
+          - name: TEST_OUTPUT
+            description: BVT test summary in Konflux standardised format (rendered in UI task panel)
+          - name: ARTIFACTS_URL
+            description: Direct artifact browser URL for this run's BVT JUnit results
+        volumes:
+          - name: bvt-artifacts
+            emptyDir: {}
+          - name: oci-docker-config-writable
+            emptyDir: {}
+          - name: odh-registry-secret-volume
+            secret:
+              optional: true
+              secretName: $(params.OCI_ARTIFACTS_PUSH_SECRET_NAME)
+              items:
+                - key: .dockerconfigjson
+                  path: config.json
+        steps:
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/scripts-repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          - name: emit-bvt-placeholder-junit
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            volumeMounts:
+              - name: bvt-artifacts
+                mountPath: /artifacts
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(
+                  sys.executable,
+                  [sys.executable, "helpers/bvt_product_none_placeholder_junit.py", "/artifacts"],
+              )
+
+          - name: upload-artifacts
+            image: quay.io/konflux-qe-incubator/konflux-qe-tools:latest
+            workingDir: /artifacts
+            volumeMounts:
+              - name: bvt-artifacts
+                mountPath: /artifacts
+              - name: odh-registry-secret-volume
+                mountPath: /tmp/oci-secret-readonly
+                readOnly: true
+              - name: oci-docker-config-writable
+                mountPath: /tmp/docker-config
+            env:
+              - name: OCI_ARTIFACT_REFERENCE
+                value: "$(params.OCI_ARTIFACTS_REPO):$(context.pipelineRun.name)-bvt"
+              - name: OCI_TAG_EXPIRATION
+                value: "30d"
+              - name: ALWAYS_PASS
+                value: "false"
+              - name: DOCKER_CONFIG
+                value: /tmp/docker-config
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              # Secret mount is read-only; copy into emptyDir so oras/credential helpers can write.
+              if [[ -f /tmp/oci-secret-readonly/config.json ]]; then
+                cp /tmp/oci-secret-readonly/config.json "${DOCKER_CONFIG}/config.json"
+              else
+                echo "[WARNING] OCI_ARTIFACTS_PUSH_SECRET_NAME secret not mounted; push will likely fail (anonymous)"
+              fi
+              exec bash /workspace/scripts-repo/integration-tests/olminstall/helpers/secure_push_oci_artifacts.sh
+
+          - name: emit-test-output
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            volumeMounts:
+              - name: bvt-artifacts
+                mountPath: /artifacts
+            env:
+              - name: OCI_REPO
+                value: $(params.OCI_ARTIFACTS_REPO)
+              - name: ARTIFACT_BROWSER_BASE
+                value: $(params.ARTIFACT_BROWSER_URL)
+              - name: ARTIFACT_BROWSER_REPO_PATH
+                value: $(params.ARTIFACT_BROWSER_REPO_PATH)
+              - name: PR_NAME
+                value: $(context.pipelineRun.name)
+              - name: TEST_OUTPUT_PATH
+                value: $(results.TEST_OUTPUT.path)
+              - name: ARTIFACTS_URL_PATH
+                value: $(results.ARTIFACTS_URL.path)
+              - name: OCI_TAG_SUFFIX
+                value: bvt
+              - name: NOTE_PREFIX
+                value: BVT
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/emit_test_output.py"])
+
+    - name: bvt-health-checks-with-eaas
+      runAfter:
+        - install-operator
+        - resolve-opendatahub-tests-image-after-install
+      when:
+        - input: "$(tasks.parse-pipeline-tests.results.RUN_BVT)"
+          operator: in
+          values: ["true"]
+        - input: "$(params.PRODUCT)"
+          operator: notin
+          values: ["none"]
+      params:
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+        - name: OCI_ARTIFACTS_REPO
+          value: $(params.OCI_ARTIFACTS_REPO)
+        - name: ARTIFACT_BROWSER_URL
+          value: $(params.ARTIFACT_BROWSER_URL)
+        - name: ARTIFACT_BROWSER_REPO_PATH
+          value: $(params.ARTIFACT_BROWSER_REPO_PATH)
+        - name: OCI_ARTIFACTS_PUSH_SECRET_NAME
+          value: $(params.OCI_ARTIFACTS_PUSH_SECRET_NAME)
+      taskSpec:
+        params:
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+          - name: OCI_ARTIFACTS_REPO
+            type: string
+          - name: ARTIFACT_BROWSER_URL
+            type: string
+          - name: ARTIFACT_BROWSER_REPO_PATH
+            type: string
+          - name: OCI_ARTIFACTS_PUSH_SECRET_NAME
+            type: string
+        results:
+          - name: TEST_OUTPUT
+            description: BVT test summary in Konflux standardised format (rendered in UI task panel)
+          - name: ARTIFACTS_URL
+            description: Direct artifact browser URL for this run's BVT JUnit results
+        volumes:
+          - name: credentials
+            emptyDir: {}
+          - name: bvt-artifacts
+            emptyDir: {}
+          - name: oci-docker-config-writable
+            emptyDir: {}
+          - name: odh-registry-secret-volume
+            secret:
+              # optional: pod starts even if the secret is missing; upload-artifacts uses ALWAYS_PASS (default false).
+              optional: true
+              secretName: $(params.OCI_ARTIFACTS_PUSH_SECRET_NAME)
+              items:
+                - key: .dockerconfigjson
+                  path: config.json
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/scripts-repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          - name: pytest-cluster
+            image: $(tasks.resolve-opendatahub-tests-image-after-install.results.OPENDATAHUB_TESTS_IMAGE)
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: bvt-artifacts
+                mountPath: /artifacts
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+              - name: PYTEST_MARKER
+                value: cluster_health
+              - name: PYTEST_EXTRA_ARGS
+                value: "-svv"
+              - name: ARTIFACT_PREFIX
+                value: cluster-health
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/run_bvt_pytest.py"])
+
+          - name: pytest-operator
+            image: $(tasks.resolve-opendatahub-tests-image-after-install.results.OPENDATAHUB_TESTS_IMAGE)
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: bvt-artifacts
+                mountPath: /artifacts
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+              - name: PYTEST_MARKER
+                value: operator_health
+              - name: PYTEST_EXTRA_ARGS
+                value: "-svv"
+              - name: ARTIFACT_PREFIX
+                value: operator-health
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/run_bvt_pytest.py"])
+
+          # Inline OCI push (same behavior as rhoai-konflux-tasks secure-push-oci StepAction) so Tekton
+          # prepare does not clone a second git repo alongside eaas-get-kubeconfig (avoids long Init:0/2).
+          - name: upload-artifacts
+            image: quay.io/konflux-qe-incubator/konflux-qe-tools:latest
+            workingDir: /artifacts
+            volumeMounts:
+              - name: bvt-artifacts
+                mountPath: /artifacts
+              - name: odh-registry-secret-volume
+                mountPath: /tmp/oci-secret-readonly
+                readOnly: true
+              - name: oci-docker-config-writable
+                mountPath: /tmp/docker-config
+            env:
+              - name: OCI_ARTIFACT_REFERENCE
+                value: "$(params.OCI_ARTIFACTS_REPO):$(context.pipelineRun.name)-bvt"
+              - name: OCI_TAG_EXPIRATION
+                value: "30d"
+              - name: ALWAYS_PASS
+                value: "false"
+              - name: DOCKER_CONFIG
+                value: /tmp/docker-config
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              # Secret mount is read-only; copy into emptyDir so oras/credential helpers can write.
+              if [[ -f /tmp/oci-secret-readonly/config.json ]]; then
+                cp /tmp/oci-secret-readonly/config.json "${DOCKER_CONFIG}/config.json"
+              else
+                echo "[WARNING] OCI_ARTIFACTS_PUSH_SECRET_NAME secret not mounted; push will likely fail (anonymous)"
+              fi
+              exec bash /workspace/scripts-repo/integration-tests/olminstall/helpers/secure_push_oci_artifacts.sh
+
+          - name: emit-test-output
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            volumeMounts:
+              - name: bvt-artifacts
+                mountPath: /artifacts
+            env:
+              - name: OCI_REPO
+                value: $(params.OCI_ARTIFACTS_REPO)
+              - name: ARTIFACT_BROWSER_BASE
+                value: $(params.ARTIFACT_BROWSER_URL)
+              - name: ARTIFACT_BROWSER_REPO_PATH
+                value: $(params.ARTIFACT_BROWSER_REPO_PATH)
+              - name: PR_NAME
+                value: $(context.pipelineRun.name)
+              - name: TEST_OUTPUT_PATH
+                value: $(results.TEST_OUTPUT.path)
+              - name: ARTIFACTS_URL_PATH
+                value: $(results.ARTIFACTS_URL.path)
+              - name: OCI_TAG_SUFFIX
+                value: bvt
+              - name: NOTE_PREFIX
+                value: BVT
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/emit_test_output.py"])
+
+    - name: tier1-placeholder
+      runAfter:
+        - parse-pipeline-tests
+      when:
+        - input: "$(tasks.parse-pipeline-tests.results.RUN_TIER1)"
+          operator: in
+          values: ["true"]
+      taskSpec:
+        steps:
+          - name: noop
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            script: |
+              #!/usr/bin/env python3
+              print("tier1: placeholder — no tier1 suite is wired in this pipeline yet.")
+
+  finally:
+    - name: propagate-pipeline-test-output
+      params:
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+      taskSpec:
+        params:
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+        results:
+          - name: PROPAGATED_TEST_OUTPUT
+            description: Konflux TEST_OUTPUT (from BVT TaskRuns or install-operator INSTALL_STATUS)
+        steps:
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/scripts-repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+          - name: propagate
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: PIPELINE_RUN_NAME
+                value: $(context.pipelineRun.name)
+              - name: RESULT_PATH
+                value: $(results.PROPAGATED_TEST_OUTPUT.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/propagate_pipeline_test_output.py"])
+
+    - name: collect-diagnostics
+      when:
+        - input: "$(tasks.status)"
+          operator: in
+          values: ["Failed"]
+        # Only attempt cluster diagnostics when the cluster was actually provisioned;
+        # this avoids Tekton silently skipping this task due to missing result
+        # references when provision-cluster itself failed or was skipped.
+        # post-results always fires on failure for the notification side.
+        - input: "$(tasks.provision-cluster.status)"
+          operator: in
+          values: ["Succeeded"]
+      params:
+        - name: OPERATOR_NAMESPACE
+          value: $(params.OPERATOR_NAMESPACE)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+      taskSpec:
+        params:
+          - name: OPERATOR_NAMESPACE
+            type: string
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+        results:
+          - name: DIAGNOSTICS_MANIFEST
+            description: File listing under /diag (full bundle stays on TaskRun pod until pruned)
+        volumes:
+          - name: credentials
+            emptyDir: {}
+          - name: diag
+            emptyDir: {}
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+
+          - name: clone-scripts-repo
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/scripts-repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          - name: oc-adm-inspect
+            image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: diag
+                mountPath: /diag
+            env:
+              - name: KUBECONFIG
+                value: /credentials/$(steps.get-kubeconfig.results.kubeconfig)
+              - name: OPERATOR_NAMESPACE
+                value: $(params.OPERATOR_NAMESPACE)
+              - name: DIAG_MANIFEST_RESULT
+                value: $(results.DIAGNOSTICS_MANIFEST.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/collect_diagnostics.py"])
+
+    - name: post-results
+      when:
+        - input: "$(tasks.status)"
+          operator: in
+          values: ["Succeeded", "Failed", "Completed"]
+      taskSpec:
+        results:
+          - name: TEST_OUTPUT
+            description: BVT / install summary (Konflux standard; same names as bvt-health-checks)
+          - name: ARTIFACTS_URL
+            description: BVT artifact browser URL for this PipelineRun
+          - name: OPERATOR_VERSION
+            description: Installed operator version when install-operator completed
+          - name: EPHEMERAL_CLUSTER
+            description: Ephemeral EaaS cluster name (clusterName result)
+        params:
+          - name: FBCF_IMAGE
+            type: string
+            default: "(unknown — extract-fbcf-image did not complete)"
+          - name: TEST_STATUS
+            type: string
+            default: "FAILED"
+          - name: OPERATOR_VERSION
+            type: string
+            default: "(unknown)"
+          - name: PIPELINE_RUN_NAME
+            type: string
+          - name: OPERATOR_NAME
+            type: string
+            default: "rhods-operator"
+          - name: ARTIFACTS_URL
+            type: string
+            description: BVT artifact browser URL (predicted path; Konflux UI Parameters panel)
+            default: ""
+          - name: TESTS
+            type: string
+            default: ""
+          - name: SLACK_CHANNEL_ID
+            type: string
+            default: ""
+          - name: SCRIPTS_REPO_URL
+            type: string
+          - name: SCRIPTS_REPO_REVISION
+            type: string
+        steps:
+          - name: clone-scripts-repo
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: REPO_URL
+                value: $(params.SCRIPTS_REPO_URL)
+              - name: REPO_REV
+                value: $(params.SCRIPTS_REPO_REVISION)
+              - name: DEST_DIR
+                value: /workspace/scripts-repo
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              rm -rf "${DEST_DIR}" && mkdir -p "${DEST_DIR}" && cd "${DEST_DIR}"
+              git init -q && git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin "${REPO_REV}" && git checkout -q FETCH_HEAD
+
+          # Seed Konflux task Results from params (no scripts repo) so ARTIFACTS_URL appears even
+          # if patch-summary-annotations fails on an older SCRIPTS_REPO_REVISION.
+          - name: seed-ui-results
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            script: |
+              #!/usr/bin/env sh
+              set -eu
+              printf '%s' "$(params.ARTIFACTS_URL)" > "$(results.ARTIFACTS_URL.path)"
+              printf '%s' "result=$(params.TEST_STATUS)" > "$(results.TEST_OUTPUT.path)"
+
+          - name: send-notification
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: TEST_STATUS
+                value: $(params.TEST_STATUS)
+              - name: OPERATOR_NAME
+                value: $(params.OPERATOR_NAME)
+              - name: OPERATOR_VERSION
+                value: $(params.OPERATOR_VERSION)
+              - name: FBCF_IMAGE
+                value: $(params.FBCF_IMAGE)
+              - name: PIPELINE_RUN_NAME
+                value: $(params.PIPELINE_RUN_NAME)
+              - name: ARTIFACTS_URL
+                value: $(params.ARTIFACTS_URL)
+              - name: TESTS
+                value: $(params.TESTS)
+              - name: SLACK_CHANNEL_ID
+                value: $(params.SLACK_CHANNEL_ID)
+              - name: SLACK_WEBHOOK_URL
+                valueFrom:
+                  secretKeyRef:
+                    name: slack-webhook
+                    key: webhook-url
+                    optional: true
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/send_notification.py"])
+
+          - name: patch-summary-annotations
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: PIPELINE_RUN_NAME
+                value: $(params.PIPELINE_RUN_NAME)
+              - name: TESTS
+                value: $(params.TESTS)
+              - name: ARTIFACTS_URL
+                value: $(params.ARTIFACTS_URL)
+              - name: ARTIFACTS_URL_PATH
+                value: $(results.ARTIFACTS_URL.path)
+              - name: TEST_OUTPUT_PATH
+                value: $(results.TEST_OUTPUT.path)
+              - name: OPERATOR_VERSION_PATH
+                value: $(results.OPERATOR_VERSION.path)
+              - name: EPHEMERAL_CLUSTER_PATH
+                value: $(results.EPHEMERAL_CLUSTER.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+
+              os.chdir("/workspace/scripts-repo/integration-tests/olminstall")
+              os.execvp(sys.executable, [sys.executable, "helpers/patch_pipelinerun_summary.py"])
+      params:
+        # NOTE: Do NOT reference $(tasks.bvt-health-checks.results.*) or any other
+        # task results here. In Tekton v1, a finally task that references a result
+        # from a skipped/failed task is itself skipped — so Slack notifications
+        # would silently not fire on the most important failures.
+        # ARTIFACTS_URL uses only params + context (never $(tasks.*.results)) so post-results
+        # is not skipped when BVT was skipped. patch-summary-annotations overwrites annotations
+        # with the published URL when upload-artifacts emitted ARTIFACTS_URL on a TaskRun.
+        - name: FBCF_IMAGE
+          value: "$(params.FBCF_COMPONENT_NAME)"
+        # Aggregate status of all non-finally pipeline tasks (install, resolve, BVT).
+        - name: TEST_STATUS
+          value: "$(tasks.status)"
+        # OPERATOR_VERSION is a best-effort field: pass a safe literal so the
+        # task is never skipped due to a missing result reference.
+        - name: OPERATOR_VERSION
+          value: "(see pipeline run logs)"
+        - name: PIPELINE_RUN_NAME
+          value: $(context.pipelineRun.name)
+        - name: OPERATOR_NAME
+          value: "$(params.OPERATOR_NAME)"
+        - name: ARTIFACTS_URL
+          value: "$(params.ARTIFACT_BROWSER_URL)/$(params.ARTIFACT_BROWSER_REPO_PATH)/$(context.pipelineRun.name)-bvt/"
+        - name: TESTS
+          value: "$(params.TESTS)"
+        - name: SLACK_CHANNEL_ID
+          value: "$(params.SLACK_CHANNEL_ID)"
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)

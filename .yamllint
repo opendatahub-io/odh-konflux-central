@@ -1,0 +1,19 @@
+---
+extends: default
+
+rules:
+  document-start: disable
+  line-length: disable
+  indentation:
+    spaces: 2
+    indent-sequences: whatever
+  # The `on:` trigger syntax is valid in GitHub workflow files but yamllint flags it
+  # as a YAML 1.1 truthy value. See: https://github.com/adrienverge/yamllint/issues/540
+  truthy:
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+    # Allow #test style comments
+    require-starting-space: false
+  # Useful for commenting out entire blocks of YAML
+  comments-indentation: disable

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "baseBranches": ["main"],
+  "dependencyDashboard": true,
+  "enabledManagers": ["tekton"],
+  "tekton": {
+    "schedule": ["at any time"],
+    "fileMatch": ["\\.yaml$", "\\.yml$"],
+    "includePaths": ["pipelines/**"],
+    "automerge": true,
+    "packageRules": [
+      {
+        "matchUpdateTypes": ["major", "minor", "pin", "pinDigest"],
+        "enabled": false
+      }
+    ]
+  },
+  "updateNotScheduled": false
+}

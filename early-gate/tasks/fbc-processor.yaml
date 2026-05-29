@@ -1,0 +1,249 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: fbc-processor
+spec:
+  description: |
+    Generates the FBC (File-Based Catalog) for the operator by extracting snapshot images,
+    rendering the semver template with opm, and patching the catalog. Replaces the
+    fbc-processor GitHub workflow for in-pipeline use.
+  params:
+  - name: SOURCE_ARTIFACT
+    description: OCI artifact containing ODH-Build-Config source (post bundle-processor)
+    type: string
+  - name: ociStorage
+    description: OCI storage location for output artifact
+    type: string
+  - name: ociArtifactExpiresAfter
+    description: Expiration for the output OCI artifact
+    type: string
+    default: "1h"
+  - name: BUNDLE_IMAGE_URL
+    description: Freshly-built bundle image URL
+    type: string
+  - name: BUNDLE_IMAGE_DIGEST
+    description: Freshly-built bundle image digest
+    type: string
+  - name: QUAY_TAG
+    description: Quay tag for image lookups
+    type: string
+    default: "odh-stable"
+  - name: BRANCH
+    description: ODH-Build-Config branch name
+    type: string
+    default: "main"
+  - name: OPENSHIFT_VERSION
+    description: Target OpenShift version for the catalog
+    type: string
+    default: "v4.20"
+  - name: OPERATOR_BUNDLE_COMPONENT_NAME
+    description: Component name for the operator bundle in snapshot
+    type: string
+    default: "opendatahub-operator-bundle"
+  - name: OPERATOR_BUNDLE_IMAGE_NAME
+    description: Env var name for the bundle image in snapshot
+    type: string
+    default: "RELATED_IMAGE_OPENDATAHUB_OPERATOR_BUNDLE_IMAGE"
+  - name: FBC_PUSH_PIPELINE_COMPONENT
+    description: Component name for the FBC push pipeline
+    type: string
+    default: "odh-fbc-fragment-ci"
+  - name: UTILS_REPO_URL
+    description: URL for the RHOAI-Konflux-Automation utils repo
+    type: string
+    default: "https://github.com/red-hat-data-services/RHOAI-Konflux-Automation.git"
+  - name: UTILS_REPO_BRANCH
+    description: Branch of the utils repo
+    type: string
+    default: "odh"
+  results:
+  - name: SOURCE_ARTIFACT
+    description: OCI artifact with patched catalog in ODH-Build-Config source
+  volumes:
+  - name: workdir
+    emptyDir: {}
+  stepTemplate:
+    volumeMounts:
+    - mountPath: /var/workdir
+      name: workdir
+  steps:
+  - name: use-trusted-artifact
+    image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+    args:
+    - use
+    - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+
+  - name: clone-utils
+    image: quay.io/rhoai/rhoai-task-toolset:latest
+    env:
+    - name: UTILS_REPO_URL
+      value: $(params.UTILS_REPO_URL)
+    - name: UTILS_REPO_BRANCH
+      value: $(params.UTILS_REPO_BRANCH)
+    script: |
+      #!/bin/bash
+      set -eo pipefail
+      echo "Cloning utils repo: ${UTILS_REPO_URL} @ ${UTILS_REPO_BRANCH}"
+      git clone --depth 1 --branch "${UTILS_REPO_BRANCH}" "${UTILS_REPO_URL}" /var/workdir/utils
+
+  - name: process-fbc
+    image: quay.io/rhoai/rhoai-task-toolset:latest
+    env:
+    - name: BUNDLE_IMAGE_URL
+      value: $(params.BUNDLE_IMAGE_URL)
+    - name: BUNDLE_IMAGE_DIGEST
+      value: $(params.BUNDLE_IMAGE_DIGEST)
+    - name: QUAY_TAG
+      value: $(params.QUAY_TAG)
+    - name: BRANCH
+      value: $(params.BRANCH)
+    - name: OPENSHIFT_VERSION
+      value: $(params.OPENSHIFT_VERSION)
+    - name: OPERATOR_BUNDLE_COMPONENT_NAME
+      value: $(params.OPERATOR_BUNDLE_COMPONENT_NAME)
+    - name: OPERATOR_BUNDLE_IMAGE_NAME
+      value: $(params.OPERATOR_BUNDLE_IMAGE_NAME)
+    - name: FBC_PUSH_PIPELINE_COMPONENT
+      value: $(params.FBC_PUSH_PIPELINE_COMPONENT)
+    - name: OPENDATAHUB_QUAY_RO_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: early-gate-secrets
+          key: OPENDATAHUB_QUAY_RO_USERNAME
+    - name: OPENDATAHUB_QUAY_RO_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: early-gate-secrets
+          key: OPENDATAHUB_QUAY_RO_TOKEN
+    - name: OPENDATAHUB_QUAY_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: early-gate-secrets
+          key: OPENDATAHUB_QUAY_API_TOKEN
+          optional: true
+    script: |
+      #!/bin/bash
+      set -eo pipefail
+
+      # Install dependencies in the same container where they will be used
+      echo "Installing dependencies..."
+      os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+      arch="$(uname -m | sed 's/x86_64/amd64/')"
+
+      # Install yq
+      yq_version="v4.44.3"
+      curl -sSfLo /usr/local/bin/yq \
+        "https://github.com/mikefarah/yq/releases/download/$yq_version/yq_${os}_${arch}"
+      chmod +x /usr/local/bin/yq
+
+      # Install opm
+      opm_version="v1.47.0"
+      curl -sSfLo /usr/local/bin/opm \
+        "https://github.com/operator-framework/operator-registry/releases/download/$opm_version/$os-$arch-opm"
+      chmod +x /usr/local/bin/opm
+
+      # Install Python dependencies
+      pip install --default-timeout=100 \
+        -r /var/workdir/utils/utils/fbc-processor/requirements.txt
+
+      # Install skopeo and login to Quay for pulling bundle images
+      microdnf install -y skopeo && microdnf clean all && rm -rf /var/cache/dnf/*
+      skopeo login \
+        -u "${OPENDATAHUB_QUAY_RO_USERNAME}" \
+        -p "${OPENDATAHUB_QUAY_RO_TOKEN}" \
+        quay.io/rhoai
+
+      SOURCE=/var/workdir/source
+      UTILS=/var/workdir/utils
+
+      BUILD_CONFIG_PATH=${SOURCE}/config/build-config.yaml
+      PATCH_YAML_PATH=${SOURCE}/catalog/catalog-patch.yaml
+      CATALOG_BUILD_ARGS_FILE_PATH=${SOURCE}/catalog/catalog_build_args.map
+      PUSH_PIPELINE_PATH=${SOURCE}/.tekton/${FBC_PUSH_PIPELINE_COMPONENT}-push.yaml
+
+      BUNDLE_IMAGE="${BUNDLE_IMAGE_URL%:*}@${BUNDLE_IMAGE_DIGEST}"
+      echo "Bundle image for FBC: ${BUNDLE_IMAGE}"
+
+      # --- extract-snapshot-images ---
+      echo "Running fbc-processor.py -op extract-snapshot-images"
+      python3 ${UTILS}/utils/fbc-processor/fbc-processor.py \
+        -op extract-snapshot-images \
+        -o ${UTILS}/snapshot_images.json \
+        -v ${SOURCE} \
+        -q ${QUAY_TAG} \
+        -f ${OPERATOR_BUNDLE_COMPONENT_NAME} \
+        -b ${BUILD_CONFIG_PATH} \
+        --catalog-build-args-file-path ${CATALOG_BUILD_ARGS_FILE_PATH}
+
+      # --- Resolve and override bundle image in FBC template ---
+      LATEST_BUNDLE_IMAGE=$(jq --arg name "$OPERATOR_BUNDLE_IMAGE_NAME" -r \
+        '.[] | select(.name == $name) | .value' ${UTILS}/snapshot_images.json)
+      echo "Snapshot bundle image: ${LATEST_BUNDLE_IMAGE}"
+
+      # Override with freshly-built bundle image from this pipeline
+      LATEST_BUNDLE_IMAGE="${BUNDLE_IMAGE}"
+      echo "Using pipeline bundle image: ${LATEST_BUNDLE_IMAGE}"
+
+      LATEST_BUNDLE_IMAGE="$LATEST_BUNDLE_IMAGE" yq e -i \
+        '.stable.bundles[0].image = env(LATEST_BUNDLE_IMAGE)' \
+        ${UTILS}/utils/fbc-processor/fbc-semver-template.yaml
+
+      # --- Render FBC template with opm ---
+      CSV_META_MIN_OCP_VERSION=420
+      WORK_DIR=${UTILS}/utils/fbc
+      mkdir -p ${WORK_DIR}
+      BUNDLE_OBJECT_SINGLE_BUNDLE_PATH=${WORK_DIR}/bundle_object_sbc_semver.yaml
+      CSV_META_SINGLE_BUNDLE_PATH=${WORK_DIR}/csv_meta_sbc_semver.yaml
+      CSV_META_OPM_FLAG="--migrate-level=bundle-object-to-csv-metadata"
+
+      # Set up Docker auth for opm
+      BASE64_AUTH=$(echo -n "${OPENDATAHUB_QUAY_RO_USERNAME}:${OPENDATAHUB_QUAY_RO_TOKEN}" | base64 -w 0)
+      DOCKER_AUTH_DIR=${HOME}
+      mkdir -p ${DOCKER_AUTH_DIR}/.docker
+      cat > ${DOCKER_AUTH_DIR}/.docker/config.json <<AUTHEOF
+      {"auths":{"quay.io/opendatahub/odh-operator-bundle":{"username":"${OPENDATAHUB_QUAY_RO_USERNAME}","password":"${OPENDATAHUB_QUAY_RO_TOKEN}","email":"","auth":"${BASE64_AUTH}"}}}
+      AUTHEOF
+
+      echo "Rendering FBC template (bundle-object)..."
+      DOCKER_CONFIG=${DOCKER_AUTH_DIR}/.docker/ opm alpha render-template semver \
+        -o yaml ${UTILS}/utils/fbc-processor/fbc-semver-template.yaml \
+        > ${BUNDLE_OBJECT_SINGLE_BUNDLE_PATH}
+
+      echo "Rendering FBC template (csv-metadata)..."
+      DOCKER_CONFIG=${DOCKER_AUTH_DIR}/.docker/ opm alpha render-template semver \
+        ${CSV_META_OPM_FLAG} -o yaml ${UTILS}/utils/fbc-processor/fbc-semver-template.yaml \
+        > ${CSV_META_SINGLE_BUNDLE_PATH}
+
+      # --- catalog-patch ---
+      NUMERIC_OCP_VERSION=${OPENSHIFT_VERSION/v4./4}
+      OUTPUT_CATALOG_PATH=${SOURCE}/catalog/${OPENSHIFT_VERSION}/rhods-operator/catalog.yaml
+      PCC_CATALOG_YAML_PATH=${SOURCE}/pcc/catalog-${OPENSHIFT_VERSION}.yaml
+      SINGLE_BUNDLE_PATH=${BUNDLE_OBJECT_SINGLE_BUNDLE_PATH}
+      if [[ $NUMERIC_OCP_VERSION -ge $CSV_META_MIN_OCP_VERSION ]]; then
+        SINGLE_BUNDLE_PATH=${CSV_META_SINGLE_BUNDLE_PATH}
+      fi
+
+      echo "Running fbc-processor.py -op catalog-patch"
+      python3 ${UTILS}/utils/fbc-processor/fbc-processor.py \
+        -op catalog-patch \
+        -b ${BUILD_CONFIG_PATH} \
+        -c ${PCC_CATALOG_YAML_PATH} \
+        -p ${PATCH_YAML_PATH} \
+        -s ${SINGLE_BUNDLE_PATH} \
+        -o ${OUTPUT_CATALOG_PATH} \
+        --push-pipeline-yaml-path ${PUSH_PIPELINE_PATH} \
+        --push-pipeline-operation enable
+
+      echo "FBC processing complete. Catalog output:"
+      head -50 ${OUTPUT_CATALOG_PATH}
+
+  - name: create-trusted-artifact
+    image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+    args:
+    - create
+    - --store
+    - $(params.ociStorage)
+    - $(results.SOURCE_ARTIFACT.path)=/var/workdir/source
+    env:
+    - name: IMAGE_EXPIRES_AFTER
+      value: $(params.ociArtifactExpiresAfter)

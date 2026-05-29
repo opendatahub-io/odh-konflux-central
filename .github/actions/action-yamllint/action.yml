@@ -1,0 +1,64 @@
+name: "yamllint"
+description: "Run yamllint on the repository to enforce YAML style guide with security sandboxing."
+inputs:
+  config_file:
+    description: Path to a custom configuration file (non-default YAMLLint path)
+    default: ""
+    required: false
+  file_or_dir:
+    description: Files (or directory) to check
+    default: "."
+    required: false
+  strict:
+    description: Strict mode, causes linter warnings to be handled as errors
+    default: "false"
+    required: false
+  yamllint_version:
+    description: Version of yamllint to use, e.g. 1.38.0
+    default: "latest"
+    required: false
+  uv_exclude_newer:
+    description: "Date for reproducibility (YYYY-MM-DD). Only use package versions published before this date."
+    default: "9999-12-31T23:59:59Z"
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run yamllint (sandboxed)
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        export WORKSPACE=$(mktemp -d)
+
+        export UV_TOOL_DIR="${WORKSPACE}/uv_tool_dir"
+        export UV_TOOL_BIN_DIR="${WORKSPACE}/uv_tool_bin_dir"
+        mkdir -p "${UV_TOOL_DIR}" "${UV_TOOL_BIN_DIR}"
+
+        # Prefetch yamllint for later --offline use
+        # --no-build: only use pre-built wheels (no setup.py execution)
+        # --exclude-newer: date-locked reproducibility
+        uv tool install --no-python-downloads --no-build \
+          --exclude-newer "${{ inputs.uv_exclude_newer }}" \
+          "yamllint@${{ inputs.yamllint_version }}"
+
+        # Build the command options dynamically using array for safe handling of spaces
+        OPTS=(--format github)
+
+        if [[ "${{ inputs.strict }}" == "true" ]]; then
+          OPTS+=(--strict)
+        fi
+
+        if [[ -n "${{ inputs.config_file }}" ]]; then
+          OPTS+=(-c "${{ inputs.config_file }}")
+        fi
+
+        # Run yamllint in an isolated network namespace to prevent data exfiltration.
+        # Uses --offline to run from cache (prefetched above).
+        # Uses unshare with user namespace for unprivileged network isolation.
+        # See ADR 0002 for security rationale.
+        set -x
+        unshare --user --net -- \
+          "${UV_TOOL_BIN_DIR}/yamllint" "${OPTS[@]}" "${{ inputs.file_or_dir }}"
+
+        rm -r "${WORKSPACE}"

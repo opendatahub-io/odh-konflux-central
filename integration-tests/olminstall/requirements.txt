@@ -1,0 +1,9 @@
+# integration-tests/olminstall — Python dependencies for this directory.
+## Python deps for integration-tests/olminstall helpers and Tekton step scripts.
+# defusedxml: required for safe JUnit XML parsing (helpers/tekton_util.py).
+defusedxml>=0.7.1
+#
+# Optional: PyYAML for faster olminstall-tests-config.yaml loading; else helpers use `yq`.
+#
+# Runtime binaries (install separately): oc (required), tkn (optional; trigger-mode log stream),
+# yq (for ITS overrides and YAML→JSON when PyYAML is absent), skopeo (optional, ODH catalog fallback).

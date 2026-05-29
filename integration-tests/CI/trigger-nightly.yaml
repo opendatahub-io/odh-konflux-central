@@ -1,0 +1,349 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: trigger-nightly-
+  namespace: open-data-hub-tenant
+spec:
+  taskRunTemplate:
+    serviceAccountName: odh-nightly-sa
+  pipelineSpec:
+    description: |
+      Tags the latest CI build as a nightly and then triggers tests, slack notification
+    params:
+      - description: Snapshot of the application
+        name: SNAPSHOT
+        type: string
+      - description: FBC image source
+        name: CATALOG_IMAGE
+        type: string
+        default: quay.io/opendatahub/opendatahub-operator-catalog:odh-stable
+      - description: Trigger Nightly Tests
+        name: TRIGGER_NIGHTLY_TESTS
+        type: string
+        default: "true"
+      - description: Trigger Slack Notification
+        name: TRIGGER_SLACK
+        type: string
+        default: "true"
+      - description: Whether to tag the latest CI build as a nightly
+        name: TRIGGER_NIGHTLY_TAG
+        type: string
+        default: "true"
+      - description: Override the Slack channel from the configmap
+        name: OVERRIDE_CHANNEL
+        type: string
+        default: ""
+    tasks:
+      - name: choose-ci-build
+        description: selects the latest ci build to promote to nightly
+        taskSpec:
+          results:
+          - name: latest-catalog-ci-image
+            description: "the catalog image reference (with SHA) to use for nightly"
+          - name: latest-build-metadata-url
+            description: "the operator image reference (with SHA) to use for nightly"
+          - name: latest-catalog-ci-build-url
+            description: "the build url for the latest catalog"
+          - name: previous-nightly-sha
+            description: "the previous nightly"
+          steps:
+          - image: quay.io/rhoai-devops/base-runner:latest
+            name: get-latest-catalog-ci-build-sha
+            env:
+            - name: HOME
+              value: /workspace
+            - name: CATALOG_IMAGE
+              value: $(params.CATALOG_IMAGE)
+            script: |
+              #!/bin/bash
+              set -e
+              skopeo_inspect=$(skopeo inspect "docker://$CATALOG_IMAGE" --no-tags)
+              echo "$skopeo_inspect" | jq -r '.Name + "@" + .Digest' | tr -d '\n' | tee "$(results.latest-catalog-ci-image.path)"; echo
+              echo "$skopeo_inspect" | jq -r '.Labels."build-metadata-url"'  | tr -d '\n' | tee "$(results.latest-build-metadata-url.path)"; echo
+              echo "$skopeo_inspect" | jq -r '.Labels."build-url"'  | tr -d '\n' | tee "$(results.latest-catalog-ci-build-url.path)"; echo
+
+              NIGHTLY_IMAGE="${CATALOG_IMAGE%:*}:odh-stable-nightly"
+              PREVIOUS_SHA=$(skopeo inspect --raw "docker://$NIGHTLY_IMAGE" 2>/dev/null | sha256sum | awk '{print "sha256:" $1}' || true)
+              if [ -n "$PREVIOUS_SHA" ]; then
+                printf '%s' "$PREVIOUS_SHA" > "$(results.previous-nightly-sha.path)"
+                echo "Previous nightly SHA: $PREVIOUS_SHA"
+              else
+                echo "No previous nightly found"
+                printf '%s' "" > "$(results.previous-nightly-sha.path)"
+              fi
+      - name: tag-nightly
+        runAfter:
+        - choose-ci-build
+        description: Tags the latest ci build as nightly
+        workspaces:
+        - name: data
+          workspace: data
+        taskSpec:
+          workspaces:
+            - name: data
+              optional: false
+          steps:
+          - image: $(tasks.choose-ci-build.results.latest-catalog-ci-image)
+            name: get-current-catalog
+            env:
+            - name: HOME
+              value: /workspace
+            - name: DATA_PATH
+              value: $(workspaces.data.path)
+            script: |
+              #!/bin/sh
+              cp -r /configs/* "$DATA_PATH"/
+              if ! ls "$DATA_PATH"/rhods-operator/catalog.yaml; then
+                echo "Error: catalog not found"
+                exit 1
+              fi
+          - image: quay.io/rhoai-devops/base-runner:latest
+            name: tag-nightly-images
+            workingDir: /workspace
+            env:
+            - name: HOME
+              value: /workspace
+            - name: CATALOG_IMAGE
+              value: $(params.CATALOG_IMAGE)
+            - name: DATA_PATH
+              value: $(workspaces.data.path)
+            - name: AUTH_PATH
+              value: /workspace/.docker/config.json
+            - name: TRIGGER_NIGHTLY_TAG
+              value: $(params.TRIGGER_NIGHTLY_TAG)
+            script: |
+              #!/bin/bash
+              set -e
+
+              if [[ "$TRIGGER_NIGHTLY_TAG" != "true" ]]; then
+                echo "TRIGGER_NIGHTLY_TAG=$TRIGGER_NIGHTLY_TAG"
+                echo "proceeding without tagging a new nightly"
+                exit 0
+              fi
+
+              echo "Analyzing catalog.yaml from $CATALOG_IMAGE"
+              CATALOG="$DATA_PATH"/rhods-operator/catalog.yaml
+              TAG="odh-stable-nightly"
+
+              # Step 1 & 2: Find olm.channel with name odh-stable, get the last entry name
+              BUNDLE_NAME=$(yq 'select(.schema == "olm.channel" and .name == "odh-stable") | .entries[-1].name' "$CATALOG")
+              echo "Bundle name: $BUNDLE_NAME"
+
+              # Step 3: Find olm.bundle with that name, get the image
+              BUNDLE_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .image" "$CATALOG")
+              echo "Bundle image: $BUNDLE_IMAGE"
+
+              # Step 4: Get containerImage from olm.csv.metadata property
+              OPERATOR_IMAGE=$(yq "select(.schema == \"olm.bundle\" and .name == \"$BUNDLE_NAME\") | .properties[] | select(.type == \"olm.csv.metadata\") | .value.annotations.containerImage" "$CATALOG")
+              echo "Operator image: $OPERATOR_IMAGE"
+
+              # Inspect catalog image to get label and digest
+              CATALOG_INSPECT=$(skopeo inspect --no-tags "docker://$CATALOG_IMAGE")
+              LABEL_OPERATOR_IMAGE=$(echo "$CATALOG_INSPECT" | yq '.Labels["opendatahub-operator.image"]')
+              CATALOG_DIGEST=$(echo "$CATALOG_INSPECT" | yq '.Digest')
+              CATALOG_IMAGE="${CATALOG_IMAGE%:*}@${CATALOG_DIGEST}"
+              echo "Catalog image: $CATALOG_IMAGE"
+              echo "Operator image from catalog label: $LABEL_OPERATOR_IMAGE"
+
+              if [ "$OPERATOR_IMAGE" != "$LABEL_OPERATOR_IMAGE" ]; then
+                echo "ERROR: Operator image mismatch!"
+                echo "  From catalog.yaml: $OPERATOR_IMAGE"
+                echo "  From catalog label: $LABEL_OPERATOR_IMAGE"
+                exit 1
+              fi
+              echo "Operator image verified."
+
+              # Function to tag an image
+              tag_image() {
+                local IMAGE="$1"
+                local TAG="$2"
+                # Extract registry/repo from image (remove @sha256:...)
+                local REPO="${IMAGE%@*}"
+                echo "Tagging $IMAGE as $REPO:$TAG"
+                skopeo copy --all --authfile "$AUTH_PATH" "docker://$IMAGE" "docker://$REPO:$TAG"
+              }
+
+              # Tag all three images as odh-stable-nightly
+              echo "Tagging images as $TAG..."
+              tag_image "$BUNDLE_IMAGE" "$TAG"
+              tag_image "$OPERATOR_IMAGE" "$TAG"
+              tag_image "$CATALOG_IMAGE" "$TAG"
+
+              echo "Done! All images have been tagged as $TAG"
+              echo "Bundle: $BUNDLE_IMAGE"
+              echo "FBC: $CATALOG_IMAGE"
+              echo "Operator: $OPERATOR_IMAGE"
+      - name: slack-notification
+        description: notify slack about new nightly and persist thread_ts for downstream
+        onError: continue
+        when:
+        - input: $(params.TRIGGER_SLACK)
+          operator: in
+          values:
+          - "true"
+        runAfter:
+        - tag-nightly
+        workspaces:
+        - name: data
+          workspace: data
+        taskSpec:
+          workspaces:
+          - name: data
+            optional: false
+          steps:
+          - image: quay.io/rhoai-devops/slack-notifier:latest
+            env:
+            - name: HOME
+              value: /workspace
+            - name: DATA_PATH
+              value: $(workspaces.data.path)
+            - name: SLACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rhoai-devops-bot-slack-token
+                  key: SLACK_TOKEN
+            - name: LATEST_CATALOG_CI_IMAGE
+              value: $(tasks.choose-ci-build.results.latest-catalog-ci-image)
+            - name: LATEST_BUILD_METADATA_URL
+              value: $(tasks.choose-ci-build.results.latest-build-metadata-url)
+            - name: BUILD_URL
+              value: $(tasks.choose-ci-build.results.latest-catalog-ci-build-url)
+            - name: PREVIOUS_NIGHTLY_SHA
+              value: $(tasks.choose-ci-build.results.previous-nightly-sha)
+            - name: CHANNEL
+              valueFrom:
+                configMapKeyRef:
+                  name: slack-config
+                  key: odh-notification-channel
+            - name: OVERRIDE_CHANNEL
+              value: $(params.OVERRIDE_CHANNEL)
+            - name: MESSAGE_TEMPLATE
+              valueFrom:
+                configMapKeyRef:
+                  name: slack-config
+                  key: nightly-message-template
+            workingDir: /workspace
+            script: |
+              #!/bin/bash
+              set -eo pipefail
+
+              if [ -n "$OVERRIDE_CHANNEL" ]; then
+                CHANNEL="$OVERRIDE_CHANNEL"
+              fi
+
+              tracer.sh --odh -i "$LATEST_CATALOG_CI_IMAGE" --show-commits | tee tracer-output.txt
+
+              tracer-diff.sh --mode 2 --only-changes \
+                --old-label "previous nightly catalog" --new-label "this catalog" \
+                "--odh --digest $PREVIOUS_NIGHTLY_SHA" "--odh -i $LATEST_CATALOG_CI_IMAGE" \
+                  | tee tracer-diff.txt
+
+              SUBST_VARS='$LATEST_CATALOG_CI_IMAGE $LATEST_BUILD_METADATA_URL $BUILD_URL'
+              slack_message=$(echo "$MESSAGE_TEMPLATE" | envsubst "$SUBST_VARS")
+
+              SLACK_RC=0
+              OUTPUT=$(send-slack-message.sh -c "$CHANNEL" -m "$slack_message" -m "$(cat tracer-diff.txt)" -f tracer-output.txt -v 2>&1) || SLACK_RC=$?
+
+              THREAD_TS=$(printf '%s\n' "$OUTPUT" | grep -oP 'Setting new thread id:\s*\K[0-9]+\.[0-9]+' | head -1 || true)
+
+              if [ "$SLACK_RC" -ne 0 ]; then
+                echo "WARNING: send-slack-message.sh exited with $SLACK_RC (non-blocking)"
+                printf '%s\n' "$OUTPUT" | grep -viE 'token|bearer|authorization' || true
+              else
+                echo "Slack message sent (rc=0, thread_ts=${THREAD_TS:-<not captured>})"
+              fi
+              if [ -n "$THREAD_TS" ]; then
+                printf '%s' "$THREAD_TS" > "$DATA_PATH/slack-thread-ts"
+                echo "Saved Slack thread_ts=$THREAD_TS"
+              elif [ "$SLACK_RC" -eq 0 ]; then
+                echo "ERROR: Slack send succeeded but thread_ts could not be parsed; upstream log format may have changed"
+                exit 1
+              else
+                echo "WARNING: Slack send failed (rc=$SLACK_RC); proceeding without thread reply"
+              fi
+      - name: trigger-nightly-tests
+        description: trigger nightly tests via rhods-devops-infra smoke-trigger workflow
+        when:
+        - input: $(params.TRIGGER_NIGHTLY_TESTS)
+          operator: in
+          values:
+          - "true"
+        runAfter:
+        - tag-nightly
+        - slack-notification
+        workspaces:
+        - name: data
+          workspace: data
+        taskSpec:
+          workspaces:
+          - name: data
+            optional: false
+          steps:
+          - image: quay.io/rhoai-devops/base-runner:latest
+            env:
+            - name: HOME
+              value: /workspace
+            - name: DATA_PATH
+              value: $(workspaces.data.path)
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rhods-ci
+                  key: secret
+            - name: CHANNEL
+              valueFrom:
+                configMapKeyRef:
+                  name: slack-config
+                  key: odh-notification-channel
+            - name: OVERRIDE_CHANNEL
+              value: $(params.OVERRIDE_CHANNEL)
+            script: |
+              #!/bin/bash
+              set -e
+
+              if [ -n "$OVERRIDE_CHANNEL" ]; then
+                CHANNEL="$OVERRIDE_CHANNEL"
+              fi
+
+              TARGET=odh-stable
+
+              OWNER="red-hat-data-services"
+              REPO="rhods-devops-infra"
+              WORKFLOW_FILE="smoke-trigger.yaml"
+
+              THREAD_ID=""
+              if [ -f "$DATA_PATH/slack-thread-ts" ]; then
+                THREAD_ID=$(cat "$DATA_PATH/slack-thread-ts")
+                echo "Forwarding Slack thread: $THREAD_ID, channel: $CHANNEL"
+              fi
+
+              echo "Triggering nightly jenkins jobs for: $TARGET"
+
+              PAYLOAD=$(jq -n \
+                --arg ref "main" \
+                --arg target "$TARGET" \
+                --arg thread "$THREAD_ID" \
+                --arg channel "$CHANNEL" \
+                '{ref: $ref, inputs: {target_branch: $target, thread_id: $thread, channel_id: $channel}}')
+
+              curl --fail-with-body --show-error --silent \
+                --connect-timeout 10 --max-time 30 \
+                --retry 3 --retry-delay 5 --retry-connrefused \
+                -X POST "https://api.github.com/repos/$OWNER/$REPO/actions/workflows/$WORKFLOW_FILE/dispatches" \
+                -H "Accept: application/vnd.github.v3+json" \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD"
+    workspaces:
+    - name: data
+      optional: false
+  workspaces:
+  - name: data
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Mi

@@ -1,0 +1,70 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/mlflow?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
+      == "master"
+  creationTimestamp: null
+  labels:
+    appstudio.openshift.io/application: opendatahub-builds
+    appstudio.openshift.io/component: mlflow-ci
+    pipelines.appstudio.openshift.io/type: build
+  name: mlflow-on-push
+  namespace: open-data-hub-tenant
+spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/opendatahub/mlflow:odh-stable
+  - name: additional-tags
+    value:
+    - 'odh-stable-{{revision}}'
+    - master
+    - latest
+  - name: dockerfile
+    value: Dockerfile.konflux
+  - name: path-context
+    value: .
+  - name: hermetic
+    value: 'true'
+  - name: prefetch-input
+    value: '[{"type": "pip", "path": ".", "requirements_files": ["requirements/konflux-pypi-requirements.txt"]}, {"type": "pip", "path": "requirements", "requirements_files": ["konflux-aipcc-requirements.txt", "konflux-build-aipcc-requirements.txt"], "binary": {"arch": ":all:"}}, {"type": "yarn", "path": "mlflow/server/js"}, {"type": "rpm", "path": "requirements"}]'
+  - name: build-platforms
+    value:
+    - linux-extra-fast/amd64
+    - linux-m2xlarge/arm64
+    - linux/ppc64le
+    - linux/s390x
+  pipelineRef:
+    resolver: git
+    params:
+    - name: url
+      value: https://github.com/opendatahub-io/odh-konflux-central.git
+    - name: revision
+      value: main
+    - name: pathInRepo
+      value: pipeline/multi-arch-container-build.yaml
+  # Extra memory prevents yarn from silently failing/timing out during prefetch.
+  taskRunSpecs:
+  - pipelineTaskName: prefetch-dependencies
+    computeResources:
+      requests:
+        cpu: '1'
+        memory: 6Gi
+      limits:
+        memory: 6Gi
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-mlflow
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+status: {}

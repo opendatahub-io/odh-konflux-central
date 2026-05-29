@@ -1,0 +1,807 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: early-gate-e2e-pipeline
+spec:
+  description: |
+    E2E early-gate pipeline that sequentially builds operator, bundle, and FBC-fragment
+    in a single pipeline run. Replaces the multi-pipeline + GitHub-workflow chain with
+    a single Tekton pipeline for quick feature-branch validation before pushing to stable.
+  params:
+  # --- Group snapshot ---
+  - name: group-components
+    type: string
+    description: List of components in the group (JSON)
+    default: ""
+
+  # --- General ---
+  - description: Source Repository URL
+    name: git-url
+    type: string
+  - default: ""
+    description: Revision of the Source Repository
+    name: revision
+    type: string
+  - name: expected-cluster
+    type: string
+    default: ""
+    description: The cluster this pipeline is expected to run on
+  - name: pipeline-type
+    type: string
+    default: "pull-request"
+    description: Type of pipeline execution (push or pull-request)
+  - name: image-expires-after
+    type: string
+    default: "7d"
+    description: Image tag expiration time (e.g. 1h, 2d, 3w)
+
+  # --- Operator build ---
+  - name: operator-git-url
+    type: string
+    default: "https://github.com/opendatahub-io/opendatahub-operator"
+    description: Operator source repository URL
+  - name: operator-revision
+    type: string
+    default: "main"
+    description: Operator source revision
+  - name: operator-output-image
+    type: string
+    default: "quay.io/opendatahub/opendatahub-operator:odh-pr"
+    description: Fully qualified output image for the operator
+  - name: operator-dockerfile
+    type: string
+    default: "Dockerfiles/rhoai.Dockerfile"
+    description: Dockerfile path for operator build
+  - name: operator-path-context
+    type: string
+    default: "."
+    description: Build context path for operator
+  - name: operator-build-args
+    type: array
+    default:
+    - "BUILD_TYPE=CI"
+    description: Build args for operator image
+  - name: operator-additional-tags
+    type: array
+    default: []
+    description: Additional tags for operator image
+  - name: build-version-tag
+    type: string
+    default: "odh-stable"
+    description: Build version tag for fetching component images
+  - name: utils-repo-branch
+    type: string
+    default: "odh"
+    description: Branch for prefetch-operand-manifests utils
+  - name: build-metadata-repo
+    type: string
+    default: "opendatahub-io/odh-build-metadata"
+    description: Build metadata repo for pushing operator manifests
+  - name: fetch-git-tags
+    type: string
+    default: "false"
+    description: Fetch all git tags during clone
+  - name: clone-depth
+    type: string
+    default: "1"
+    description: Git clone depth
+
+  # --- Build-config (bundle + FBC) ---
+  - name: build-config-git-url
+    type: string
+    default: "https://github.com/opendatahub-io/ODH-Build-Config"
+    description: ODH-Build-Config repository URL
+  - name: build-config-revision
+    type: string
+    default: "main"
+    description: ODH-Build-Config revision
+  - name: bundle-output-image
+    type: string
+    default: "quay.io/opendatahub/opendatahub-operator-bundle:odh-pr"
+    description: Fully qualified output image for the bundle
+  - name: bundle-dockerfile
+    type: string
+    default: "bundle/Dockerfile"
+    description: Dockerfile path for bundle build
+  - name: bundle-build-args-file
+    type: string
+    default: "bundle/bundle_build_args.map"
+    description: Build args file for bundle build
+  - name: catalog-output-image
+    type: string
+    default: "quay.io/opendatahub/opendatahub-operator-catalog:odh-pr"
+    description: Fully qualified output image for the FBC catalog
+  - name: catalog-dockerfile
+    type: string
+    default: "Dockerfile"
+    description: Dockerfile path for FBC build
+  - name: catalog-path-context
+    type: string
+    default: "catalog/v4.20"
+    description: Build context path for FBC
+  - name: catalog-build-args-file
+    type: string
+    default: "catalog/catalog_build_args.map"
+    description: Build args file for FBC build
+  - name: openshift-version
+    type: string
+    default: "v4.20"
+    description: Target OpenShift version for the catalog
+
+  # --- Utils ---
+  - name: utils-repo-url
+    type: string
+    default: "https://github.com/red-hat-data-services/RHOAI-Konflux-Automation.git"
+    description: RHOAI-Konflux-Automation utils repo URL
+  - name: utils-repo-ref
+    type: string
+    default: "odh"
+    description: RHOAI-Konflux-Automation utils repo branch
+  - name: quay-tag
+    type: string
+    default: "odh-stable"
+    description: Quay tag used for image lookups by processors
+  - name: enable-early-gate-testing
+    type: string
+    default: "true"
+    description: Triggers early gate test pipeline on comment /early-gate-test
+
+  results:
+  - name: OPERATOR_IMAGE_URL
+    description: Resolved operator image URL (from build or snapshot)
+    value: $(tasks.resolve-operator-image.results.OPERATOR_IMAGE_URL)
+  - name: OPERATOR_IMAGE_DIGEST
+    description: Resolved operator image digest (from build or snapshot)
+    value: $(tasks.resolve-operator-image.results.OPERATOR_IMAGE_DIGEST)
+  - name: BUNDLE_IMAGE_URL
+    description: Built bundle image URL
+    value: $(tasks.build-bundle-container.results.IMAGE_URL)
+  - name: BUNDLE_IMAGE_DIGEST
+    description: Built bundle image digest
+    value: $(tasks.build-bundle-container.results.IMAGE_DIGEST)
+  - name: CATALOG_IMAGE_URL
+    description: Built catalog image URL
+    value: $(tasks.build-fbc-container.results.IMAGE_URL)
+  - name: CATALOG_IMAGE_DIGEST
+    description: Built catalog image digest
+    value: $(tasks.build-fbc-container.results.IMAGE_DIGEST)
+  - name: CHAINS-GIT_URL
+    description: Operator git URL
+    value: $(tasks.resolve-operator-image.results.OPERATOR_GIT_URL)
+  - name: CHAINS-GIT_COMMIT
+    description: Operator git commit
+    value: $(tasks.resolve-operator-image.results.OPERATOR_GIT_COMMIT)
+
+  # ==========================================================================
+  # TASKS
+  # ==========================================================================
+  tasks:
+
+  # --------------------------------------------------------------------------
+  # Init block (runs once for the entire pipeline)
+  # --------------------------------------------------------------------------
+
+  - name: rhoai-init
+    params:
+    - name: expected-cluster
+      value: $(params.expected-cluster)
+    - name: pipeline-type
+      value: $(params.pipeline-type)
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+      - name: revision
+        value: odh
+      - name: pathInRepo
+        value: konflux-tekton-tasks/rhoai-init/0.3/rhoai-init.yaml
+
+  - name: init
+    runAfter:
+    - rhoai-init
+    params:
+    - name: image-url
+      value: $(params.operator-output-image)
+    - name: rebuild
+      value: "true"
+    - name: skip-checks
+      value: "true"
+    taskRef:
+      params:
+      - name: name
+        value: init
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-init:0.2@sha256:b349d24cb896573695802d6913d311640b44675ec082b3ad167721946a6a0a71
+      - name: kind
+        value: task
+      resolver: bundles
+
+  # --------------------------------------------------------------------------
+  # Group snapshot block
+  # --------------------------------------------------------------------------
+
+  - name: generate-snapshot
+    runAfter:
+    - init
+    params:
+    - name: COMPONENTS
+      value: $(params.group-components)
+    - name: ociStorage
+      value: $(params.operator-output-image).snapshot
+    - name: ociArtifactExpiresAfter
+      value: $(params.image-expires-after)
+    workspaces:
+    - name: basic-auth
+      workspace: git-auth
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/generate-snapshot-for-group-testing.yaml
+
+  - name: audit-snapshot
+    runAfter:
+    - generate-snapshot
+    params:
+    - name: COMPONENTS
+      value: $(tasks.generate-snapshot.results.group-components)
+    taskSpec:
+      params:
+      - name: COMPONENTS
+        description: List of components in the group
+      results:
+      - name: pull-request-author
+      - name: pull-request-number
+      - name: git-repo
+      - name: git-org
+      - name: git-revision
+      - name: snapshot-contains-operator
+      volumes:
+      - name: workdir
+        emptyDir: {}
+      stepTemplate:
+        volumeMounts:
+        - mountPath: /var/workdir
+          name: workdir
+      steps:
+      - name: use-trusted-artifact
+        image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+        args:
+        - use
+        - $(tasks.generate-snapshot.results.SNAPSHOT_ARTIFACT)=/var/workdir/snapshot
+      - name: audit-snapshot
+        image: quay.io/konflux-ci/konflux-test:stable
+        workingDir: /workspace
+        env:
+        - name: SNAPSHOT_FILE
+          value: /var/workdir/snapshot/snapshot.json
+        - name: COMPONENTS
+          value: $(params.COMPONENTS)
+        - name: PR_AUTHOR
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sender']
+        - name: PR_NUMBER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+        - name: GIT_REPO
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-repository']
+        - name: GIT_ORG
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
+        - name: GIT_REVISION
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha']
+        script: |
+          #!/bin/bash
+          set -e
+          SNAPSHOT=$(cat "${SNAPSHOT_FILE}")
+          echo "SNAPSHOT=${SNAPSHOT}"
+          SNAPSHOT_CONTAINS_ODH_OPERATOR=false
+          # Parse JSON and iterate through each component
+          while IFS= read -r row; do
+              COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.key')
+              IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name].image' <<< "${SNAPSHOT}")
+              if [[ "${COMPONENT_NAME}" == "odh-operator-ci" ]] && [[ "${IMAGE}" == "quay.io/opendatahub/opendatahub-operator"* ]]; then
+                  SNAPSHOT_CONTAINS_ODH_OPERATOR=true
+              fi
+              GIT_COMMIT=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.commit"' <<< "${SNAPSHOT}")
+              GIT_URL=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.url"' <<< "${SNAPSHOT}")
+              echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
+              echo "GIT_COMMIT=${GIT_COMMIT}"
+              echo "GIT_URL=${GIT_URL}"
+          done < <(echo "$COMPONENTS" | jq -r 'to_entries[] | @base64')
+
+          echo -n "${PR_AUTHOR}" > "$(results.pull-request-author.path)"
+          echo -n "${PR_NUMBER}" > "$(results.pull-request-number.path)"
+          echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
+          echo -n "${GIT_ORG}" > "$(results.git-org.path)"
+          echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
+          echo -n "${SNAPSHOT_CONTAINS_ODH_OPERATOR}" > "$(results.snapshot-contains-operator.path)"
+
+
+  # --------------------------------------------------------------------------
+  # Resolve operator image (always runs -- merges build vs snapshot paths)
+  # --------------------------------------------------------------------------
+
+  - name: resolve-operator-image
+    description: |
+      Resolves the operator image URL and digest. When the operator was already
+      in the snapshot (build skipped), extracts from SNAPSHOT JSON. When the
+      operator was built in this pipeline, uses the build task results.
+    runAfter:
+    - audit-snapshot
+    params:
+    - name: SNAPSHOT_ARTIFACT
+      value: $(tasks.generate-snapshot.results.SNAPSHOT_ARTIFACT)
+    - name: snapshot-contains-operator
+      value: $(tasks.audit-snapshot.results.snapshot-contains-operator)
+    - name: operator-output-image
+      value: $(params.operator-output-image)
+    - name: operator-git-url
+      value: $(params.operator-git-url)
+    - name: operator-revision
+      value: $(params.operator-revision)
+    - name: built-operator-digest
+      value: ''
+    taskSpec:
+      params:
+      - name: SNAPSHOT_ARTIFACT
+      - name: snapshot-contains-operator
+      - name: operator-output-image
+      - name: operator-git-url
+      - name: operator-revision
+      - name: built-operator-digest
+      results:
+      - name: OPERATOR_IMAGE_URL
+        description: Resolved operator image URL
+      - name: OPERATOR_IMAGE_DIGEST
+        description: Resolved operator image digest
+      - name: OPERATOR_GIT_URL
+        description: Operator source git URL
+      - name: OPERATOR_GIT_COMMIT
+        description: Operator source git commit
+      volumes:
+      - name: workdir
+        emptyDir: {}
+      stepTemplate:
+        volumeMounts:
+        - mountPath: /var/workdir
+          name: workdir
+      steps:
+      - name: use-trusted-artifact
+        image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+        args:
+        - use
+        - $(params.SNAPSHOT_ARTIFACT)=/var/workdir/snapshot
+      - name: resolve
+        image: quay.io/rhoai/rhoai-task-toolset:latest
+        env:
+        - name: SNAPSHOT_FILE
+          value: /var/workdir/snapshot/snapshot.json
+        - name: SNAPSHOT_CONTAINS_OPERATOR
+          value: $(params.snapshot-contains-operator)
+        - name: OPERATOR_OUTPUT_IMAGE
+          value: $(params.operator-output-image)
+        - name: OPERATOR_GIT_URL
+          value: $(params.operator-git-url)
+        - name: OPERATOR_REVISION
+          value: $(params.operator-revision)
+        - name: BUILT_OPERATOR_DIGEST
+          value: $(params.built-operator-digest)
+        - name: PR_NUMBER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+        script: |
+          #!/bin/bash
+          set -eo pipefail
+
+          SNAPSHOT=$(cat "${SNAPSHOT_FILE}")
+          if [ "${SNAPSHOT_CONTAINS_OPERATOR}" == "true" ]; then
+            echo "Operator image found in snapshot, extracting..."
+            IMAGE=$(echo "${SNAPSHOT}" | jq -r '.["odh-operator-ci"].image')
+            RESOLVED_REPO="${IMAGE%%@*}"
+            RESOLVED_TAG="odh-pr-${PR_NUMBER}"
+            RESOLVED_URL="${RESOLVED_REPO}:${RESOLVED_TAG}"
+            RESOLVED_DIGEST="${IMAGE##*@}"
+            RESOLVED_GIT_URL=$(echo "${SNAPSHOT}" | jq -r '.["odh-operator-ci"]["git.url"] // empty')
+            RESOLVED_GIT_COMMIT=$(echo "${SNAPSHOT}" | jq -r '.["odh-operator-ci"]["git.commit"] // empty')
+          else
+            echo "Operator was built in this pipeline, using build task results..."
+            RESOLVED_URL="${OPERATOR_OUTPUT_IMAGE}"
+            RESOLVED_DIGEST="${BUILT_OPERATOR_DIGEST}"
+            RESOLVED_GIT_URL="${OPERATOR_GIT_URL}"
+            RESOLVED_GIT_COMMIT="${OPERATOR_REVISION}"
+          fi
+
+          echo "Resolved operator image: ${RESOLVED_URL}@${RESOLVED_DIGEST}"
+          echo -n "${RESOLVED_URL}" > "$(results.OPERATOR_IMAGE_URL.path)"
+          echo -n "${RESOLVED_DIGEST}" > "$(results.OPERATOR_IMAGE_DIGEST.path)"
+          echo -n "${RESOLVED_GIT_URL}" > "$(results.OPERATOR_GIT_URL.path)"
+          echo -n "${RESOLVED_GIT_COMMIT}" > "$(results.OPERATOR_GIT_COMMIT.path)"
+
+  # --------------------------------------------------------------------------
+  # Block 2: Bundle processor + Bundle build
+  # --------------------------------------------------------------------------
+
+  - name: clone-build-config-repo
+    runAfter:
+    - resolve-operator-image
+    params:
+    - name: url
+      value: $(params.build-config-git-url)
+    - name: revision
+      value: $(params.build-config-revision)
+    - name: ociStorage
+      value: $(params.bundle-output-image).git
+    - name: ociArtifactExpiresAfter
+      value: $(params.image-expires-after)
+    taskRef:
+      params:
+      - name: name
+        value: git-clone-oci-ta
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta:0.1@sha256:0a89e1a6304076525e9766f63a4cd006763d21d5aca6863281fc427537a23c6f
+      - name: kind
+        value: task
+      resolver: bundles
+    when:
+    - input: $(tasks.init.results.build)
+      operator: in
+      values:
+      - "true"
+    workspaces:
+    - name: basic-auth
+      workspace: git-auth
+
+  - name: bundle-processor
+    runAfter:
+    - clone-build-config-repo
+    params:
+    - name: SOURCE_ARTIFACT
+      value: $(tasks.clone-build-config-repo.results.SOURCE_ARTIFACT)
+    - name: ociStorage
+      value: $(params.bundle-output-image).bundle-processed
+    - name: ociArtifactExpiresAfter
+      value: "1h"
+    - name: OPERATOR_IMAGE_URL
+      value: $(tasks.resolve-operator-image.results.OPERATOR_IMAGE_URL)
+    - name: OPERATOR_IMAGE_DIGEST
+      value: $(tasks.resolve-operator-image.results.OPERATOR_IMAGE_DIGEST)
+    - name: QUAY_TAG
+      value: $(params.quay-tag)
+    - name: BRANCH
+      value: $(params.build-config-revision)
+    - name: UTILS_REPO_URL
+      value: $(params.utils-repo-url)
+    - name: UTILS_REPO_BRANCH
+      value: $(params.utils-repo-ref)
+    - name: SNAPSHOT_ARTIFACT
+      value: $(tasks.generate-snapshot.results.SNAPSHOT_ARTIFACT)
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/bundle-processor.yaml
+
+  - name: prefetch-dependencies-bundle
+    runAfter:
+    - bundle-processor
+    params:
+    - name: input
+      value: ""
+    - name: SOURCE_ARTIFACT
+      value: $(tasks.bundle-processor.results.SOURCE_ARTIFACT)
+    - name: ociStorage
+      value: $(params.bundle-output-image).prefetch
+    - name: ociArtifactExpiresAfter
+      value: $(params.image-expires-after)
+    taskRef:
+      params:
+      - name: name
+        value: prefetch-dependencies-oci-ta
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:3e5e834290a1ed57fd14c0082e5a10789c8fe382ed682ef7f981475a7b316b49
+      - name: kind
+        value: task
+      resolver: bundles
+    workspaces:
+    - name: git-basic-auth
+      workspace: git-auth
+    - name: netrc
+      workspace: netrc
+
+  - name: build-bundle-container
+    runAfter:
+    - prefetch-dependencies-bundle
+    params:
+    - name: IMAGE
+      value: $(params.bundle-output-image)
+    - name: DOCKERFILE
+      value: $(params.bundle-dockerfile)
+    - name: CONTEXT
+      value: .
+    - name: HERMETIC
+      value: "false"
+    - name: PREFETCH_INPUT
+      value: ""
+    - name: IMAGE_EXPIRES_AFTER
+      value: $(params.image-expires-after)
+    - name: COMMIT_SHA
+      value: $(tasks.clone-build-config-repo.results.commit)
+    - name: BUILD_ARGS
+      value: []
+    - name: BUILD_ARGS_FILE
+      value: $(params.bundle-build-args-file)
+    - name: SOURCE_URL
+      value: $(tasks.clone-build-config-repo.results.url)
+    - name: SOURCE_ARTIFACT
+      value: $(tasks.prefetch-dependencies-bundle.results.SOURCE_ARTIFACT)
+    - name: CACHI2_ARTIFACT
+      value: $(tasks.prefetch-dependencies-bundle.results.CACHI2_ARTIFACT)
+    - name: LABELS
+      value:
+      - version=$(params.quay-tag)
+      - git.url=$(params.build-config-git-url)
+      - git.commit=$(params.build-config-revision)
+    taskRef:
+      params:
+      - name: name
+        value: buildah-oci-ta
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.7@sha256:2de614f405527e779534a5d1a1293a528c482aa6abebc8ea158ad47e4be5dea4
+      - name: kind
+        value: task
+      resolver: bundles
+    when:
+    - input: $(tasks.init.results.build)
+      operator: in
+      values:
+      - "true"
+
+  - name: apply-tags-bundle
+    runAfter:
+    - build-bundle-container
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build-bundle-container.results.IMAGE_URL)
+    - name: IMAGE_DIGEST
+      value: $(tasks.build-bundle-container.results.IMAGE_DIGEST)
+    - name: ADDITIONAL_TAGS
+      value:
+      - $(tasks.rhoai-init.results.mandatory-tag)
+      - $(tasks.rhoai-init.results.unique-tag)
+      - "odh-pr-$(params.revision)"
+    taskRef:
+      params:
+      - name: name
+        value: apply-tags
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.2@sha256:e4017ec351a0891ef95989f35bd20b8c3f091fa1a3da364c4d4e975e99f3063c
+      - name: kind
+        value: task
+      resolver: bundles
+
+  # --------------------------------------------------------------------------
+  # Block 3: FBC processor + FBC-fragment build
+  # --------------------------------------------------------------------------
+
+  - name: fbc-processor
+    runAfter:
+    - apply-tags-bundle
+    params:
+    - name: SOURCE_ARTIFACT
+      value: $(tasks.bundle-processor.results.SOURCE_ARTIFACT)
+    - name: ociStorage
+      value: $(params.catalog-output-image).fbc-processed
+    - name: ociArtifactExpiresAfter
+      value: "1h"
+    - name: BUNDLE_IMAGE_URL
+      value: $(tasks.build-bundle-container.results.IMAGE_URL)
+    - name: BUNDLE_IMAGE_DIGEST
+      value: $(tasks.build-bundle-container.results.IMAGE_DIGEST)
+    - name: QUAY_TAG
+      value: $(params.quay-tag)
+    - name: BRANCH
+      value: $(params.build-config-revision)
+    - name: OPENSHIFT_VERSION
+      value: $(params.openshift-version)
+    - name: UTILS_REPO_URL
+      value: $(params.utils-repo-url)
+    - name: UTILS_REPO_BRANCH
+      value: $(params.utils-repo-ref)
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/fbc-processor.yaml
+
+  - name: prefetch-dependencies-fbc
+    runAfter:
+    - fbc-processor
+    params:
+    - name: input
+      value: ""
+    - name: SOURCE_ARTIFACT
+      value: $(tasks.fbc-processor.results.SOURCE_ARTIFACT)
+    - name: ociStorage
+      value: $(params.catalog-output-image).prefetch
+    - name: ociArtifactExpiresAfter
+      value: $(params.image-expires-after)
+    taskRef:
+      params:
+      - name: name
+        value: prefetch-dependencies-oci-ta
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:3e5e834290a1ed57fd14c0082e5a10789c8fe382ed682ef7f981475a7b316b49
+      - name: kind
+        value: task
+      resolver: bundles
+    workspaces:
+    - name: git-basic-auth
+      workspace: git-auth
+    - name: netrc
+      workspace: netrc
+
+  - name: build-fbc-container
+    runAfter:
+    - prefetch-dependencies-fbc
+    params:
+    - name: IMAGE
+      value: $(params.catalog-output-image)
+    - name: DOCKERFILE
+      value: $(params.catalog-dockerfile)
+    - name: CONTEXT
+      value: $(params.catalog-path-context)
+    - name: HERMETIC
+      value: "true"
+    - name: PREFETCH_INPUT
+      value: ""
+    - name: IMAGE_EXPIRES_AFTER
+      value: $(params.image-expires-after)
+    - name: COMMIT_SHA
+      value: $(tasks.clone-build-config-repo.results.commit)
+    - name: BUILD_ARGS
+      value: []
+    - name: BUILD_ARGS_FILE
+      value: $(params.catalog-build-args-file)
+    - name: SOURCE_URL
+      value: $(tasks.clone-build-config-repo.results.url)
+    - name: SOURCE_ARTIFACT
+      value: $(tasks.prefetch-dependencies-fbc.results.SOURCE_ARTIFACT)
+    - name: CACHI2_ARTIFACT
+      value: $(tasks.prefetch-dependencies-fbc.results.CACHI2_ARTIFACT)
+    - name: LABELS
+      value:
+      - version=$(params.quay-tag)
+      - git.url=$(params.build-config-git-url)
+      - git.commit=$(params.build-config-revision)
+      - build-url=$(tasks.rhoai-init.results.build-url)
+    taskRef:
+      params:
+      - name: name
+        value: buildah-oci-ta
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.7@sha256:2de614f405527e779534a5d1a1293a528c482aa6abebc8ea158ad47e4be5dea4
+      - name: kind
+        value: task
+      resolver: bundles
+    when:
+    - input: $(tasks.init.results.build)
+      operator: in
+      values:
+      - "true"
+
+  - name: apply-tags-fbc
+    runAfter:
+    - build-fbc-container
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build-fbc-container.results.IMAGE_URL)
+    - name: IMAGE_DIGEST
+      value: $(tasks.build-fbc-container.results.IMAGE_DIGEST)
+    - name: ADDITIONAL_TAGS
+      value:
+      - $(tasks.rhoai-init.results.mandatory-tag)
+      - $(tasks.rhoai-init.results.unique-tag)
+      - "odh-pr-$(params.revision)"
+    taskRef:
+      params:
+      - name: name
+        value: apply-tags
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.2@sha256:e4017ec351a0891ef95989f35bd20b8c3f091fa1a3da364c4d4e975e99f3063c
+      - name: kind
+        value: task
+      resolver: bundles
+
+  - name: validate-fbc
+    runAfter:
+    - build-fbc-container
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build-fbc-container.results.IMAGE_URL)
+    - name: IMAGE_DIGEST
+      value: $(tasks.build-fbc-container.results.IMAGE_DIGEST)
+    taskRef:
+      params:
+      - name: name
+        value: validate-fbc
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-validate-fbc:0.1@sha256:291cbcce7d965831dd5027caad5f47ac4146b6fac0a51358f2ad64603a008436
+      - name: kind
+        value: task
+      resolver: bundles
+
+  # --------------------------------------------------------------------------
+  # Post build-complete comment on PR
+  # --------------------------------------------------------------------------
+  - name: post-build-complete-comment
+    runAfter:
+    - validate-fbc
+    - apply-tags-fbc
+    params:
+    - name: catalog-image-url
+      value: $(tasks.build-fbc-container.results.IMAGE_URL)
+    - name: catalog-image-digest
+      value: $(tasks.build-fbc-container.results.IMAGE_DIGEST)
+    - name: unique-tag
+      value: $(tasks.rhoai-init.results.unique-tag)
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/post-build-complete-comment.yaml
+
+  # --------------------------------------------------------------------------
+  # Trigger early-gate test pipeline
+  # --------------------------------------------------------------------------
+  - name: trigger-early-gate-test
+    runAfter:
+    - post-build-complete-comment
+    workspaces:
+    - name: basic-auth
+      workspace: git-auth
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+      - name: revision
+        value: earlygate
+      - name: pathInRepo
+        value: konflux-tekton-tasks/trigger-early-gate-test/0.1/trigger-early-gate-test.yaml
+    when:
+    - input: $(params.enable-early-gate-testing)
+      operator: in
+      values:
+      - "true"
+
+  workspaces:
+  - name: git-auth
+    optional: true
+  - name: netrc
+    optional: true

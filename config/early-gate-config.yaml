@@ -1,0 +1,11 @@
+config:
+  default-branches-allowlist:
+    - main
+    - master
+  repositories:
+    # additional-branches: []
+    #  early-gate-required-on-default-branches: false
+    kserve:
+      early-gate-enabled: true
+      additional-branches:
+        - release-v0.17

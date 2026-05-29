@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "baseBranchPatterns": [
+    "main"
+  ],
+  "dependencyDashboard": true,
+  "enabledManagers": [
+    "tekton",
+    "dockerfile"
+  ],
+  "tekton": {
+    "schedule": [
+      "at any time"
+    ],
+    "managerFilePatterns": [
+      "/\\.yaml$/",
+      "/\\.yml$/"
+    ],
+    "includePaths": [
+      "pipelineruns/**",
+      "pipelines/**"
+    ],
+    "automerge": true,
+    "packageRules": [
+      {
+        "matchUpdateTypes": [
+          "major",
+          "minor",
+          "pin",
+          "pinDigest"
+        ],
+        "enabled": false
+      }
+    ]
+  },
+  "dockerfile": {
+    "managerFilePatterns": [
+      "/integration-tests/kubeflow/Dockerfile\\.kubeflow/"
+    ],
+    "schedule": [
+      "at any time"
+    ]
+  }
+}

@@ -1,0 +1,288 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: early-gate-test-pipeline
+spec:
+  description: |
+    Triggers and monitors an early-gate smoke test Jenkins job for a pull request.
+    Verifies that the required Quay images exist, checks for any ongoing jobs from
+    a previous (interrupted) run to ensure idempotency, triggers the Jenkins job via
+    a GitHub workflow dispatch, monitors it to completion, and posts the test results
+    back to the PR as comments.
+
+  params:
+  # --- General ---
+  - name: git-url
+    type: string
+    description: Source Repository URL
+  - name: revision
+    type: string
+    description: Revision of the Source Repository
+    default: ""
+  - name: pipeline-type
+    type: string
+    description: Type of pipeline execution (push or pull-request)
+    default: "pull-request"
+  - name: image-expires-after
+    type: string
+    description: Image tag expiration time (e.g. 1h, 2d, 3w)
+    default: "7d"
+
+  # --- GitHub workflow config ---
+  - name: github-workflow-repo
+    type: string
+    description: Owner/repo of the GitHub repo containing the trigger and monitor workflows
+    default: red-hat-data-services/rhods-devops-infra
+  - name: trigger-workflow-file
+    type: string
+    description: Workflow filename for triggering the Jenkins job
+    default: earlygate-smoke-trigger.yaml
+  - name: monitor-workflow-file
+    type: string
+    description: Workflow filename for monitoring the Jenkins job
+    default: monitor-jenkins-job.yaml
+
+  # --- Polling intervals ---
+  - name: queue-url-poll-interval
+    type: string
+    description: Seconds between monitor-workflow invocations while resolving the Jenkins job URL from the queue
+    default: "120"
+  - name: job-status-poll-interval
+    type: string
+    description: Seconds between monitor-workflow invocations while polling for Jenkins job completion
+    default: "300"
+  - name: summary-poll-interval
+    type: string
+    description: Seconds between attempts when downloading and validating the test summary from GitHub
+    default: "60"
+
+  # --- Secret config ---
+  - name: workflow-token-secret-name
+    type: string
+    description: Name of the Kubernetes secret containing the GitHub token for GitHub Actions workflow operations
+    default: rhods-ci
+  - name: workflow-token-secret-key
+    type: string
+    description: Key in the secret that holds the GitHub token for workflow operations
+    default: secret
+  - name: pr-token-secret-name
+    type: string
+    description: Name of the Kubernetes secret containing the GitHub token for PR comment operations
+    default: odh-github-secret
+  - name: pr-token-secret-key
+    type: string
+    description: Key in the secret that holds the GitHub token for PR comment operations
+    default: commenter-token
+
+  # --- Jenkins config ---
+  - name: jenkins-url-secret-name
+    type: string
+    description: Name of the Kubernetes secret containing the Jenkins base URL
+    default: rhods-ci
+  - name: jenkins-url-secret-key
+    type: string
+    description: Key in the secret that holds the Jenkins base URL (e.g. https://host)
+    default: jenkins-url
+
+  # --- Comment behavior ---
+  - name: delete-intermediate-comments
+    type: string
+    description: "Delete intermediate PR comments (queue-url, job-url) once superseded. When true, comments include a note that they will be replaced."
+    default: "true"
+
+  # ==========================================================================
+  # TASKS
+  # ==========================================================================
+  tasks:
+
+  # --------------------------------------------------------------------------
+  # 1. Check prerequisites — verify both quay images exist for this PR
+  # --------------------------------------------------------------------------
+  - name: check-prerequisites
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/check-prerequisites.yaml
+
+  # --------------------------------------------------------------------------
+  # 2. Check for ongoing jobs — scan PR comments for idempotency
+  # --------------------------------------------------------------------------
+  - name: check-ongoing-jobs
+    runAfter:
+    - check-prerequisites
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/check-ongoing-jobs.yaml
+    params:
+    - name: github-workflow-repo
+      value: $(params.github-workflow-repo)
+    - name: monitor-workflow-file
+      value: $(params.monitor-workflow-file)
+    - name: workflow-token-secret-name
+      value: $(params.workflow-token-secret-name)
+    - name: workflow-token-secret-key
+      value: $(params.workflow-token-secret-key)
+    - name: pr-token-secret-name
+      value: $(params.pr-token-secret-name)
+    - name: pr-token-secret-key
+      value: $(params.pr-token-secret-key)
+    - name: jenkins-url-secret-name
+      value: $(params.jenkins-url-secret-name)
+    - name: jenkins-url-secret-key
+      value: $(params.jenkins-url-secret-key)
+
+  # --------------------------------------------------------------------------
+  # 3. Trigger test pipeline — dispatch GitHub workflow, post queue-url-comment
+  #    Skipped when a previous run left an active queue-url or job-url comment
+  # --------------------------------------------------------------------------
+  - name: trigger-test-pipeline
+    runAfter:
+    - check-ongoing-jobs
+    when:
+    - input: "$(tasks.check-ongoing-jobs.results.resume-from)"
+      operator: in
+      values: ["none"]
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/trigger-test-pipeline.yaml
+    params:
+    - name: github-workflow-repo
+      value: $(params.github-workflow-repo)
+    - name: trigger-workflow-file
+      value: $(params.trigger-workflow-file)
+    - name: workflow-token-secret-name
+      value: $(params.workflow-token-secret-name)
+    - name: workflow-token-secret-key
+      value: $(params.workflow-token-secret-key)
+    - name: pr-token-secret-name
+      value: $(params.pr-token-secret-name)
+    - name: pr-token-secret-key
+      value: $(params.pr-token-secret-key)
+    - name: jenkins-url-secret-name
+      value: $(params.jenkins-url-secret-name)
+    - name: jenkins-url-secret-key
+      value: $(params.jenkins-url-secret-key)
+    - name: delete-intermediate-comments
+      value: $(params.delete-intermediate-comments)
+
+  # --------------------------------------------------------------------------
+  # 4a. Monitor (fresh) — runs after trigger-test-pipeline for new jobs
+  #     Receives queue-url and correlation-id from trigger-test-pipeline results
+  # --------------------------------------------------------------------------
+  - name: monitor-fresh
+    timeout: 4h
+    when:
+    - input: "$(tasks.check-ongoing-jobs.results.resume-from)"
+      operator: in
+      values: ["none"]
+    runAfter:
+    - trigger-test-pipeline
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/monitor-jenkins-job.yaml
+    params:
+    - name: queue-url
+      value: $(tasks.trigger-test-pipeline.results.queue-url)
+    - name: correlation-id
+      value: $(tasks.trigger-test-pipeline.results.correlation-id)
+    - name: github-workflow-repo
+      value: $(params.github-workflow-repo)
+    - name: monitor-workflow-file
+      value: $(params.monitor-workflow-file)
+    - name: queue-url-poll-interval
+      value: $(params.queue-url-poll-interval)
+    - name: delete-intermediate-comments
+      value: $(params.delete-intermediate-comments)
+    - name: job-status-poll-interval
+      value: $(params.job-status-poll-interval)
+    - name: summary-poll-interval
+      value: $(params.summary-poll-interval)
+    - name: workflow-token-secret-name
+      value: $(params.workflow-token-secret-name)
+    - name: workflow-token-secret-key
+      value: $(params.workflow-token-secret-key)
+    - name: pr-token-secret-name
+      value: $(params.pr-token-secret-name)
+    - name: pr-token-secret-key
+      value: $(params.pr-token-secret-key)
+    - name: jenkins-url-secret-name
+      value: $(params.jenkins-url-secret-name)
+    - name: jenkins-url-secret-key
+      value: $(params.jenkins-url-secret-key)
+
+  # --------------------------------------------------------------------------
+  # 4b. Monitor (resume) — runs when check-ongoing-jobs found an active job
+  #     Receives job-url and correlation-id from check-ongoing-jobs results
+  # --------------------------------------------------------------------------
+  - name: monitor-resume
+    timeout: 4h
+    when:
+    - input: "$(tasks.check-ongoing-jobs.results.resume-from)"
+      operator: notin
+      values: ["none"]
+    runAfter:
+    - check-ongoing-jobs
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/monitor-jenkins-job.yaml
+    params:
+    - name: queue-url
+      value: $(tasks.check-ongoing-jobs.results.queue-url)
+    - name: job-url
+      value: $(tasks.check-ongoing-jobs.results.job-url)
+    - name: correlation-id
+      value: $(tasks.check-ongoing-jobs.results.correlation-id)
+    - name: github-workflow-repo
+      value: $(params.github-workflow-repo)
+    - name: monitor-workflow-file
+      value: $(params.monitor-workflow-file)
+    - name: queue-url-poll-interval
+      value: $(params.queue-url-poll-interval)
+    - name: delete-intermediate-comments
+      value: $(params.delete-intermediate-comments)
+    - name: job-status-poll-interval
+      value: $(params.job-status-poll-interval)
+    - name: summary-poll-interval
+      value: $(params.summary-poll-interval)
+    - name: workflow-token-secret-name
+      value: $(params.workflow-token-secret-name)
+    - name: workflow-token-secret-key
+      value: $(params.workflow-token-secret-key)
+    - name: pr-token-secret-name
+      value: $(params.pr-token-secret-name)
+    - name: pr-token-secret-key
+      value: $(params.pr-token-secret-key)
+    - name: jenkins-url-secret-name
+      value: $(params.jenkins-url-secret-name)
+    - name: jenkins-url-secret-key
+      value: $(params.jenkins-url-secret-key)

@@ -1,0 +1,10 @@
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25
+USER 0
+RUN yum install -y --nodocs --allowerasing jq httpd-tools
+RUN curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+RUN mv kustomize /usr/local/bin/
+RUN yum clean all && rm -rf /var/cache/yum
+RUN ln -s /cli/oc /usr/bin/kubectl
+RUN ln -s /usr/bin/python3 /usr/bin/python
+RUN wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz && \
+    tar xvf openshift-client-linux.tar.gz && chmod +x oc && mv oc /usr/local/bin/ && chmod +x kubectl && mv kubectl /usr/local/bin/

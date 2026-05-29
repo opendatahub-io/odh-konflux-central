@@ -1,0 +1,55 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/fms-guardrails-orchestrator?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
+      == "$$TARGET_BRANCH$$"
+  creationTimestamp: null
+  labels:
+    appstudio.openshift.io/application: opendatahub-builds
+    appstudio.openshift.io/component: fms-guardrails-orchestrator-ci
+    pipelines.appstudio.openshift.io/type: build
+  name: fms-guardrails-orchestrator-on-push
+  namespace: open-data-hub-tenant
+spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/opendatahub/ta-guardrails-orchestrator:odh-stable 
+  - name: dockerfile
+    value: Dockerfile.amd64
+  - name: path-context
+    value: .
+  taskRunSpecs:
+  - pipelineTaskName: build-images
+    computeResources:
+      requests:
+        cpu: '8'
+        memory: 10Gi
+      limits:
+        cpu: '12'
+        memory: 20Gi
+  pipelineRef:
+    resolver: git
+    params:
+    - name: url
+      value: https://github.com/opendatahub-io/odh-konflux-central.git
+    - name: revision
+      value: main
+    - name: pathInRepo
+      value: pipeline/multi-arch-container-build.yaml
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-fms-guardrails-orchestrator
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+status: {}

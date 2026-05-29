@@ -1,0 +1,192 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: trigger-operator-build
+  namespace: open-data-hub-tenant
+spec:
+  pipelineSpec:
+    description: |
+      This pipeline will trigger an operator CI build after each successful component build
+    params:
+      - description: Snapshot of the application
+        name: SNAPSHOT
+        type: string
+      - description: odh-operator component name
+        name: OPERATOR-COMPONENT-NAME
+        type: string
+        default: "odh-operator"
+      - description: odh-operator repo name
+        name: OPERATOR-REPO-NAME
+        type: string
+        default: "opendatahub-io/opendatahub-operator"
+      - description: odh-operator git branch
+        name: OPERATOR-BRANCH-NAME
+        type: string
+        default: "main"
+      - description: operator-bundle component name
+        name: BUNDLE-COMPONENT-NAME
+        type: string
+        default: "operator-bundle"
+      - description: FBC fragment component name
+        name: FBCF-COMPONENT-NAME
+        type: string
+        default: "odh-fbc-fragment"
+    #test
+    tasks:
+      - name: parse-metadata
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/konflux-ci/integration-examples
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: tasks/test_metadata.yaml
+        params:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+      - name: find-component-image
+        description: Placeholder task that prints the Snapshot and outputs standard TEST_OUTPUT
+        runAfter:
+          - parse-metadata
+        params:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+        taskSpec:
+          params:
+          - name: SNAPSHOT
+          steps:
+          - image: quay.io/konflux-ci/konflux-test:stable
+            workingDir: /workspace
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+              - name: COMPONENT_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['appstudio.openshift.io/component']
+            script: |
+              #!/bin/sh
+
+              # Extract the component container image from the SNAPSHOT JSON data
+              COMPONENT_CONTAINER_IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.components[] | select(.name == $component_name) | .containerImage' <<< "${SNAPSHOT}")
+
+              # Log the extracted variable
+              echo "  COMPONENT_CONTAINER_IMAGE: ${COMPONENT_CONTAINER_IMAGE}"
+
+      - name: check-prerequisites
+        description: check prerequisites if the ITS needs to execute
+        runAfter:
+          - find-component-image
+        params:
+        - name: OPERATOR-COMPONENT-NAME
+          value: "$(params.OPERATOR-COMPONENT-NAME)"
+        - name: BUNDLE-COMPONENT-NAME
+          value: "$(params.BUNDLE-COMPONENT-NAME)"
+        - name: FBCF-COMPONENT-NAME
+          value: "$(params.FBCF-COMPONENT-NAME)"
+        taskSpec:
+          results:
+          - name: success
+            description: "stores the result of prerequisite check"
+          params:
+          - name: OPERATOR-COMPONENT-NAME
+          - name: BUNDLE-COMPONENT-NAME
+          - name: FBCF-COMPONENT-NAME
+          steps:
+          - image: quay.io/konflux-ci/konflux-test:stable
+            env:
+              - name: EVENT_TYPE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['pac.test.appstudio.openshift.io/event-type']
+              - name: COMPONENT_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['appstudio.openshift.io/component']
+              - name: OPERATOR_COMPONENT_NAME
+                value: "$(params.OPERATOR-COMPONENT-NAME)"
+              - name: BUNDLE_COMPONENT_NAME
+                value: "$(params.BUNDLE-COMPONENT-NAME)"
+              - name: FBCF_COMPONENT_NAME
+                value: "$(params.FBCF-COMPONENT-NAME)"
+            script: |
+              #!/bin/bash
+              set -e
+              RESULT=false
+              echo "EVENT_TYPE=${EVENT_TYPE}"
+              echo "COMPONENT_NAME=${COMPONENT_NAME}"
+              echo "OPERATOR_COMPONENT_NAME=${OPERATOR_COMPONENT_NAME}"
+              echo "BUNDLE_COMPONENT_NAME=${BUNDLE_COMPONENT_NAME}"
+              echo "FBCF_COMPONENT_NAME=${FBCF_COMPONENT_NAME}"
+
+
+              if [[ "${EVENT_TYPE}" == "push" ]] && [[ "${COMPONENT_NAME}" != *"${OPERATOR_COMPONENT_NAME}"* ]] && [[ "${COMPONENT_NAME}" != *"${BUNDLE_COMPONENT_NAME}"* ]] && [[ "${COMPONENT_NAME}" != *"${FBCF_COMPONENT_NAME}"* ]]
+              then
+                  RESULT=true
+              fi
+              echo -n "${RESULT}" > $(results.success.path)
+
+      - name: trigger-operator-build
+        description: Trigger the operator build
+        runAfter:
+          - check-prerequisites
+        params:
+        - name: OPERATOR-COMPONENT-NAME
+          value: "$(params.OPERATOR-COMPONENT-NAME)"
+        - name: OPERATOR-REPO-NAME
+          value: "$(params.OPERATOR-REPO-NAME)"
+        - name: OPERATOR-BRANCH-NAME
+          value: "$(params.OPERATOR-BRANCH-NAME)"
+        workspaces:
+        - name: basic-auth
+          workspace: git-auth
+        taskSpec:
+          workspaces:
+            - name: basic-auth
+              optional: true
+          params:
+          - name: OPERATOR-COMPONENT-NAME
+          - name: OPERATOR-REPO-NAME
+          - name: OPERATOR-BRANCH-NAME
+          steps:
+          - image: quay.io/rhoai/rhoai-task-toolset:its
+            env:
+              - name: OPERATOR_COMPONENT_NAME
+                value: "$(params.OPERATOR-COMPONENT-NAME)"
+              - name: OPERATOR_REPO_NAME
+                value: "$(params.OPERATOR-REPO-NAME)"
+              - name: OPERATOR_BRANCH_NAME
+                value: "$(params.OPERATOR-BRANCH-NAME)"
+              - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+                value: $(workspaces.basic-auth.bound)
+              - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+                value: $(workspaces.basic-auth.path)
+            script: |
+              #!/bin/bash
+              set -e
+              LATEST_COMMIT_SHA=$(git ls-remote https://github.com/${OPERATOR_REPO_NAME}.git refs/heads/${OPERATOR_BRANCH_NAME} | awk '{print $1}')
+              echo "LATEST_COMMIT_SHA=${LATEST_COMMIT_SHA}"
+              if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+                echo "configuring gh cli"
+                ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
+                GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+              fi
+              COMMENT="/test ${OPERATOR_COMPONENT_NAME}-on-push branch:${OPERATOR_BRANCH_NAME}"
+              echo "COMMENT=$COMMENT"
+              curl -X POST https://api.github.com/repos/${OPERATOR_REPO_NAME}/commits/${LATEST_COMMIT_SHA}/comments -H "Accept: application/vnd.github+json"  -H "Authorization: token $GITHUB_TOKEN"  -H "Content-Type: application/json" -d "{\"body\": \"${COMMENT}\"}"
+        when:
+          - input: "$(tasks.check-prerequisites.results.success)"
+            operator: in
+            values: ["true"]
+    workspaces:
+    - name: git-auth
+      optional: true
+    - name: netrc
+      optional: true
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'

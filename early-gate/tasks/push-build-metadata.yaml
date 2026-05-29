@@ -1,0 +1,103 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: push-build-metadata
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  description: |
+    Pushes operator build manifests (prefetched operand manifests, operands-map.yaml,
+    and manifests-config.yaml) to the odh-build-metadata repository, keyed by the
+    operator image digest.
+  params:
+  - name: SOURCE_ARTIFACT
+    description: The Trusted Artifact URI pointing to the artifact with the application source code.
+    type: string
+  - name: CACHI2_ARTIFACT
+    description: The Trusted Artifact URI pointing to the artifact with the prefetched dependencies.
+    type: string
+  - name: OUTPUT_IMAGE_DIGEST
+    description: The operator image digest (sha256:...) used to key the metadata directory.
+    type: string
+  - name: build-metadata-repo
+    description: GitHub org/repo for the build metadata repository.
+    type: string
+    default: "opendatahub-io/odh-build-metadata"
+  volumes:
+  - name: workdir
+    emptyDir: {}
+  stepTemplate:
+    volumeMounts:
+    - mountPath: /var/workdir
+      name: workdir
+  workspaces:
+  - name: basic-auth
+    description: Workspace containing git credentials.
+    optional: true
+  steps:
+  - name: use-trusted-artifact
+    image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+    args:
+    - use
+    - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+    - $(params.CACHI2_ARTIFACT)=/var/workdir/cachi2
+  - name: push-metadata
+    image: quay.io/rhoai/rhoai-task-toolset:latest
+    computeResources:
+      requests:
+        cpu: '4'
+        memory: 16Gi
+      limits:
+        cpu: '4'
+        memory: 16Gi
+    env:
+    - name: SOURCE_ARTIFACT
+      value: $(params.SOURCE_ARTIFACT)
+    - name: CACHI2_ARTIFACT
+      value: $(params.CACHI2_ARTIFACT)
+    - name: OUTPUT_IMAGE_DIGEST
+      value: $(params.OUTPUT_IMAGE_DIGEST)
+    - name: BUILD_METADATA_REPO
+      value: "$(params.build-metadata-repo)"
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: odh-github-secret
+          key: build-metadata-token
+    script: |
+      echo "SOURCE_ARTIFACT=${SOURCE_ARTIFACT}"
+      echo "CACHI2_ARTIFACT=${CACHI2_ARTIFACT}"
+      echo "exploring manifests"
+      ls /var/workdir/cachi2
+      ls /var/workdir/cachi2/prefetched-manifests
+
+      echo "exploring sources"
+      ls /var/workdir/source
+
+      echo "****************** pushing the changes to odh-build-metadata ************************"
+      META_DIR=/var/workdir/odh-build-metadata
+      mkdir -p ${META_DIR}
+      cd ${META_DIR}
+      git config --global init.defaultBranch main
+      git config --global user.name "OpenShift-AI-DevOps"
+      git config --global user.email "openshift-ai-devops@redhat.com"
+      git init
+      git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${BUILD_METADATA_REPO}.git"
+      git config core.sparseCheckout true
+      git config core.sparseCheckoutCone false
+      echo "components/odh-operator/docs" >> .git/info/sparse-checkout
+      git fetch --depth=1 origin main
+      git checkout main
+
+      #add content to new-dir
+      OUTPUT_IMAGE_DIGEST=${OUTPUT_IMAGE_DIGEST/sha256:/}
+      mkdir -p components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
+      cp -r /var/workdir/cachi2/prefetched-manifests/* components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
+      cp /var/workdir/source/build/operands-map.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
+      cp /var/workdir/source/build/manifests-config.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
+
+      git add --sparse components/odh-operator/${OUTPUT_IMAGE_DIGEST}
+      git commit -m "build-meta for operator image ${OUTPUT_IMAGE_DIGEST}"
+      git pull origin main --depth 1
+      git push

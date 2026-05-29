@@ -1,0 +1,1664 @@
+#---
+#apiVersion: appstudio.redhat.com/v1alpha1
+#kind: Application
+#metadata:
+#  annotations:
+#    application.thumbnail: "8"
+#  name: "opendatahub-builds"
+#spec:
+#  displayName: "opendatahub-builds"
+#---
+#apiVersion: appstudio.redhat.com/v1alpha1
+#kind: Component
+#metadata:
+#  annotations:
+#    build.appstudio.openshift.io/request: configure-pac-no-mr
+#    mintmaker.appstudio.redhat.com/disabled: true
+#    build.appstudio.openshift.io/pipeline: '{"name":"fbc-builder","bundle":"latest"}'
+#  name: odh-fbc-fragment-ci
+#spec:
+#  application: opendatahub-builds
+#  componentName: odh-fbc-fragment-ci
+#  containerImage: quay.io/opendatahub/opendatahub-operator-catalog
+#  source:
+#    git:
+#      context: catalog/v4.19
+#      dockerfileUrl: Dockerfile
+#      revision: "main"
+#      url: https://github.com/opendatahub-io/ODH-Build-Config
+#---
+#apiVersion: appstudio.redhat.com/v1alpha1
+#kind: Component
+#metadata:
+#  annotations:
+#    build.appstudio.openshift.io/request: configure-pac-no-mr
+#    mintmaker.appstudio.redhat.com/disabled: true
+#    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+#  name: odh-operator-bundle-ci
+#spec:
+#  application: opendatahub-builds
+#  componentName: odh-operator-bundle-ci
+#  containerImage: quay.io/opendatahub/opendatahub-operator-bundle
+#  source:
+#    git:
+#      dockerfileUrl: Dockerfiles/bundle.Dockerfile
+#      revision: "main"
+#      url: https://github.com/opendatahub-io/ODH-Build-Config
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-operator-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-operator-ci
+  containerImage: quay.io/opendatahub/opendatahub-operator
+  source:
+    git:
+      dockerfileUrl: Dockerfiles/Dockerfile
+      revision: "main"
+      url: https://github.com/opendatahub-io/opendatahub-operator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-dashboard-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-dashboard-ci
+  containerImage: quay.io/opendatahub/odh-dashboard
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "main"
+      url: https://github.com/opendatahub-io/odh-dashboard
+
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-data-science-pipelines-operator-controller-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-data-science-pipelines-operator-controller-ci
+  containerImage: quay.io/opendatahub/data-science-pipelines-operator
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "main"
+      url: https://github.com/opendatahub-io/data-science-pipelines-operator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-kf-notebook-controller-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-kf-notebook-controller-ci
+  containerImage: quay.io/opendatahub/kubeflow-notebook-controller
+  source:
+    git:
+      context: ./components/
+      dockerfileUrl: notebook-controller/Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/kubeflow
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-kuberay-operator-controller-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-kuberay-operator-controller-ci
+  containerImage: quay.io/opendatahub/kuberay-operator
+  source:
+    git:
+      context: ./ray-operator/
+      dockerfileUrl: ./ray-operator/Dockerfile.rhoai
+      revision: "main"
+      url: https://github.com/opendatahub-io/kuberay
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: kube-auth-proxy-ci
+spec:
+  application: opendatahub-builds
+  componentName: kube-auth-proxy-ci
+  containerImage: quay.io/opendatahub/odh-kube-auth-proxy
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "main"
+      url: https://github.com/opendatahub-io/kube-auth-proxy
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-ml-pipelines-api-server-v2-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-ml-pipelines-api-server-v2-ci
+  containerImage: quay.io/opendatahub/ds-pipelines-api-server
+  source:
+    git:
+      context: ./
+      dockerfileUrl: backend/Dockerfile
+      revision: "master"
+      url: https://github.com/opendatahub-io/data-science-pipelines
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-ml-pipelines-driver-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-ml-pipelines-driver-ci
+  containerImage: quay.io/opendatahub/ds-pipelines-driver
+  source:
+    git:
+      context: ./
+      dockerfileUrl: backend/Dockerfile.driver
+      revision: "master"
+      url: https://github.com/opendatahub-io/data-science-pipelines
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-ml-pipelines-launcher-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-ml-pipelines-launcher-ci
+  containerImage: quay.io/opendatahub/ds-pipelines-launcher
+  source:
+    git:
+      context: ./
+      dockerfileUrl: backend/Dockerfile.launcher
+      revision: "master"
+      url: https://github.com/opendatahub-io/data-science-pipelines
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-ml-pipelines-persistenceagent-v2-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-ml-pipelines-persistenceagent-v2-ci
+  containerImage: quay.io/opendatahub/ds-pipelines-persistenceagent
+  source:
+    git:
+      context: ./
+      dockerfileUrl: backend/Dockerfile.persistenceagent
+      revision: "master"
+      url: https://github.com/opendatahub-io/data-science-pipelines
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-ml-pipelines-scheduledworkflow-v2-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-ml-pipelines-scheduledworkflow-v2-ci
+  containerImage: quay.io/opendatahub/ds-pipelines-scheduledworkflow
+  source:
+    git:
+      context: ./
+      dockerfileUrl: backend/Dockerfile.scheduledworkflow
+      revision: "master"
+      url: https://github.com/opendatahub-io/data-science-pipelines
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-mlmd-grpc-server-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-mlmd-grpc-server-ci
+  containerImage: quay.io/opendatahub/mlmd-grpc-server
+  source:
+    git:
+      context: ./
+      dockerfileUrl: ml_metadata/tools/docker_server/Dockerfile.redhat
+      revision: "master"
+      url: https://github.com/opendatahub-io/ml-metadata
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-model-controller-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-model-controller-ci
+  containerImage: quay.io/opendatahub/odh-model-controller
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "main"
+      url: https://github.com/opendatahub-io/odh-model-controller
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-notebook-controller-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-notebook-controller-ci
+  containerImage: quay.io/opendatahub/odh-notebook-controller
+  source:
+    git:
+      context: ./components/
+      dockerfileUrl: odh-notebook-controller/Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/kubeflow
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-training-operator-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-operator-ci
+  containerImage: quay.io/opendatahub/training-operator
+  source:
+    git:
+      context: ./
+      dockerfileUrl: build/images/training-operator/Dockerfile.rhoai
+      revision: "stable"
+      url: https://github.com/opendatahub-io/training-operator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-trustyai-service-operator-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-trustyai-service-operator-ci
+  containerImage: quay.io/opendatahub/trustyai-service-operator
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/trustyai-service-operator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-trustyai-service-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-trustyai-service-ci
+  containerImage: quay.io/opendatahub/trustyai-service
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/trustyai-explainability
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-model-registry-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-model-registry-ci
+  containerImage: quay.io/opendatahub/model-registry
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/model-registry
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-model-registry-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-model-registry-job-async-upload-ci
+  containerImage: quay.io/opendatahub/model-registry-job-async-upload
+  source:
+    git:
+      context: jobs/async-upload
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/model-registry
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-model-registry-operator-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-model-registry-operator-ci
+  containerImage: quay.io/opendatahub/model-registry-operator
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/model-registry-operator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-feast-operator-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-feast-operator-ci
+  containerImage: quay.io/opendatahub/feast-operator
+  source:
+    git:
+      context: infra/feast-operator
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/feast
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-feature-server-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-feature-server-ci
+  containerImage: quay.io/opendatahub/feature-server
+  source:
+    git:
+      context: sdk/python/feast/infra/feature_servers/multicloud
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/feast
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: kserve-agent-ci
+spec:
+  application: opendatahub-builds
+  componentName: kserve-agent-ci
+  containerImage: quay.io/opendatahub/kserve-agent
+  source:
+    git:
+      context: ./
+      dockerfileUrl: agent.Dockerfile
+      revision: "master"
+      url: https://github.com/opendatahub-io/kserve
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: kserve-controller-ci
+spec:
+  application: opendatahub-builds
+  componentName: kserve-controller-ci
+  containerImage: quay.io/opendatahub/kserve-controller
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "master"
+      url: https://github.com/opendatahub-io/kserve
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: kserve-router-ci
+spec:
+  application: opendatahub-builds
+  componentName: kserve-router-ci
+  containerImage: quay.io/opendatahub/kserve-router
+  source:
+    git:
+      context: ./
+      dockerfileUrl: router.Dockerfile
+      revision: "master"
+      url: https://github.com/opendatahub-io/kserve
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: kserve-storage-initializer-ci
+spec:
+  application: opendatahub-builds
+  componentName: kserve-storage-initializer-ci
+  containerImage: quay.io/opendatahub/kserve-storage-initializer
+  source:
+    git:
+      context: ./python
+      dockerfileUrl: storage-initializer.Dockerfile
+      revision: "master"
+      url: https://github.com/opendatahub-io/kserve
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: caikit-nlp-ci
+spec:
+  application: opendatahub-builds
+  componentName: caikit-nlp-ci
+  containerImage: quay.io/opendatahub/caikit-nlp
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "v0.2.0"
+      url: https://github.com/opendatahub-io/caikit-nlp
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: ta-lmes-driver-ci
+spec:
+  application: opendatahub-builds
+  componentName: ta-lmes-driver-ci
+  containerImage: quay.io/opendatahub/ta-lmes-driver
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile.driver
+      revision: "stable"
+      url: https://github.com/opendatahub-io/trustyai-service-operator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: ta-lmes-job-ci
+spec:
+  application: opendatahub-builds
+  componentName: ta-lmes-job-ci
+  containerImage: quay.io/opendatahub/ta-lmes-job
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile.lmes-job
+      revision: "stable"
+      url: https://github.com/opendatahub-io/lm-evaluation-harness
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: fms-guardrails-orchestrator-ci
+spec:
+  application: opendatahub-builds
+  componentName: fms-guardrails-orchestrator-ci
+  containerImage: quay.io/opendatahub/ta-guardrails-orchestrator
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "konflux-poc"
+      url: https://github.com/opendatahub-io/fms-guardrails-orchestrator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: trustyai-vllm-orchestrator-gateway-ci
+spec:
+  application: opendatahub-builds
+  componentName: trustyai-vllm-orchestrator-gateway-ci
+  containerImage: quay.io/opendatahub/vllm-orchestrator-gateway
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/vllm-orchestrator-gateway
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: fms-guardrails-regex-detector-ci
+spec:
+  application: opendatahub-builds
+  componentName: fms-guardrails-regex-detector-ci
+  containerImage: quay.io/opendatahub/regex-detector
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/guardrails-regex-detector
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+  name: fms-guardrails-hf-detector-ci
+spec:
+  application: opendatahub-builds
+  componentName: fms-guardrails-hf-detector-ci
+  containerImage: quay.io/opendatahub/guardrails-detector-huggingface-runtime
+  source:
+    git:
+      context: ./detectors
+      dockerfileUrl: Dockerfile.hf
+      revision: "stable"
+      url: https://github.com/opendatahub-io/guardrails-detectors
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: nudge-only-notebooks-ci
+spec:
+  application: opendatahub-builds
+  componentName: nudge-only-notebooks-ci
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/nudge-only-notebooks
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "candidate"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-rstudio-minimal-cpu-py311-c9s-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-rstudio-minimal-cpu-py311-c9s-ci
+  containerImage: quay.io/opendatahub/odh-workbench-rstudio-minimal-cpu-py311-c9s
+  source:
+    git:
+      context: ./
+      dockerfileUrl: rstudio/c9s-python-3.11/Dockerfile.cpu
+      revision: "main"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-rstudio-minimal-cuda-py311-c9s-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-rstudio-minimal-cuda-py311-c9s-ci
+  containerImage: quay.io/opendatahub/odh-workbench-rstudio-minimal-cuda-py311-c9s
+  source:
+    git:
+      context: ./
+      dockerfileUrl: rstudio/c9s-python-3.11/Dockerfile.cuda
+      revision: "main"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-minimal-cpu-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-minimal-cpu-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-minimal-cpu-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/minimal/ubi9-python-3.12/Dockerfile.cpu
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-minimal-cuda-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-minimal-cuda-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-minimal-cuda-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/minimal/ubi9-python-3.12/Dockerfile.cuda
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-minimal-rocm-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-minimal-rocm-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-minimal-rocm-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/minimal/ubi9-python-3.12/Dockerfile.rocm
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-datascience-cpu-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-datascience-cpu-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-datascience-cpu-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/datascience/ubi9-python-3.12/Dockerfile.cpu
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-pytorch-cuda-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-pytorch-cuda-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-pytorch-cuda-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/pytorch/ubi9-python-3.12/Dockerfile.cuda
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-pytorch-rocm-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-pytorch-rocm-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-pytorch-rocm-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/rocm/pytorch/ubi9-python-3.12/Dockerfile.rocm
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-tensorflow-cuda-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-tensorflow-cuda-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-tensorflow-cuda-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/tensorflow/ubi9-python-3.12/Dockerfile.cuda
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-trustyai-cpu-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-jupyter-trustyai-cpu-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-trustyai-cpu-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: jupyter/trustyai/ubi9-python-3.12/Dockerfile.cpu
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-pipeline-runtime-datascience-cpu-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-pipeline-runtime-datascience-cpu-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-pipeline-runtime-datascience-cpu-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: runtimes/datascience/ubi9-python-3.12/Dockerfile.cpu
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-pipeline-runtime-minimal-cpu-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-pipeline-runtime-minimal-cpu-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-pipeline-runtime-minimal-cpu-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: runtimes/minimal/ubi9-python-3.12/Dockerfile.cpu
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-pipeline-runtime-pytorch-cuda-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-pipeline-runtime-pytorch-cuda-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-pipeline-runtime-pytorch-cuda-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: runtimes/pytorch/ubi9-python-3.12/Dockerfile.cuda
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-pipeline-runtime-pytorch-rocm-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-pipeline-runtime-pytorch-rocm-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-pipeline-runtime-pytorch-rocm-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: runtimes/rocm-pytorch/ubi9-python-3.12/Dockerfile.rocm
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-pipeline-runtime-tensorflow-cuda-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-pipeline-runtime-tensorflow-cuda-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-pipeline-runtime-tensorflow-cuda-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: runtimes/tensorflow/ubi9-python-3.12/Dockerfile.cuda
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-pipeline-runtime-tensorflow-rocm-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-pipeline-runtime-tensorflow-rocm-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-pipeline-runtime-tensorflow-rocm-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: runtimes/rocm-tensorflow/ubi9-python-3.12/Dockerfile.rocm
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-codeserver-datascience-cpu-py312-ubi9-ci
+spec:
+  application: opendatahub-builds
+  build-nudges-ref:
+    - nudge-only-notebooks
+  componentName: odh-workbench-codeserver-datascience-cpu-py312-ubi9-ci
+  containerImage: quay.io/opendatahub/odh-workbench-codeserver-datascience-cpu-py312-ubi9
+  source:
+    git:
+      context: ./
+      dockerfileUrl: codeserver/ubi9-python-3.12/Dockerfile.cpu
+      revision: "stable"
+      url: https://github.com/opendatahub-io/notebooks
+
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: caikit-tgis-serving-ci
+spec:
+  application: opendatahub-builds
+  componentName: caikit-tgis-serving-ci
+  containerImage: quay.io/opendatahub/caikit-tgis-serving
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "release"
+      url: https://github.com/opendatahub-io/caikit-tgis-serving
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: openvino-model-server-ci
+spec:
+  application: opendatahub-builds
+  componentName: openvino-model-server-ci
+  containerImage: quay.io/opendatahub/openvino_model_server
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile.redhat
+      revision: "main"
+      url: https://github.com/opendatahub-io/openvino_model_server
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: text-generation-inference-ci
+spec:
+  application: opendatahub-builds
+  componentName: text-generation-inference-ci
+  containerImage: quay.io/opendatahub/text-generation-inference
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "release"
+      url: https://github.com/opendatahub-io/text-generation-inference
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-inference-scheduler-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-inference-scheduler-ci
+  containerImage: quay.io/opendatahub/llm-d-inference-scheduler
+  source:
+    git:
+      dockerfileUrl: Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-inference-scheduler.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-routing-sidecar-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-routing-sidecar-ci
+  containerImage: quay.io/opendatahub/llm-d-routing-sidecar
+  source:
+    git:
+      dockerfileUrl: Dockerfile.sidecar
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-inference-scheduler.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-routing-sidecar-konflux-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-routing-sidecar-konflux-ci
+  containerImage: quay.io/opendatahub/llm-d-routing-sidecar-konflux
+  source:
+    git:
+      dockerfileUrl: Dockerfile.sidecar.konflux
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-inference-scheduler.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-uds-tokenizer-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-uds-tokenizer-ci
+  containerImage: quay.io/opendatahub/llm-d-uds-tokenizer
+  source:
+    git:
+      context: services/uds_tokenizer
+      dockerfileUrl: Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-kv-cache
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llm-d-uds-tokenizer-konflux-ci
+spec:
+  application: opendatahub-builds
+  componentName: llm-d-uds-tokenizer-konflux-ci
+  containerImage: quay.io/opendatahub/llm-d-uds-tokenizer-konflux
+  source:
+    git:
+      context: services/uds_tokenizer
+      dockerfileUrl: Dockerfile.konflux
+      revision: main
+      url: https://github.com/opendatahub-io/llm-d-kv-cache
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llama-stack-k8s-operator-ci
+spec:
+  application: opendatahub-builds
+  componentName: llama-stack-k8s-operator-ci
+  containerImage: quay.io/opendatahub/llama-stack-k8s-operator
+  source:
+    git:
+      context: .
+      dockerfileUrl: Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/llama-stack-k8s-operator
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-data-science-pipelines-argo-argoexec-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-data-science-pipelines-argo-argoexec-ci
+  containerImage: quay.io/opendatahub/ds-pipelines-argo-argoexec
+  source:
+    git:
+      dockerfileUrl: argo-argoexec/Dockerfile.ODH
+      revision: main
+      url: https://github.com/opendatahub-io/argo-workflows
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-data-science-pipelines-argo-workflowcontroller-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-data-science-pipelines-argo-workflowcontroller-ci
+  containerImage: quay.io/opendatahub/ds-pipelines-argo-workflowcontroller
+  source:
+    git:
+      dockerfileUrl: argo-workflowcontroller/Dockerfile.ODH
+      revision: main
+      url: https://github.com/opendatahub-io/argo-workflows
+
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-model-registry-mod-arch-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-model-registry-mod-arch-ci
+  containerImage: quay.io/opendatahub/odh-mod-arch-modular-architecture
+  source:
+    git:
+      dockerfileUrl: packages/model-registry/Dockerfile.workspace
+      revision: main
+      url: https://github.com/opendatahub-io/odh-dashboard
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-model-metadata-collection-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-model-metadata-collection-ci
+  containerImage: quay.io/opendatahub/odh-model-metadata-collection
+  source:
+    git:
+      context: ./
+      dockerfileUrl: Dockerfile
+      revision: "stable"
+      url: https://github.com/opendatahub-io/model-metadata-collection
+---
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+  name: odh-mod-arch-gen-ai-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-mod-arch-gen-ai-ci
+  containerImage: quay.io/opendatahub/odh-mod-arch-modular-architecture
+  source:
+    git:
+      context: .
+      dockerfileUrl: packages/gen-ai/Dockerfile.workspace
+      revision: "main"
+      url: https://github.com/opendatahub-io/odh-dashboard
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: kube-auth-proxy-ci
+spec:
+  application: opendatahub-builds
+  componentName: kube-auth-proxy-ci
+  containerImage: quay.io/opendatahub/kube-auth-proxy
+  source:
+    git:
+      dockerfileUrl: Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/kube-auth-proxy.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: llama-stack-provider-ragas-ci
+spec:
+  application: opendatahub-builds
+  componentName: llama-stack-provider-ragas-ci
+  containerImage: quay.io/opendatahub/llama-stack-provider-ragas
+  source:
+    git:
+      dockerfileUrl: Containerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/llama-stack-provider-ragas.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: mlserver-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: mlserver-ci
+  containerImage: quay.io/opendatahub/mlserver
+  source:
+    git:
+      context: .
+      dockerfileUrl: Dockerfile
+      revision: master
+      url: https://github.com/opendatahub-io/MLServer.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-training-rocm64-torch28-py312-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-rocm64-torch28-py312-ci
+  containerImage: quay.io/opendatahub/odh-training-rocm64-torch28-py312
+  source:
+    git:
+      context: images/runtime/training/py312-rocm64-torch280
+      dockerfileUrl: Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/distributed-workloads.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-training-rocm62-torch25-py311-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-rocm62-torch25-py311-ci
+  containerImage: quay.io/opendatahub/odh-training-rocm62-torch25-py311
+  source:
+    git:
+      context: images/runtime/training/py311-rocm62-torch251
+      dockerfileUrl: Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/distributed-workloads.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-training-rocm62-torch24-py311-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-rocm62-torch24-py311-ci
+  containerImage: quay.io/opendatahub/odh-training-rocm62-torch24-py311
+  source:
+    git:
+      context: images/runtime/training/py311-rocm62-torch241
+      dockerfileUrl: Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/distributed-workloads.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-training-cuda128-torch28-py312-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-cuda128-torch28-py312-ci
+  containerImage: quay.io/opendatahub/odh-training-cuda128-torch28-py312-rhel9
+  source:
+    git:
+      context: images/runtime/training/py312-cuda128-torch280
+      dockerfileUrl: Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/distributed-workloads.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-training-cuda124-torch25-py311-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-cuda124-torch25-py311-ci
+  containerImage: quay.io/opendatahub/odh-training-cuda124-torch25-py311
+  source:
+    git:
+      context: images/runtime/training/py311-cuda124-torch251
+      dockerfileUrl: Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/distributed-workloads.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-training-cuda121-torch24-py311-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-cuda121-torch24-py311-ci
+  containerImage: quay.io/opendatahub/odh-training-cuda121-torch24-py311
+  source:
+    git:
+      context: images/runtime/training/py311-cuda121-torch241
+      dockerfileUrl: Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/distributed-workloads.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-training-cuda130-torch210-py312-openmpi41-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-training-cuda130-torch210-py312-openmpi41-ci
+  containerImage: quay.io/opendatahub/odh-training-cuda130-torch210-py312-openmpi41
+  source:
+    git:
+      context: images/runtime/training/py312-cuda130-torch210-openmpi41
+      dockerfileUrl: Dockerfile
+      revision: stable
+      url: https://github.com/opendatahub-io/distributed-workloads.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312-ci
+  containerImage: quay.io/opendatahub/odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312-ubi9
+  source:
+    git:
+      context: .
+      dockerfileUrl: runtimes/pytorch+llmcompressor/ubi9-python-3.12/Dockerfile.cuda
+      revision: stable
+      url: https://github.com/opendatahub-io/notebooks.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: "true"
+  name: odh-workbench-jupyter-pytorch-llmcompressor-cuda-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-workbench-jupyter-pytorch-llmcompressor-cuda-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-pytorch-llmcompressor-cuda-py312-ubi9
+  source:
+    git:
+      context: .
+      dockerfileUrl: jupyter/pytorch+llmcompressor/ubi9-python-3.12/Dockerfile.cuda
+      revision: stable
+      url: https://github.com/opendatahub-io/notebooks.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-workbench-jupyter-tensorflow-rocm-py312-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-workbench-jupyter-tensorflow-rocm-py312-ci
+  containerImage: quay.io/opendatahub/odh-workbench-jupyter-tensorflow-rocm-py312-ubi9
+  source:
+    git:
+      context: .
+      dockerfileUrl: jupyter/rocm/tensorflow/ubi9-python-3.12/build-args/rocm.conf
+      revision: stable
+      url: https://github.com/opendatahub-io/notebooks.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-built-in-detector-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-built-in-detector-ci
+  containerImage: quay.io/opendatahub/odh-built-in-detector
+  source:
+    git:
+      context: detectors
+      dockerfileUrl: Dockerfile.builtIn
+      revision: stable
+      url: https://github.com/opendatahub-io/guardrails-detectors.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-maas-api-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-maas-api-ci
+  containerImage: quay.io/opendatahub/maas-api
+  source:
+    git:
+      context: maas-api
+      dockerfileUrl: maas-api/Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/models-as-a-service.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-maas-controller-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-maas-controller-ci
+  containerImage: quay.io/opendatahub/maas-controller
+  source:
+    git:
+      context: maas-controller
+      dockerfileUrl: Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/models-as-a-service.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: "true"
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: odh-ai-gateway-payload-processing-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: odh-ai-gateway-payload-processing-ci
+  containerImage: quay.io/opendatahub/odh-ai-gateway-payload-processing
+  source:
+    git:
+      context: .
+      dockerfileUrl: Dockerfile
+      revision: main
+      url: https://github.com/opendatahub-io/ai-gateway-payload-processing.git
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    mintmaker.appstudio.redhat.com/disabled: "true"
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+  name: ai-gateway-payload-processing-e2e-ci
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  componentName: ai-gateway-payload-processing-e2e-ci
+  containerImage: quay.io/opendatahub/ai-gateway-payload-processing-e2e
+  source:
+    git:
+      context: .
+      dockerfileUrl: Dockerfile.e2e
+      revision: main
+      url: https://github.com/opendatahub-io/ai-gateway-payload-processing.git

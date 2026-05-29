@@ -1,0 +1,199 @@
+{
+  "NeMo-Guardrails": {
+    "odh-trustyai-nemo-guardrails-serve-ci": "opendatahub/odh-trustyai-nemo-guardrails-server"
+  },
+  "agents-operator": {
+    "odh-agents-operator-ci": "opendatahub/odh-agents-operator"
+  },
+  "ai-gateway-payload-processing": {
+    "ai-gateway-payload-processing-e2e-ci": "opendatahub/ai-gateway-payload-processing-e2e",
+    "odh-ai-gateway-payload-processing-ci": "opendatahub/odh-ai-gateway-payload-processing"
+  },
+  "argo-workflows": {
+    "odh-data-science-pipelines-argo-argoexec-ci": "opendatahub/ds-pipelines-argo-argoexec",
+    "odh-data-science-pipelines-argo-workflowcontroller-ci": "opendatahub/ds-pipelines-argo-workflowcontroller"
+  },
+  "batch-gateway": {
+    "odh-llm-d-batch-gateway-apiserver-ci": "opendatahub/odh-llm-d-batch-gateway-apiserver",
+    "odh-llm-d-batch-gateway-gc-ci": "opendatahub/odh-llm-d-batch-gateway-gc",
+    "odh-llm-d-batch-gateway-processor-ci": "opendatahub/odh-llm-d-batch-gateway-processor"
+  },
+  "data-science-pipelines": {
+    "odh-ml-pipelines-api-server-v2-ci": "opendatahub/ds-pipelines-api-server",
+    "odh-ml-pipelines-driver-ci": "opendatahub/ds-pipelines-driver",
+    "odh-ml-pipelines-launcher-ci": "opendatahub/ds-pipelines-launcher",
+    "odh-ml-pipelines-persistenceagent-v2-ci": "opendatahub/ds-pipelines-persistenceagent",
+    "odh-ml-pipelines-scheduledworkflow-v2-ci": "opendatahub/ds-pipelines-scheduledworkflow"
+  },
+  "data-science-pipelines-operator": {
+    "odh-data-science-pipelines-operator-controller-ci": "opendatahub/data-science-pipelines-operator"
+  },
+  "distributed-workloads": {
+    "odh-th06-cpu-torch210-py312-ci": "opendatahub/odh-th06-cpu-torch210-py312",
+    "odh-th06-cuda130-torch210-py312-ci": "opendatahub/odh-th06-cuda130-torch210-py312",
+    "odh-th06-rocm64-torch291-py312-ci": "opendatahub/odh-th06-rocm64-torch291-py312"
+  },
+  "eval-hub": {
+    "eval-hub": "opendatahub/odh-eval-hub"
+  },
+  "feast": {
+    "odh-feast-operator-ci": "opendatahub/feast-operator",
+    "odh-feature-server-ci": "opendatahub/feature-server"
+  },
+  "fms-guardrails-orchestrator": {
+    "fms-guardrails-orchestrator-ci": "opendatahub/ta-guardrails-orchestrator"
+  },
+  "guardrails-detectors": {
+    "fms-guardrails-hf-detector-ci": "opendatahub/guardrails-detector-huggingface-runtime",
+    "odh-built-in-detector-ci": "opendatahub/odh-built-in-detector"
+  },
+  "guardrails-regex-detector": {
+    "fms-guardrails-regex-detector-ci": "opendatahub/regex-detector"
+  },
+  "kserve": {
+    "kserve-agent-ci": "opendatahub/kserve-agent",
+    "kserve-controller-ci": "opendatahub/kserve-controller",
+    "kserve-router-ci": "opendatahub/kserve-router",
+    "kserve-storage-initializer-ci": "opendatahub/kserve-storage-initializer",
+    "odh-kserve-llmisvc-controller-ci": "opendatahub/odh-kserve-llmisvc-controller",
+    "odh-kserve-localmodel-controller-ci": "opendatahub/odh-kserve-localmodel-controller",
+    "odh-kserve-localmodelnode-agent-ci": "opendatahub/odh-kserve-localmodelnode-agent",
+    "odh-kserve-module-operator-ci": "opendatahub/odh-kserve-module-operator"
+  },
+  "kserve-autogluon-server": {
+    "odh-kserve-autogluon-server-ci": "opendatahub/odh-kserve-autogluon-server"
+  },
+  "kube-auth-proxy": {
+    "kube-auth-proxy-ci": "opendatahub/odh-kube-auth-proxy"
+  },
+  "kube-rbac-proxy": {
+    "odh-kube-rbac-proxy-ci": "opendatahub/odh-kube-rbac-proxy"
+  },
+  "kubeflow": {
+    "odh-kf-notebook-controller-ci": "opendatahub/kubeflow-notebook-controller",
+    "odh-notebook-controller-ci": "opendatahub/odh-notebook-controller"
+  },
+  "kuberay": {
+    "odh-kuberay-operator-controller-ci": "opendatahub/kuberay-operator"
+  },
+  "llama-stack-k8s-operator": {
+    "llama-stack-k8s-operator-ci": "opendatahub/llama-stack-k8s-operator"
+  },
+  "llama-stack-provider-ragas": {
+    "llama-stack-provider-ragas-ci": "opendatahub/llama-stack-provider-ragas"
+  },
+  "llama-stack-provider-trustyai-garak": {
+    "odh-trustyai-garak-lls-provider-dsp-ci": "opendatahub/odh-trustyai-garak-lls-provider-dsp"
+  },
+  "llm-d-inference-scheduler": {
+    "llm-d-inference-scheduler-ci": "opendatahub/llm-d-inference-scheduler",
+    "llm-d-routing-sidecar-ci": "opendatahub/llm-d-routing-sidecar"
+  },
+  "llm-d-kv-cache": {
+    "odh-llm-d-kv-cache": "opendatahub/llm-d-kv-cache"
+  },
+  "lm-evaluation-harness": {
+    "ta-lmes-job-ci": "opendatahub/ta-lmes-job"
+  },
+  "ml-metadata": {
+    "odh-mlmd-grpc-server-ci": "opendatahub/mlmd-grpc-server"
+  },
+  "mlflow": {
+    "mlflow-ci": "opendatahub/mlflow"
+  },
+  "mlflow-operator": {
+    "mlflow-operator-ci": "opendatahub/mlflow-operator"
+  },
+  "model-registry": {
+    "odh-model-registry-ci": "opendatahub/model-registry",
+    "odh-model-registry-job-async-upload-ci": "opendatahub/model-registry-job-async-upload"
+  },
+  "model-registry-operator": {
+    "odh-model-registry-operator-ci": "opendatahub/model-registry-operator"
+  },
+  "models-as-a-service": {
+    "odh-maas-api-ci": "opendatahub/maas-api",
+    "odh-maas-controller-ci": "opendatahub/maas-controller"
+  },
+  "notebooks": {
+    "odh-pipeline-runtime-datascience-cpu-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-datascience-cpu-py312-ubi9",
+    "odh-pipeline-runtime-minimal-cpu-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-minimal-cpu-py312-ubi9",
+    "odh-pipeline-runtime-pytorch-cuda-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-pytorch-cuda-py312-ubi9",
+    "odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312-ci": "opendatahub/odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312-ubi9",
+    "odh-pipeline-runtime-pytorch-rocm-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-pytorch-rocm-py312-ubi9",
+    "odh-pipeline-runtime-tensorflow-cuda-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-tensorflow-cuda-py312-ubi9",
+    "odh-pipeline-runtime-tensorflow-rocm-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-tensorflow-rocm-py312-ubi9",
+    "odh-workbench-codeserver-datascience-cpu-py312-ubi9-ci": "opendatahub/odh-workbench-codeserver-datascience-cpu-py312-ubi9",
+    "odh-workbench-jupyter-datascience-cpu-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-datascience-cpu-py312-ubi9",
+    "odh-workbench-jupyter-minimal-cpu-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-minimal-cpu-py312-ubi9",
+    "odh-workbench-jupyter-minimal-cuda-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-minimal-cuda-py312-ubi9",
+    "odh-workbench-jupyter-minimal-rocm-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-minimal-rocm-py312-ubi9",
+    "odh-workbench-jupyter-pytorch-cuda-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-pytorch-cuda-py312-ubi9",
+    "odh-workbench-jupyter-pytorch-llmcompressor-cuda-ci": "opendatahub/odh-workbench-jupyter-pytorch-llmcompressor-cuda-py312-ubi9",
+    "odh-workbench-jupyter-pytorch-rocm-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-pytorch-rocm-py312-ubi9",
+    "odh-workbench-jupyter-tensorflow-cuda-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-tensorflow-cuda-py312-ubi9",
+    "odh-workbench-jupyter-tensorflow-rocm-py312-ci": "opendatahub/odh-workbench-jupyter-tensorflow-rocm-py312-ubi9",
+    "odh-workbench-jupyter-trustyai-cpu-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-trustyai-cpu-py312-ubi9"
+  },
+  "odh-dashboard": {
+    "mod-arch-maas": "opendatahub/mod-arch-maas",
+    "odh-dashboard-ci": "opendatahub/odh-dashboard",
+    "odh-mod-arch-agent-ops-ci": "opendatahub/odh-mod-arch-agent-ops",
+    "odh-mod-arch-automl-ci": "opendatahub/odh-mod-arch-automl",
+    "odh-mod-arch-autorag-ci": "opendatahub/odh-mod-arch-autorag",
+    "odh-mod-arch-eval-hub": "opendatahub/odh-mod-arch-eval-hub",
+    "odh-mod-arch-gen-ai-ci": "opendatahub/odh-mod-arch-gen-ai",
+    "odh-mod-arch-mlflow": "opendatahub/odh-mod-arch-mlflow",
+    "odh-mod-arch-modular-architecture-ci": "opendatahub/odh-mod-arch-modular-architecture"
+  },
+  "odh-model-controller": {
+    "odh-model-controller-ci": "opendatahub/odh-model-controller",
+    "odh-model-serving-api-ci": "opendatahub/odh-model-serving-api"
+  },
+  "odh-model-registry-operator": {
+    "odh-model-registry-operator-ci": "opendatahub/model-registry-operator"
+  },
+  "odh-observability": {
+    "odh-observability-ci": "opendatahub/odh-observability"
+  },
+  "ogx-distribution": {
+    "odh-ogx-core-ci": "opendatahub/odh-ogx-core"
+  },
+  "ogx-k8s-operator": {
+    "odh-ogx-k8s-operator-ci": "opendatahub/odh-ogx-k8s-operator"
+  },
+  "opendatahub-operator": {
+    "odh-operator-ci": "opendatahub/opendatahub-operator"
+  },
+  "pipelines-components": {
+    "odh-automl-ci": "opendatahub/odh-automl",
+    "odh-autorag-ci": "opendatahub/odh-autorag",
+    "odh-pipelines-components-ci": "opendatahub/odh-pipelines-components"
+  },
+  "rhaii-cluster-validation": {
+    "odh-rhaii-cluster-validator-ci": "opendatahub/odh-rhaii-cluster-validator",
+    "odh-rhaii-validator-tools-ci": "opendatahub/odh-rhaii-validator-tools"
+  },
+  "trainer": {
+    "trainer-ci": "opendatahub/trainer"
+  },
+  "training-operator": {
+    "odh-training-operator-ci": "opendatahub/training-operator"
+  },
+  "trustyai-explainability": {
+    "odh-trustyai-service-ci": "opendatahub/trustyai-service"
+  },
+  "trustyai-service-operator": {
+    "odh-trustyai-service-operator-ci": "opendatahub/trustyai-service-operator",
+    "ta-lmes-driver-ci": "opendatahub/ta-lmes-driver"
+  },
+  "vllm-orchestrator-gateway": {
+    "trustyai-vllm-orchestrator-gateway-ci": "opendatahub/vllm-orchestrator-gateway"
+  },
+  "workbenches-operator": {
+    "odh-workbenches-operator-ci": "opendatahub/odh-workbenches-operator"
+  },
+  "workload-variant-autoscaler": {
+    "odh-workload-variant-autoscaler-controller-ci": "opendatahub/workload-variant-autoscaler"
+  }
+}

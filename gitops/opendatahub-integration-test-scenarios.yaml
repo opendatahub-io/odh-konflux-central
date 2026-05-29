@@ -1,0 +1,69 @@
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: opendatahub-operator-e2e-test-scenario
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-release
+  contexts:
+    - description: execute the integration test when component odh-operator updates
+      name: component_odh-operator
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/opendatahub-operator/e2e-test.yaml
+    resolver: git
+    resourceKind: pipeline
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: opendatahub-operator-ci-its
+  namespace: open-data-hub-tenant
+spec:
+  application: poc
+  contexts:
+    - description: execute the integration test when component odh-operator updates
+      name: component_odh-ci-operator
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/opendatahub-operator/e2e-test.yaml
+    resolver: git
+    resourceKind: pipeline
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+  name: ogx-core-functional-tests
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute functional tests when component odh-ogx-core-ci builds
+      name: component_odh-ogx-core-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/ogx-core/pr-its-pipeline.yaml
+    resolver: git
+    resourceKind: pipeline

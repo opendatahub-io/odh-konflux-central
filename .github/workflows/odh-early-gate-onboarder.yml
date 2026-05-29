@@ -1,0 +1,255 @@
+name: ODH Early Gate Onboarder
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Repository name to onboard to early-gate'
+        required: true
+        type: string
+
+      pr_target_branch:
+        description: 'Target branch for the PR in the component repo (e.g. main, v2.0)'
+        required: true
+        type: string
+        default: 'main'
+
+jobs:
+  onboard-early-gate:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
+
+    steps:
+      - name: Checkout OKC repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: okc-repo
+
+      - name: Generate github-app token
+        id: app-token
+        uses: getsentry/action-github-app-token@v2
+        with:
+          app_id: ${{ secrets.ODH_DEVOPS_APP_ID }}
+          private_key: ${{ secrets.ODH_DEVOPS_APP_PRIVATE_KEY }}
+
+      - name: Set environment variables
+        run: |
+          echo "REPOSITORY=opendatahub-io/${{ inputs.repository }}" >> $GITHUB_ENV
+          echo "COMPONENT=${{ inputs.repository }}" >> $GITHUB_ENV
+
+      - name: Prepare early-gate pipeline files
+        run: |
+          set -e
+
+          COMPONENT="${{ inputs.repository }}"
+
+          echo "Preparing early-gate pipeline files for $COMPONENT"
+
+          mkdir -p .tekton
+
+          # Copy build pipeline
+          if [ -f "okc-repo/early-gate/early-gate-ci-build.yaml" ]; then
+            echo "Copying early-gate-ci-build.yaml"
+            cp "okc-repo/early-gate/early-gate-ci-build.yaml" ".tekton/early-gate-ci-build.yaml"
+          else
+            echo "ERROR: early-gate-ci-build.yaml not found"
+            exit 1
+          fi
+
+          # Copy test pipeline (if it exists)
+          if [ -f "okc-repo/early-gate/early-gate-ci-test.yaml" ]; then
+            echo "Copying early-gate-ci-test.yaml"
+            cp "okc-repo/early-gate/early-gate-ci-test.yaml" ".tekton/early-gate-ci-test.yaml"
+          else
+            echo "WARNING: early-gate-ci-test.yaml not found, skipping"
+          fi
+
+          echo "Early-gate pipeline files prepared"
+
+      - name: Clone and push early-gate changes to component repo
+        run: |
+          set -e
+
+          WORKSPACE_DIR="$GITHUB_WORKSPACE"
+          SOURCE_TEKTON="$WORKSPACE_DIR/.tekton"
+
+          git clone https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/${REPOSITORY} repo-workspace
+          cd repo-workspace
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin ${{ inputs.pr_target_branch }}
+          git checkout -B ${{ inputs.pr_target_branch }} origin/${{ inputs.pr_target_branch }}
+
+          ########################################
+          # Branch naming
+          ########################################
+
+          branch_name="early-gate-onboard-$(date +%s)"
+          echo "BRANCH_NAME=$branch_name" >> $GITHUB_ENV
+
+          git checkout -B "$branch_name" ${{ inputs.pr_target_branch }}
+
+          ########################################
+          # Copy .tekton files
+          ########################################
+
+          mkdir -p .tekton
+
+          if compgen -G "$SOURCE_TEKTON/*.yaml" > /dev/null; then
+            echo "Copying early-gate pipeline files from $SOURCE_TEKTON"
+
+            for file in "$SOURCE_TEKTON"/*.yaml; do
+              target=".tekton/$(basename "$file")"
+              cp "$file" "$target"
+              git add -f "$target"
+            done
+          else
+            echo "ERROR: No early-gate YAML files found in $SOURCE_TEKTON"
+            exit 1
+          fi
+
+          ########################################
+          # Commit logic
+          ########################################
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit in component repo."
+            echo "component_commit=false" >> $GITHUB_ENV
+          else
+            cat <<EOF > commit_message.txt
+          Early-gate: add early-gate CI pipelines
+
+          - Added early-gate-ci-build.yaml for build validation
+          - Added early-gate-ci-test.yaml for test validation (if available)
+          - Pipelines trigger via /early-gate or /early-gate-build comment
+          EOF
+
+            git commit -F commit_message.txt
+            git push --set-upstream origin "$branch_name"
+            echo "component_commit=true" >> $GITHUB_ENV
+          fi
+
+      - name: Create Pull Request in component repo
+        if: env.component_commit == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          cd repo-workspace
+
+          cat <<EOF > pr_body.txt
+          This PR adds early-gate CI pipelines to the repository.
+
+          ## Changes
+          - Added \`.tekton/early-gate-ci-build.yaml\` for build validation
+          - Added \`.tekton/early-gate-ci-test.yaml\` for test validation (if available)
+
+          ## Usage
+          Comment \`/early-gate\` or \`/early-gate-build\` on a PR to trigger the early-gate build pipeline.
+
+          ## Configuration
+          The repository has been added to the early-gate-config.yaml in odh-konflux-central.
+          EOF
+
+          gh pr create \
+            --repo "${REPOSITORY}" \
+            --base "${{ inputs.pr_target_branch }}" \
+            --head "${BRANCH_NAME}" \
+            --title "Early-gate: add early-gate CI pipelines" \
+            --body "$(cat pr_body.txt)"
+
+      - name: Update early-gate-config.yaml
+        run: |
+          set -e
+
+          cd okc-repo
+
+          CONFIG_FILE="config/early-gate-config.yaml"
+          COMPONENT="${{ inputs.repository }}"
+
+          echo "Updating $CONFIG_FILE with $COMPONENT"
+
+          # Check if component already exists in config (4 spaces indentation under repositories)
+          if grep -q "^    $COMPONENT:" "$CONFIG_FILE"; then
+            echo "Component $COMPONENT already exists in $CONFIG_FILE"
+            echo "Existing configuration:"
+            grep -A 5 "^    $COMPONENT:" "$CONFIG_FILE"
+            echo "config_updated=false" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          TARGET_BRANCH="${{ inputs.pr_target_branch }}"
+
+          # Prepare the repository entry (4 spaces for repo name, 6 for properties, 8 for array items)
+          REPO_ENTRY="    $COMPONENT:\n      early-gate-enabled: true"
+
+          # Add additional-branches only if target branch is NOT main/master (YAML array format)
+          if [ "$TARGET_BRANCH" != "main" ] && [ "$TARGET_BRANCH" != "master" ]; then
+            REPO_ENTRY="${REPO_ENTRY}\n      additional-branches:\n        - $TARGET_BRANCH"
+          fi
+
+          # Append to config file under repositories section
+          echo -e "$REPO_ENTRY" >> "$CONFIG_FILE"
+
+          echo "config_updated=true" >> $GITHUB_ENV
+
+          git add "$CONFIG_FILE"
+
+      - name: Commit and push config changes
+        if: env.config_updated == 'true'
+        run: |
+          set -e
+
+          cd okc-repo
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          branch_name="early-gate-config-${{ inputs.repository }}-$(date +%s)"
+          echo "CONFIG_BRANCH_NAME=$branch_name" >> $GITHUB_ENV
+
+          git checkout -B "$branch_name"
+
+          cat <<EOF > commit_message.txt
+          Early-gate: add ${{ inputs.repository }} to early-gate-config
+
+          - Added ${{ inputs.repository }} to config/early-gate-config.yaml
+          - early-gate-enabled: true
+          - target-branch: ${{ inputs.pr_target_branch }}
+          EOF
+
+          git commit -F commit_message.txt
+          git push --set-upstream origin "$branch_name"
+
+      - name: Create Pull Request in odh-konflux-central
+        if: env.config_updated == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          cd okc-repo
+
+          cat <<EOF > pr_body.txt
+          This PR adds ${{ inputs.repository }} to the early-gate configuration.
+
+          ## Configuration
+          - **Repository**: ${{ inputs.repository }}
+          - **Early-gate enabled**: true
+          - **Target branch**: ${{ inputs.pr_target_branch }}
+
+          ## Related
+          This is part of onboarding ${{ inputs.repository }} to the early-gate system.
+          A corresponding PR has been created in opendatahub-io/${{ inputs.repository }} to add the pipeline files.
+          EOF
+
+          gh pr create \
+            --repo "opendatahub-io/odh-konflux-central" \
+            --base "main" \
+            --head "${CONFIG_BRANCH_NAME}" \
+            --title "Early-gate: add ${{ inputs.repository }} to config" \
+            --body "$(cat pr_body.txt)"

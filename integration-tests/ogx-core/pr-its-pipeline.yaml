@@ -1,0 +1,458 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ogx-core-functional-tests
+spec:
+  description: |
+    Container-level functional tests for OGX Core. Runs Bruno CRUD + Jupyter
+    notebook tests against the just-built OGX image using Tekton sidecars
+    (PostgreSQL + vLLM inference + vLLM embedding + OGX). No OpenShift
+    cluster provisioning needed.
+  params:
+    - description: Snapshot of the application
+      name: SNAPSHOT
+      type: string
+    - name: oci-artifacts-repo
+      default: 'quay.io/opendatahub/odh-ci-artifacts'
+      description: The OCI container used to store all test artifacts.
+    - name: artifact-browser-url
+      default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
+      description: URL of the artifact browser.
+
+  tasks:
+    # ── Standard boilerplate ──────────────────────────────────────────────
+    - name: parse-metadata
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/integration-examples
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/test_metadata.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+
+    - name: find-component-image
+      runAfter:
+        - parse-metadata
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+        steps:
+          - image: quay.io/konflux-ci/konflux-test:stable
+            env:
+              - name: SNAPSHOT
+                value: $(params.SNAPSHOT)
+              - name: COMPONENT_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['appstudio.openshift.io/component']
+            script: |
+              #!/bin/sh
+              COMPONENT_CONTAINER_IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" \
+                '.components[] | select(.name == $component_name) | .containerImage' <<< "${SNAPSHOT}")
+              echo "  COMPONENT_CONTAINER_IMAGE: ${COMPONENT_CONTAINER_IMAGE}"
+
+    - name: check-prerequisites
+      runAfter:
+        - find-component-image
+      taskSpec:
+        results:
+          - name: event-type
+            description: "stores info about event type"
+          - name: pull-request-author
+          - name: pull-request-number
+          - name: git-repo
+          - name: git-org
+          - name: git-revision
+        steps:
+          - image: quay.io/konflux-ci/konflux-test:stable
+            env:
+              - name: EVENT_TYPE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['pac.test.appstudio.openshift.io/event-type']
+              - name: PR_AUTHOR
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sender']
+              - name: PR_NUMBER
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['pac.test.appstudio.openshift.io/pull-request']
+              - name: GIT_REPO
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/url-repository']
+              - name: GIT_ORG
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/url-org']
+              - name: GIT_REVISION
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
+            script: |
+              #!/bin/bash
+              set -e
+              echo "EVENT_TYPE=${EVENT_TYPE}"
+              echo -n "${EVENT_TYPE}" > $(results.event-type.path)
+              echo -n "${PR_AUTHOR}" > "$(results.pull-request-author.path)"
+              echo -n "${PR_NUMBER}" > "$(results.pull-request-number.path)"
+              echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
+              echo -n "${GIT_ORG}" > "$(results.git-org.path)"
+              echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
+
+    # ── Functional tests (container-level, no cluster needed) ─────────────
+    - name: functional-tests
+      runAfter:
+        - check-prerequisites
+      when:
+        - input: "$(tasks.check-prerequisites.results.event-type)"
+          operator: in
+          values: ["pull_request", "retest-all-comment", "on-comment", "test-comment"]
+      params:
+        - name: git-url
+          value: "$(tasks.parse-metadata.results.source-git-url)"
+        - name: git-rev
+          value: "$(tasks.parse-metadata.results.target-git-branch)"
+        - name: component-image
+          value: "$(tasks.parse-metadata.results.component-container-image)"
+      taskSpec:
+        params:
+          - name: git-url
+            type: string
+          - name: git-rev
+            type: string
+          - name: component-image
+            type: string
+        sidecars:
+          - name: postgres
+            image: pgvector/pgvector:pg17
+            env:
+              - name: POSTGRES_USER
+                value: ogx
+              - name: POSTGRES_PASSWORD
+                value: ogx
+              - name: POSTGRES_DB
+                value: ogx
+            readinessProbe:
+              exec:
+                command: ["pg_isready", "-U", "ogx", "-d", "ogx"]
+              initialDelaySeconds: 5
+              periodSeconds: 3
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "250m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+
+          - name: vllm-inference
+            image: quay.io/opendatahub/vllm-cpu:latest
+            args:
+              - "--host"
+              - "0.0.0.0"
+              - "--port"
+              - "8000"
+              - "--enable-auto-tool-choice"
+              - "--tool-call-parser"
+              - "hermes"
+              - "--model"
+              - "/root/.cache/Qwen/Qwen3-0.6B"
+              - "--served-model-name"
+              - "Qwen/Qwen3-0.6B"
+              - "--max-model-len"
+              - "8192"
+              - "--gpu-memory-utilization"
+              - "0.50"
+            readinessProbe:
+              httpGet:
+                path: /health
+                port: 8000
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              failureThreshold: 60
+            resources:
+              requests:
+                memory: "4Gi"
+                cpu: "2"
+              limits:
+                memory: "8Gi"
+                cpu: "4"
+
+          - name: vllm-embedding
+            image: quay.io/opendatahub/vllm-cpu:latest
+            args:
+              - "--host"
+              - "0.0.0.0"
+              - "--port"
+              - "8001"
+              - "--model"
+              - "/root/.cache/ibm-granite/granite-embedding-125m-english"
+              - "--served-model-name"
+              - "ibm-granite/granite-embedding-125m-english"
+              - "--gpu-memory-utilization"
+              - "0.25"
+            readinessProbe:
+              httpGet:
+                path: /health
+                port: 8001
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              failureThreshold: 60
+            resources:
+              requests:
+                memory: "1Gi"
+                cpu: "1"
+              limits:
+                memory: "2Gi"
+                cpu: "2"
+
+          - name: ogx
+            image: $(params.component-image)
+            env:
+              - name: POSTGRES_HOST
+                value: localhost
+              - name: POSTGRES_PORT
+                value: "5432"
+              - name: POSTGRES_DB
+                value: ogx
+              - name: POSTGRES_USER
+                value: ogx
+              - name: POSTGRES_PASSWORD
+                value: ogx
+              - name: ENABLE_PGVECTOR
+                value: "1"
+              - name: PGVECTOR_HOST
+                value: localhost
+              - name: PGVECTOR_PORT
+                value: "5432"
+              - name: PGVECTOR_DB
+                value: ogx
+              - name: PGVECTOR_USER
+                value: ogx
+              - name: PGVECTOR_PASSWORD
+                value: ogx
+              - name: TRUSTYAI_LMEVAL_USE_K8S
+                value: "False"
+              - name: VLLM_URL
+                value: "http://localhost:8000/v1"
+              - name: VLLM_EMBEDDING_URL
+                value: "http://localhost:8001/v1"
+              - name: EMBEDDING_MODEL
+                value: "ibm-granite/granite-embedding-125m-english"
+            readinessProbe:
+              httpGet:
+                path: /v1/health
+                port: 8321
+              initialDelaySeconds: 15
+              periodSeconds: 5
+              failureThreshold: 60
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "1Gi"
+                cpu: "1"
+
+        steps:
+          - name: clone-repo
+            image: alpine/git
+            script: |
+              echo "Cloning $(params.git-url) @ $(params.git-rev)"
+              git clone --depth 1 --branch $(params.git-rev) $(params.git-url) /workspace/source
+              ls /workspace/source/tests/functional/
+
+          - name: run-functional-tests
+            image: python:3.12-slim
+            onError: continue
+            env:
+              - name: BASE_URL
+                value: "http://localhost:8321"
+              - name: MODEL
+                value: "Qwen/Qwen3-0.6B"
+              - name: EMBEDDING_MODEL
+                value: "ibm-granite/granite-embedding-125m-english"
+              - name: HEALTH_CHECK_TIMEOUT
+                value: "600"
+              - name: ARTIFACT_DIR
+                value: /workspace/artifacts-dir
+            workingDir: /workspace/source/tests/functional
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+              mkdir -p "${ARTIFACT_DIR}"
+
+              # Install uv
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              export PATH="$HOME/.local/bin:$PATH"
+
+              # Install Node.js for Bruno CLI
+              apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+              apt-get install -y --no-install-recommends nodejs
+
+              # Install Python deps
+              uv sync --frozen
+
+              # Install Bruno CLI
+              cd bruno && npm ci && cd ..
+
+              # Discover available model (if OGX started with inference)
+              DISCOVERED_MODEL=$(curl -sf "${BASE_URL}/v1/models" 2>/dev/null \
+                | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; print(data[0]["id"] if data else "")' \
+                2>/dev/null || echo "")
+              if [ -n "${DISCOVERED_MODEL}" ]; then
+                export MODEL="${DISCOVERED_MODEL}"
+                echo "Discovered model: ${MODEL}"
+              else
+                echo "No inference model available — running admin/CRUD tests only"
+              fi
+
+              # Run tests
+              ./scripts/run-tests-with-providers.sh || true
+
+              # Copy JUnit XML reports to artifacts
+              cp -r reports/* "${ARTIFACT_DIR}/" 2>/dev/null || echo "No reports generated"
+              echo "=== Artifacts ==="
+              ls -la "${ARTIFACT_DIR}/"
+
+          - name: git-push-artifacts
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/secure-git-push/0.1/secure-git-push.yaml
+            params:
+              - name: source-path
+                value: /workspace/artifacts-dir
+              - name: repo-path
+                value: 'opendatahub-io/odh-build-metadata'
+              - name: repo-branch
+                value: 'ci-artifacts'
+              - name: sparse-file-path
+                value: 'test-artifacts/docs'
+              - name: dest-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+              - name: pipelinerun-name
+                value: $(context.pipelineRun.name)
+
+  # ── Artifact collection & PR comment ──────────────────────────────────
+  finally:
+    - name: push-ci-artifacts-and-update-pr
+      params:
+        - name: oci-artifacts-repo
+          value: $(params.oci-artifacts-repo)
+        - name: pipeline-status
+          value: $(tasks.status)
+      taskSpec:
+        volumes:
+          - name: odh-registry-secret-volume
+            secret:
+              secretName: odh-registry-secret
+              items:
+                - key: .dockerconfigjson
+                  path: oci-storage-dockerconfigjson
+        params:
+          - name: oci-artifacts-repo
+          - name: pipeline-status
+            type: string
+        steps:
+          - name: pull-ci-artifacts
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/git-clone/0.1/git-clone.yaml
+            params:
+              - name: repo-path
+                value: 'opendatahub-io/odh-build-metadata'
+              - name: repo-branch
+                value: 'ci-artifacts'
+              - name: sparse-file-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+              - name: dest-path
+                value: /workspace/odh-ci-artifacts
+              - name: artifacts-dir-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+          - name: secure-push-oci
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/secure-push-oci/0.1/secure-push-oci.yaml
+            params:
+              - name: workdir-path
+                value: '/workspace/odh-ci-artifacts/test-artifacts/$(context.pipelineRun.name)'
+              - name: oci-ref
+                value: $(params.oci-artifacts-repo):$(context.pipelineRun.name)
+              - name: credentials-volume-name
+                value: odh-registry-secret-volume
+          - name: share-status-on-pull-request
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/pull-request-comment/0.1/pull-request-comment.yaml
+            params:
+              - name: test-name
+                value: $(context.pipelineRun.name)
+              - name: oci-container
+                value: $(params.oci-artifacts-repo):$(context.pipelineRun.name)
+              - name: pipeline-aggregate-status
+                value: $(params.pipeline-status)
+              - name: pull-request-author
+                value: $(tasks.check-prerequisites.results.pull-request-author)
+              - name: pull-request-number
+                value: $(tasks.check-prerequisites.results.pull-request-number)
+              - name: git-repo
+                value: $(tasks.check-prerequisites.results.git-repo)
+              - name: git-org
+                value: $(tasks.check-prerequisites.results.git-org)
+              - name: git-revision
+                value: $(tasks.check-prerequisites.results.git-revision)
+              - name: artifact-browser-url
+                value: $(params.artifact-browser-url)
+          - name: cleanup-artifacts-from-git
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/cleanup-git-repo/0.1/cleanup-git-repo.yaml
+            params:
+              - name: work-dir
+                value: '/workspace/odh-ci-artifacts'
+              - name: artifacts-dir-path
+                value: 'test-artifacts'
+              - name: dir-to-be-deleted
+                value: '$(context.pipelineRun.name)'

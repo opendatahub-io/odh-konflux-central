@@ -1,0 +1,209 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: bundle-processor
+spec:
+  description: |
+    Patches the operator bundle CSV with latest component images from snapshot.json
+    and bundle-patch.yaml. Replaces the bundle-processor GitHub workflow for in-pipeline use.
+  params:
+  - name: SOURCE_ARTIFACT
+    description: OCI artifact containing ODH-Build-Config source
+    type: string
+  - name: ociStorage
+    description: OCI storage location for output artifact
+    type: string
+  - name: ociArtifactExpiresAfter
+    description: Expiration for the output OCI artifact
+    type: string
+    default: "1h"
+  - name: OPERATOR_IMAGE_URL
+    description: Resolved operator image URL (from build or snapshot)
+    type: string
+  - name: OPERATOR_IMAGE_DIGEST
+    description: Resolved operator image digest (from build or snapshot)
+    type: string
+  - name: QUAY_TAG
+    description: Quay tag for image lookups
+    type: string
+    default: "odh-stable"
+  - name: BRANCH
+    description: ODH-Build-Config branch name
+    type: string
+    default: "main"
+  - name: OPERATOR_BUNDLE_COMPONENT_NAME
+    description: Component name for the operator bundle
+    type: string
+    default: "odh-operator-bundle-ci"
+  - name: UTILS_REPO_URL
+    description: URL for the RHOAI-Konflux-Automation utils repo
+    type: string
+    default: "https://github.com/red-hat-data-services/RHOAI-Konflux-Automation.git"
+  - name: UTILS_REPO_BRANCH
+    description: Branch of the utils repo
+    type: string
+    default: "odh"
+  - name: SNAPSHOT_ARTIFACT
+    description: |
+      OCI trusted artifact URI from generate-snapshot containing snapshot.json.
+      Mounted at /var/workdir/snapshot/snapshot.json and seeded into ODH-Build-Config
+      so bundle-processor.py reads the correct operator image rather than falling back to Quay.
+    type: string
+    default: ""
+  results:
+  - name: SOURCE_ARTIFACT
+    description: OCI artifact with patched bundle in ODH-Build-Config source
+  volumes:
+  - name: workdir
+    emptyDir: {}
+  stepTemplate:
+    volumeMounts:
+    - mountPath: /var/workdir
+      name: workdir
+  steps:
+  - name: use-trusted-artifact
+    image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+    args:
+    - use
+    - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+    - $(params.SNAPSHOT_ARTIFACT)=/var/workdir/snapshot
+
+  - name: clone-utils
+    image: quay.io/rhoai/rhoai-task-toolset:latest
+    env:
+    - name: UTILS_REPO_URL
+      value: $(params.UTILS_REPO_URL)
+    - name: UTILS_REPO_BRANCH
+      value: $(params.UTILS_REPO_BRANCH)
+    script: |
+      #!/bin/bash
+      set -eo pipefail
+      echo "Cloning utils repo: ${UTILS_REPO_URL} @ ${UTILS_REPO_BRANCH}"
+      git clone --depth 1 --branch "${UTILS_REPO_BRANCH}" "${UTILS_REPO_URL}" /var/workdir/utils
+
+  - name: update-snapshot-and-process-bundle
+    image: quay.io/rhoai/rhoai-task-toolset:latest
+    env:
+    - name: OPERATOR_IMAGE_URL
+      value: $(params.OPERATOR_IMAGE_URL)
+    - name: OPERATOR_IMAGE_DIGEST
+      value: $(params.OPERATOR_IMAGE_DIGEST)
+    - name: QUAY_TAG
+      value: $(params.QUAY_TAG)
+    - name: BRANCH
+      value: $(params.BRANCH)
+    - name: OPERATOR_BUNDLE_COMPONENT_NAME
+      value: $(params.OPERATOR_BUNDLE_COMPONENT_NAME)
+    - name: SNAPSHOT_ARTIFACT
+      value: $(params.SNAPSHOT_ARTIFACT)
+    - name: OC_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: early-gate-secrets
+          key: KONFLUX_INTERNAL_OC_TOKEN
+          optional: true
+    - name: OPENDATAHUB_QUAY_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: early-gate-secrets
+          key: OPENDATAHUB_QUAY_API_TOKEN
+          optional: true
+    script: |
+      #!/bin/bash
+      set -eo pipefail
+
+      # Install dependencies in the same container where they will be used
+      echo "Installing yq..."
+      os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+      arch="$(uname -m | sed 's/x86_64/amd64/')"
+      yq_version="v4.44.3"
+      curl -sSfLo /usr/local/bin/yq \
+        "https://github.com/mikefarah/yq/releases/download/$yq_version/yq_${os}_${arch}"
+      chmod +x /usr/local/bin/yq
+
+      echo "Installing Python dependencies..."
+      pip install --default-timeout=100 \
+        -r /var/workdir/utils/utils/bundle-processor/requirements.txt
+
+      SOURCE=/var/workdir/source
+      UTILS=/var/workdir/utils
+
+      # --- Seed config/snapshot.json from SNAPSHOT artifact if not present in the clone ---
+      OPERATOR_IMAGE="${OPERATOR_IMAGE_URL%:*}@${OPERATOR_IMAGE_DIGEST}"
+      SNAPSHOT_PATH="${SOURCE}/config/snapshot.json"
+      SNAPSHOT_ARTIFACT_FILE=/var/workdir/snapshot/snapshot.json
+      mkdir -p "${SOURCE}/config"
+
+      if [ ! -f "${SNAPSHOT_PATH}" ]; then
+        if [ -f "${SNAPSHOT_ARTIFACT_FILE}" ]; then
+          echo "config/snapshot.json not found in ODH-Build-Config clone; seeding from SNAPSHOT artifact"
+          cp "${SNAPSHOT_ARTIFACT_FILE}" "${SNAPSHOT_PATH}"
+        else
+          echo "config/snapshot.json not found and no SNAPSHOT artifact available; initialising empty snapshot"
+          echo "{}" > "${SNAPSHOT_PATH}"
+        fi
+      else
+        echo "config/snapshot.json already exists in clone"
+      fi
+
+      # --- Update odh-operator-ci.image with the freshly-built operator image ---
+      echo "Updating snapshot.json with operator image: ${OPERATOR_IMAGE}"
+      jq --arg img "$OPERATOR_IMAGE" \
+        '(.["odh-operator-ci"].image) = $img' \
+        "${SNAPSHOT_PATH}" > /tmp/snapshot.json \
+        && mv /tmp/snapshot.json "${SNAPSHOT_PATH}"
+      echo "Updated snapshot.json entry for odh-operator-ci:"
+      jq '.["odh-operator-ci"]' "${SNAPSHOT_PATH}"
+
+      # --- Copy raw bundle inputs to tmp ---
+      RAW_INPUTS_DIR=${UTILS}/tmp/bundle
+      mkdir -p ${RAW_INPUTS_DIR}
+      cp -r ${SOURCE}/to-be-processed/bundle/* ${RAW_INPUTS_DIR}
+
+      # --- Declare paths ---
+      BUILD_CONFIG_PATH=${SOURCE}/config/build-config.yaml
+      BUNDLE_CSV_PATH=${RAW_INPUTS_DIR}/manifests/rhods-operator.clusterserviceversion.yaml
+      PATCH_YAML_PATH=${SOURCE}/bundle/bundle-patch.yaml
+      OUTPUT_FILE_PATH=${RAW_INPUTS_DIR}/manifests/rhods-operator.clusterserviceversion.yaml
+      SNAPSHOT_JSON_PATH=${SOURCE}/config/snapshot.json
+      ANNOTATION_YAML_PATH=${RAW_INPUTS_DIR}/metadata/annotations.yaml
+      PUSH_PIPELINE_PATH=${SOURCE}/.tekton/${OPERATOR_BUNDLE_COMPONENT_NAME}-push.yaml
+
+      # --- Patch bundle-patch.yaml: set all RELATED_IMAGE_ODH_OPERATOR_IMAGE entries to freshly-built image ---
+      echo "Patching bundle-patch.yaml RELATED_IMAGE_ODH_OPERATOR_IMAGE → ${OPERATOR_IMAGE}"
+      export OPERATOR_IMAGE
+      echo "OPERATOR_IMAGE: ${OPERATOR_IMAGE}"
+      yq -i '(.patch.relatedImages[] | select(.name == "RELATED_IMAGE_ODH_OPERATOR_IMAGE")).value = env(OPERATOR_IMAGE)' "${PATCH_YAML_PATH}"
+      echo "Updated RELATED_IMAGE_ODH_OPERATOR_IMAGE entries in bundle-patch.yaml:"
+      yq '.patch.relatedImages[] | select(.name == "RELATED_IMAGE_ODH_OPERATOR_IMAGE")' "${PATCH_YAML_PATH}"
+
+      # --- Run bundle-processor ---
+      OPERATOR_TAG="${OPERATOR_IMAGE_URL##*:}"
+      echo "Running bundle-processor.py -op bundle-patch with OPERATOR_TAG=${OPERATOR_TAG}"
+      python3 ${UTILS}/utils/bundle-processor/bundle-processor.py \
+        -op bundle-patch \
+        -b ${BUILD_CONFIG_PATH} \
+        -c ${BUNDLE_CSV_PATH} \
+        -p ${PATCH_YAML_PATH} \
+        -o ${OUTPUT_FILE_PATH} \
+        -q ${OPERATOR_TAG} \
+        -r ${BRANCH} \
+        -a ${ANNOTATION_YAML_PATH} \
+        --push-pipeline-yaml-path ${PUSH_PIPELINE_PATH} \
+        --push-pipeline-operation enable
+
+      # --- Copy processed bundle to bundle/ dir ---
+      cp -r ${RAW_INPUTS_DIR}/* ${SOURCE}/bundle/
+      echo "Bundle processing complete. Contents of bundle/:"
+      ls -la ${SOURCE}/bundle/
+
+  - name: create-trusted-artifact
+    image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+    args:
+    - create
+    - --store
+    - $(params.ociStorage)
+    - $(results.SOURCE_ARTIFACT.path)=/var/workdir/source
+    env:
+    - name: IMAGE_EXPIRES_AFTER
+      value: $(params.ociArtifactExpiresAfter)

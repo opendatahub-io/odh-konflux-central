@@ -1,0 +1,33 @@
+# Olminstall Konflux pipeline — declarative test phases (Jenkins-style component list).
+# Used by:
+#   - olm_pipeline.py (--tests / --tests-config) to validate the ITS param TESTS
+#   - Tekton task parse-pipeline-tests (after cloning SCRIPTS_REPO) to set RUN_SMOKE / RUN_BVT / RUN_TIER1
+#
+# Adding a phase: extend this file, then wire matching Pipeline tasks + when: in
+# olminstall-pipeline.yaml (pipeline cannot discover arbitrary phases without code).
+# Phases may set requiredInSelection: true to force them into every TESTS value (optional).
+#
+# schemaVersion bumps when structure changes (tools may reject unknown versions).
+schemaVersion: 1
+
+phases:
+  - id: bvt
+    description: opendatahub-tests pytest markers cluster_health and operator_health.
+    default: true
+    setsPipelineResults:
+      RUN_BVT: true
+
+  - id: smoke
+    description: >
+      Reserved smoke test phase (pytest suite not wired yet); toggles RUN_SMOKE for future tasks.
+      OLM install + CSV verification always run when PRODUCT is not none, independent of this flag.
+    requiredInSelection: false
+    default: true
+    setsPipelineResults:
+      RUN_SMOKE: true
+
+  - id: tier1
+    description: Reserved placeholder task until a tier1 suite is implemented.
+    default: false
+    setsPipelineResults:
+      RUN_TIER1: true

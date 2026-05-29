@@ -1,0 +1,16 @@
+FROM registry.access.redhat.com/ubi9/python-311:1
+
+# Prow expects to be able to check out a repo under /go
+USER 0:0
+RUN dnf install -y jq
+RUN wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz && \
+    tar xvf openshift-client-linux.tar.gz && chmod +x oc && mv oc /usr/local/bin/ && chmod +x kubectl && mv kubectl /usr/local/bin/
+WORKDIR /go
+# RUN chown 1001:0 .
+
+# USER 1001:0
+
+# The VENV that is activated by default conflicts with KServe
+# scripts. These variables are set to empty to not activate any
+# VENV by default.
+ENV BASH_ENV="" ENV="" PROMPT_COMMAND=""

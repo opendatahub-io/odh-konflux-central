@@ -1,0 +1,31 @@
+#1 get Go from official UBI toolset
+FROM registry.access.redhat.com/ubi9/go-toolset:1.22 as go-builder
+
+#2 python image
+FROM registry.access.redhat.com/ubi9/python-312
+
+USER 0
+
+# Copy Go from builder image
+COPY --from=go-builder /usr/lib/golang /usr/lib/golang
+COPY --from=go-builder /usr/bin/go /usr/bin/go
+COPY --from=go-builder /usr/bin/gofmt /usr/bin/gofmt
+
+ENV PATH="/usr/lib/golang/bin:${PATH}"
+
+RUN yum install -y \
+        wget \
+        jq \
+        tar \
+        make \
+        podman \
+        fuse-overlayfs \
+        slirp4netns \
+        shadow-utils \
+    && yum clean all
+
+# Install oc + kubectl
+RUN wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz && \
+    tar xvf openshift-client-linux.tar.gz && \
+    chmod +x oc kubectl && \
+    mv oc kubectl /usr/local/bin/

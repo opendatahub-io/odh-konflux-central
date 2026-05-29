@@ -1,0 +1,58 @@
+name: YAML Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  yamllint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: "false"
+
+      # pipx does not have an --offline mode, https://github.com/pypa/pipx/issues/1505
+      # uv does not have cache prefetch, https://github.com/astral-sh/uv/issues/13365
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Run yamllint
+        uses: ./.github/actions/action-yamllint
+        with:
+          strict: true
+          config_file: .yamllint
+          yamllint_version: "1.38.0"
+          uv_exclude_newer: "2026-01-24"
+
+  kubeconform:
+    name: Kubeconform Schema Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION="v0.6.7"
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      # Note: Tekton CRDs (Pipeline, PipelineRun) and Konflux CRDs (Component) are not
+      # available in public schema catalogs. We use -ignore-missing-schemas to validate
+      # basic YAML structure and any standard K8s resources without failing on CRDs.
+      # See issue #126 for adding custom schema support.
+      - name: Validate Kubernetes manifests
+        run: |
+          kubeconform -summary -output text \
+            -ignore-missing-schemas \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            pipelineruns/ pipelines/ gitops/ integration-tests/
