@@ -152,6 +152,7 @@ spec:
                 TRIGGER_NIGHTLY_TESTS_REASON="smoke tests forced via TRIGGER_NIGHTLY_TESTS=true"
               elif [ "$NIGHTLY_CHANGED" = "true" ]; then
                 SHOULD_TRIGGER_NIGHTLY_TESTS=true
+                TRIGGER_NIGHTLY_TESTS_REASON="smoke tests triggered (catalog changed)"
               else
                 SHOULD_TRIGGER_NIGHTLY_TESTS=false
                 TRIGGER_NIGHTLY_TESTS_REASON="smoke tests skipped (catalog unchanged)"
