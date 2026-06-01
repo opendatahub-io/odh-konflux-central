@@ -12,7 +12,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "$$TARGET_BRANCH$$"
-      && ( "images/universal/training/th06-cpu-torch210-py312/**".pathChanged() || ".tekton/odh-th06-cpu-torch210-py312-ci-on-pull-request.yaml".pathChanged() )
+      && ( "images/universal/training/th06-cpu-torch210-py312/**".pathChanged() || ".tekton/odh-th06-cpu-torch210-py312-pull-request.yaml".pathChanged() )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: opendatahub-builds
