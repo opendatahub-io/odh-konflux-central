@@ -221,12 +221,28 @@ spec:
   # Group snapshot block
   # --------------------------------------------------------------------------
 
-  - name: generate-snapshot
+  - name: resolve-group-configuration
     runAfter:
     - init
+    workspaces:
+    - name: basic-auth
+      workspace: git-auth
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/resolve-group-configuration.yaml
+
+  - name: generate-snapshot
+    runAfter:
+    - resolve-group-configuration
     params:
     - name: COMPONENTS
-      value: $(params.group-components)
+      value: $(tasks.resolve-group-configuration.results.group-components)
     - name: ociStorage
       value: $(params.operator-output-image).snapshot
     - name: ociArtifactExpiresAfter

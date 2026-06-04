@@ -9,10 +9,8 @@ spec:
     a single Tekton pipeline for quick feature-branch validation before pushing to stable.
   params:
   # --- Group snapshot ---
-  - name: group-components
-    type: string
-    description: List of components in the group (JSON)
-    default: ""
+  # NOTE: group-components is now auto-resolved from PR description via resolve-group-configuration task
+  # To enable group testing, add YAML config block to PR description (see docs/GROUP-TESTING-TEMPLATE.md)
 
   # --- General ---
   - description: Source Repository URL
@@ -221,12 +219,31 @@ spec:
   # Group snapshot block
   # --------------------------------------------------------------------------
 
-  - name: generate-snapshot
+  # NOTE: resolve-group-configuration task reads PR description and resolves group config
+  # It automatically includes leader PR components + collaborator PRs from config
+  # PipelinesAsCode labels (PR_NUMBER, REPO_NAME) are available to the task
+  - name: resolve-group-configuration
     runAfter:
     - init
+    workspaces:
+    - name: basic-auth
+      workspace: git-auth
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: early-gate/tasks/resolve-group-configuration.yaml
+
+  - name: generate-snapshot
+    runAfter:
+    - resolve-group-configuration
     params:
     - name: COMPONENTS
-      value: $(params.group-components)
+      value: $(tasks.resolve-group-configuration.results.group-components)
     - name: ociStorage
       value: $(params.operator-output-image).snapshot
     - name: ociArtifactExpiresAfter

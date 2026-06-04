@@ -8,12 +8,20 @@ spec:
       optional: true
   params:
     - name: COMPONENTS
-      description: List of components in the group (JSON). If empty, fetched from component_repo_map.json using REPO_NAME.
+      description: |
+        List of components in the group (JSON).
+        Format: {"comp1": "path1", "comp2": "path2"} OR
+                {"comp1": {"quay_path": "path1", "pr": "123"}, "comp2": {...}}
+        If empty, fetched from component_repo_map.json using REPO_NAME.
       default: ""
     - name: fallback-tag
       type: string
       default: odh-stable
       description: Quay tag when PR image is missing
+    - name: CURRENT_PR_NUMBER
+      description: Current PR number (for components without explicit PR metadata)
+      type: string
+      default: ""
     - name: ociStorage
       type: string
       description: OCI repository for storing the SNAPSHOT trusted artifact
@@ -46,6 +54,8 @@ spec:
           value: $(workspaces.basic-auth.bound)
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
           value: $(workspaces.basic-auth.path)
+        - name: CURRENT_PR_NUMBER
+          value: $(params.CURRENT_PR_NUMBER)
         - name: PR_NUMBER
           valueFrom:
             fieldRef:
@@ -80,27 +90,45 @@ spec:
 
         json_string="$COMPONENTS"
         echo ${COMPONENTS}
-        
+
         # Temporary file to store results
         temp_file=$(mktemp)
         echo "{}" > "$temp_file"
 
+        # Use CURRENT_PR_NUMBER if set, otherwise fall back to PR_NUMBER from labels
+        DEFAULT_PR_NUMBER="${CURRENT_PR_NUMBER:-${PR_NUMBER}}"
+
         # Parse JSON and iterate through each component
         while IFS= read -r row; do
-            # Tag to search for
-            TAG="odh-pr-${PR_NUMBER}"
-        
             # Decode the base64 encoded row
             component=$(echo "$row" | base64 -d | jq -r '.key')
-            repo_path=$(echo "$row" | base64 -d | jq -r '.value')
-            
-            echo "component=${component}"
-            echo "repo_path=${repo_path}"
-        
-            if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
-              echo "found the image with tag ${TAG}"
+            value=$(echo "$row" | base64 -d | jq -r '.value')
+
+            # Check if value is a string (old format) or object (new format with PR metadata)
+            if echo "$value" | jq -e 'type == "object"' &>/dev/null; then
+              # New format: {"quay_path": "...", "pr": "123"}
+              repo_path=$(echo "$value" | jq -r '.quay_path')
+              component_pr=$(echo "$value" | jq -r '.pr')
+              TAG="odh-pr-${component_pr}"
+              echo "component=${component} (from PR #${component_pr})"
             else
-              echo "No image found with tag ${TAG}, falling back to the ${FALLBACK_TAG} image for ${repo_path}"
+              # Old format: string path
+              repo_path="$value"
+              TAG="odh-pr-${DEFAULT_PR_NUMBER}"
+              echo "component=${component} (using default PR #${DEFAULT_PR_NUMBER})"
+            fi
+
+            echo "repo_path=${repo_path}"
+
+            # Check if PR-specific image exists
+            if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
+              echo "✓ Found image with tag ${TAG}"
+            else
+              echo "⚠️  WARNING: Component '${component}' does not have PR image for tag ${TAG}" >&2
+              echo "   Quay query returned: 404 Not Found" >&2
+              echo "   Reason: PR build may still be in progress" >&2
+              echo "   Action: Falling back to ${FALLBACK_TAG} tag" >&2
+              echo "   Impact: Group test will use stable image instead of PR code" >&2
               TAG=${FALLBACK_TAG}
             fi
                 

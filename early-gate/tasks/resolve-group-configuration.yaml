@@ -1,0 +1,279 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: resolve-group-configuration
+spec:
+  workspaces:
+    - name: basic-auth
+      optional: true
+  params:
+    - name: PR_NUMBER
+      description: Pull request number (from PipelinesAsCode labels)
+      type: string
+    - name: REPO_NAME
+      description: Repository name (from PipelinesAsCode labels)
+      type: string
+    - name: GITHUB_ORG
+      description: GitHub organization name
+      type: string
+      default: "opendatahub-io"
+  results:
+    - name: group-components
+      description: Resolved components JSON with PR metadata for group testing
+    - name: has-group-config
+      description: "true" if group config found, "false" otherwise
+  volumes:
+    - name: workdir
+      emptyDir: {}
+  stepTemplate:
+    volumeMounts:
+      - mountPath: /var/workdir
+        name: workdir
+  steps:
+    - name: resolve-configuration
+      image: quay.io/konflux-ci/konflux-test:stable
+      workingDir: /workspace
+      env:
+        - name: PR_NUMBER
+          value: $(params.PR_NUMBER)
+        - name: REPO_NAME
+          value: $(params.REPO_NAME)
+        - name: GITHUB_ORG
+          value: $(params.GITHUB_ORG)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+          value: $(workspaces.basic-auth.bound)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+          value: $(workspaces.basic-auth.path)
+      script: |
+        #!/bin/bash
+        set -e
+
+        echo "=== Resolve Group Configuration Task ===" >&2
+        echo "PR_NUMBER=${PR_NUMBER}" >&2
+        echo "REPO_NAME=${REPO_NAME}" >&2
+        echo "GITHUB_ORG=${GITHUB_ORG}" >&2
+
+        # --- Constants ---
+        CONFIG_MARKER="# early-gate-group-config"
+        COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+
+        # --- Fetch component_repo_map.json (critical dependency) ---
+        echo "Fetching component_repo_map.json..." >&2
+        COMPONENT_MAP=$(curl -sSf "${COMPONENT_MAP_URL}")
+        if [[ -z "${COMPONENT_MAP}" ]]; then
+          echo "ERROR: Failed to fetch component_repo_map.json" >&2
+          exit 1
+        fi
+        echo "Component map loaded successfully" >&2
+
+        # --- Fetch PR description from GitHub API ---
+        echo "Fetching PR description from GitHub..." >&2
+        GITHUB_API_URL="https://api.github.com/repos/${GITHUB_ORG}/${REPO_NAME}/pulls/${PR_NUMBER}"
+
+        # Use authentication if available
+        AUTH_HEADER=""
+        if [[ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" == "true" ]]; then
+          if [[ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ]]; then
+            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" | grep -oP 'https://\K[^:]+(?=:)')
+            if [[ -n "${GITHUB_TOKEN}" ]]; then
+              AUTH_HEADER="Authorization: token ${GITHUB_TOKEN}"
+            fi
+          fi
+        fi
+
+        if [[ -n "${AUTH_HEADER}" ]]; then
+          PR_DATA=$(curl -sSf -H "${AUTH_HEADER}" "${GITHUB_API_URL}")
+        else
+          echo "⚠️  WARNING: No GitHub authentication found, using unauthenticated API (rate limited)" >&2
+          PR_DATA=$(curl -sSf "${GITHUB_API_URL}")
+        fi
+
+        if [[ -z "${PR_DATA}" ]]; then
+          echo "⚠️  WARNING: Failed to fetch PR description from GitHub API" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          # Return components for current repo only
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        PR_BODY=$(echo "${PR_DATA}" | jq -r '.body // ""')
+        echo "PR description fetched successfully" >&2
+
+        # --- Search for group config marker ---
+        echo "Searching for group configuration marker..." >&2
+        if ! echo "${PR_BODY}" | grep -q "${CONFIG_MARKER}"; then
+          echo "No group configuration found for this PR" >&2
+          echo "Using single-PR mode (repo: ${REPO_NAME}, pr: ${PR_NUMBER})" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          # Return components for current repo only
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          if [[ -z "${COMPONENTS}" || "${COMPONENTS}" == "null" ]]; then
+            echo "ERROR: No entry found for REPO_NAME=${REPO_NAME} in component_repo_map.json" >&2
+            exit 1
+          fi
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        echo "✓ Group configuration marker found" >&2
+        echo "true" > "$(results.has-group-config.path)"
+
+        # --- Extract YAML block ---
+        # Extract content between ```yaml and ``` after the marker
+        YAML_BLOCK=$(echo "${PR_BODY}" | awk "/${CONFIG_MARKER}/,/\`\`\`/" | grep -v '```' | grep -v "${CONFIG_MARKER}")
+
+        if [[ -z "${YAML_BLOCK}" ]]; then
+          echo "⚠️  WARNING: Config marker found but no valid YAML block" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        echo "YAML block extracted:" >&2
+        echo "${YAML_BLOCK}" >&2
+
+        # --- Parse YAML to extract repo URLs ---
+        # Convert YAML to JSON using yq (or python if yq not available)
+        if command -v yq &> /dev/null; then
+          YAML_JSON=$(echo "${YAML_BLOCK}" | yq -o json '.')
+        else
+          # Fallback: use python to parse YAML
+          YAML_JSON=$(python3 -c "import yaml, json, sys; print(json.dumps(yaml.safe_load(sys.stdin.read())))" <<< "${YAML_BLOCK}")
+        fi
+
+        if [[ -z "${YAML_JSON}" || "${YAML_JSON}" == "null" ]]; then
+          echo "⚠️  WARNING: Failed to parse YAML configuration" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        echo "Parsed YAML config:" >&2
+        echo "${YAML_JSON}" | jq '.' >&2
+
+        # --- Extract PR URLs from repos array ---
+        PR_URLS=$(echo "${YAML_JSON}" | jq -r '.repos[]? // empty')
+
+        if [[ -z "${PR_URLS}" ]]; then
+          echo "⚠️  WARNING: No PR URLs found in configuration" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        echo "Found PR URLs:" >&2
+        echo "${PR_URLS}" >&2
+
+        # --- ALWAYS include leader PR's components first ---
+        echo "" >&2
+        echo "=== Resolving Components ===" >&2
+        echo "Step 1: Adding leader PR components (${REPO_NAME} #${PR_NUMBER})..." >&2
+        TEMP_COMPONENTS=$(mktemp)
+        echo "{}" > "${TEMP_COMPONENTS}"
+
+        # Get leader PR components with PR metadata
+        LEADER_COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+        if [[ -n "${LEADER_COMPONENTS}" && "${LEADER_COMPONENTS}" != "null" ]]; then
+          LEADER_COMPONENTS_WITH_PR=$(echo "${LEADER_COMPONENTS}" | jq -c --arg pr "${PR_NUMBER}" '
+            to_entries |
+            map({
+              key: .key,
+              value: {
+                quay_path: .value,
+                pr: $pr
+              }
+            }) |
+            from_entries
+          ')
+          NUM_LEADER=$(echo "${LEADER_COMPONENTS_WITH_PR}" | jq 'length')
+          echo "✓ Added ${NUM_LEADER} components from leader PR #${PR_NUMBER}" >&2
+          echo "${LEADER_COMPONENTS_WITH_PR}" > "${TEMP_COMPONENTS}"
+        else
+          echo "⚠️  WARNING: No components found for leader repo: ${REPO_NAME}" >&2
+          echo "   This is unusual - verify component_repo_map.json has an entry for ${REPO_NAME}" >&2
+        fi
+
+        # --- Parse each collaborator PR URL and add their components ---
+        echo "" >&2
+        echo "Step 2: Adding collaborator PR components..." >&2
+        while IFS= read -r url; do
+          echo "Processing collaborator URL: ${url}" >&2
+
+          # Extract org/repo/pr from URL
+          # Format: https://github.com/{org}/{repo}/pull/{number}
+          if [[ ! "${url}" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)$ ]]; then
+            echo "⚠️  WARNING: Invalid PR URL format: ${url}" >&2
+            echo "   Skipping this entry" >&2
+            continue
+          fi
+
+          ORG="${BASH_REMATCH[1]}"
+          REPO="${BASH_REMATCH[2]}"
+          PR="${BASH_REMATCH[3]}"
+
+          echo "  Org: ${ORG}" >&2
+          echo "  Repo: ${REPO}" >&2
+          echo "  PR: ${PR}" >&2
+
+          # Lookup components for this repo in component_repo_map.json
+          REPO_COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO}" '.[$repo]')
+
+          if [[ -z "${REPO_COMPONENTS}" || "${REPO_COMPONENTS}" == "null" ]]; then
+            echo "⚠️  WARNING: No components found for repo: ${REPO}" >&2
+            echo "   Skipping this repo" >&2
+            continue
+          fi
+
+          echo "  Found components for ${REPO}" >&2
+
+          # Add PR metadata to each component
+          # Transform: {"comp1": "path1", "comp2": "path2"}
+          # To: {"comp1": {"quay_path": "path1", "pr": "123"}, "comp2": {...}}
+          REPO_COMPONENTS_WITH_PR=$(echo "${REPO_COMPONENTS}" | jq -c --arg pr "${PR}" '
+            to_entries |
+            map({
+              key: .key,
+              value: {
+                quay_path: .value,
+                pr: $pr
+              }
+            }) |
+            from_entries
+          ')
+
+          echo "  Components with PR metadata:" >&2
+          echo "  ${REPO_COMPONENTS_WITH_PR}" >&2
+
+          # Merge into accumulated components
+          jq -s '.[0] * .[1]' "${TEMP_COMPONENTS}" <(echo "${REPO_COMPONENTS_WITH_PR}") > "${TEMP_COMPONENTS}.tmp"
+          mv "${TEMP_COMPONENTS}.tmp" "${TEMP_COMPONENTS}"
+
+        done <<< "${PR_URLS}"
+
+        # --- Output final components JSON ---
+        FINAL_COMPONENTS=$(cat "${TEMP_COMPONENTS}")
+
+        if [[ "${FINAL_COMPONENTS}" == "{}" ]]; then
+          echo "⚠️  WARNING: No valid components resolved from group configuration" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+        else
+          echo "✓ Group components resolved successfully:" >&2
+          echo "${FINAL_COMPONENTS}" | jq '.' >&2
+          echo -n "${FINAL_COMPONENTS}" > "$(results.group-components.path)"
+        fi
+
+        # Cleanup
+        rm -f "${TEMP_COMPONENTS}"
+
+        echo "=== Resolution complete ===" >&2
