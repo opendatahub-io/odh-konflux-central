@@ -10,7 +10,7 @@ spec:
     - name: group-components
       description: Resolved components JSON with PR metadata for group testing
     - name: has-group-config
-      description: "true" if group config found, "false" otherwise
+      description: true if group config found, false otherwise
   volumes:
     - name: workdir
       emptyDir: {}
