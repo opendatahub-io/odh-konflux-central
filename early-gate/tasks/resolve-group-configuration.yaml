@@ -69,8 +69,25 @@ spec:
           echo "Checking for GitHub token in workspace..." >&2
           if [[ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ]]; then
             echo "Found .git-credentials file" >&2
-            # Format: https://TOKEN:x-oauth-basic@github.com or https://username:TOKEN@github.com
-            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" | grep github.com | head -1 | sed -n 's|.*https://\([^:@]*\)[:@].*github\.com.*|\1|p')
+            # Format examples:
+            # https://TOKEN:x-oauth-basic@github.com
+            # https://x-access-token:TOKEN@github.com
+            # https://username:TOKEN@github.com
+            CREDS_LINE=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" | grep github.com | head -1)
+
+            # Try different extraction patterns
+            # Pattern 1: https://TOKEN:x-oauth-basic@github.com
+            GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://\([^:]*\):x-oauth-basic@github\.com.*|\1|p')
+
+            # Pattern 2: https://x-access-token:TOKEN@github.com
+            if [[ -z "${GITHUB_TOKEN}" ]]; then
+              GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://x-access-token:\([^@]*\)@github\.com.*|\1|p')
+            fi
+
+            # Pattern 3: https://username:TOKEN@github.com (any username)
+            if [[ -z "${GITHUB_TOKEN}" ]]; then
+              GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://[^:]*:\([^@]*\)@github\.com.*|\1|p')
+            fi
           fi
 
           # Also check for .github-token file (alternative location)
@@ -152,12 +169,17 @@ spec:
         echo "${YAML_BLOCK}" >&2
 
         # --- Parse YAML to extract repo URLs ---
-        # Convert YAML to JSON using yq (or python if yq not available)
-        if command -v yq &> /dev/null; then
-          YAML_JSON=$(echo "${YAML_BLOCK}" | yq -o json '.')
-        else
-          # Fallback: use python to parse YAML
-          YAML_JSON=$(python3 -c "import yaml, json, sys; print(json.dumps(yaml.safe_load(sys.stdin.read())))" <<< "${YAML_BLOCK}")
+        # Convert YAML to JSON using python (more reliable than yq for stdin)
+        YAML_JSON=$(python3 -c "import yaml, json, sys; print(json.dumps(yaml.safe_load(sys.stdin.read())))" <<< "${YAML_BLOCK}" 2>&1)
+
+        # Check if python parsing failed
+        if [[ $? -ne 0 ]]; then
+          echo "⚠️  WARNING: Failed to parse YAML with python: ${YAML_JSON}" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
         fi
 
         if [[ -z "${YAML_JSON}" || "${YAML_JSON}" == "null" ]]; then
