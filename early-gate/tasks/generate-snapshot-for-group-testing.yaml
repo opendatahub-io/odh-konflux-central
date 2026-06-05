@@ -102,18 +102,20 @@ spec:
         while IFS= read -r row; do
             # Decode the base64 encoded row
             component=$(echo "$row" | base64 -d | jq -r '.key')
-            value=$(echo "$row" | base64 -d | jq -r '.value')
+            value_raw=$(echo "$row" | base64 -d | jq -c '.value')
 
             # Check if value is a string (old format) or object (new format with PR metadata)
-            if echo "$value" | jq -e 'type == "object"' &>/dev/null; then
+            value_type=$(echo "$value_raw" | jq -r 'type')
+
+            if [[ "$value_type" == "object" ]]; then
               # New format: {"quay_path": "...", "pr": "123"}
-              repo_path=$(echo "$value" | jq -r '.quay_path')
-              component_pr=$(echo "$value" | jq -r '.pr')
+              repo_path=$(echo "$value_raw" | jq -r '.quay_path')
+              component_pr=$(echo "$value_raw" | jq -r '.pr')
               TAG="odh-pr-${component_pr}"
               echo "component=${component} (from PR #${component_pr})"
             else
               # Old format: string path
-              repo_path="$value"
+              repo_path=$(echo "$value_raw" | jq -r '.')
               TAG="odh-pr-${DEFAULT_PR_NUMBER}"
               echo "component=${component} (using default PR #${DEFAULT_PR_NUMBER})"
             fi
