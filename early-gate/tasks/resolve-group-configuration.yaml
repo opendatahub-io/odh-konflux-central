@@ -81,8 +81,23 @@ spec:
         fi
 
         if [[ -n "${GITHUB_TOKEN}" ]]; then
-          echo "Using authenticated GitHub API" >&2
-          PR_DATA=$(curl -sSf -H "Authorization: token ${GITHUB_TOKEN}" "${GITHUB_API_URL}")
+          echo "Using authenticated GitHub API (token length: ${#GITHUB_TOKEN} chars)" >&2
+          # Try with 'token' prefix first (classic format)
+          PR_DATA=$(curl -sS -H "Authorization: token ${GITHUB_TOKEN}" "${GITHUB_API_URL}" 2>&1)
+
+          # If that fails with 401, try with 'Bearer' prefix
+          if echo "${PR_DATA}" | grep -q "Bad credentials\|Requires authentication"; then
+            echo "Classic token auth failed, trying Bearer format..." >&2
+            PR_DATA=$(curl -sS -H "Authorization: Bearer ${GITHUB_TOKEN}" "${GITHUB_API_URL}" 2>&1)
+          fi
+
+          # Check if still failing
+          if echo "${PR_DATA}" | grep -q "Bad credentials\|Requires authentication"; then
+            echo "ERROR: GitHub authentication failed with provided token" >&2
+            echo "Response: ${PR_DATA:0:200}" >&2
+            echo "Falling back to unauthenticated API..." >&2
+            PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>&1)
+          fi
         else
           echo "⚠️  WARNING: No GitHub authentication found, using unauthenticated API (rate limited)" >&2
           PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>&1)
