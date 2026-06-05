@@ -6,17 +6,6 @@ spec:
   workspaces:
     - name: basic-auth
       optional: true
-  params:
-    - name: PR_NUMBER
-      description: Pull request number (from PipelinesAsCode labels)
-      type: string
-    - name: REPO_NAME
-      description: Repository name (from PipelinesAsCode labels)
-      type: string
-    - name: GITHUB_ORG
-      description: GitHub organization name
-      type: string
-      default: "opendatahub-io"
   results:
     - name: group-components
       description: Resolved components JSON with PR metadata for group testing
@@ -35,11 +24,15 @@ spec:
       workingDir: /workspace
       env:
         - name: PR_NUMBER
-          value: $(params.PR_NUMBER)
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
         - name: REPO_NAME
-          value: $(params.REPO_NAME)
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
         - name: GITHUB_ORG
-          value: $(params.GITHUB_ORG)
+          value: "opendatahub-io"
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
           value: $(workspaces.basic-auth.bound)
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
