@@ -64,21 +64,28 @@ spec:
         GITHUB_API_URL="https://api.github.com/repos/${GITHUB_ORG}/${REPO_NAME}/pulls/${PR_NUMBER}"
 
         # Use authentication if available
-        AUTH_HEADER=""
+        GITHUB_TOKEN=""
         if [[ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" == "true" ]]; then
+          echo "Checking for GitHub token in workspace..." >&2
           if [[ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ]]; then
-            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" | grep -oP 'https://\K[^:]+(?=:)')
-            if [[ -n "${GITHUB_TOKEN}" ]]; then
-              AUTH_HEADER="Authorization: token ${GITHUB_TOKEN}"
-            fi
+            echo "Found .git-credentials file" >&2
+            # Format: https://TOKEN:x-oauth-basic@github.com or https://username:TOKEN@github.com
+            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" | grep github.com | head -1 | sed -n 's|.*https://\([^:@]*\)[:@].*github\.com.*|\1|p')
+          fi
+
+          # Also check for .github-token file (alternative location)
+          if [[ -z "${GITHUB_TOKEN}" && -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.github-token" ]]; then
+            echo "Found .github-token file" >&2
+            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.github-token")
           fi
         fi
 
-        if [[ -n "${AUTH_HEADER}" ]]; then
-          PR_DATA=$(curl -sSf -H "${AUTH_HEADER}" "${GITHUB_API_URL}")
+        if [[ -n "${GITHUB_TOKEN}" ]]; then
+          echo "Using authenticated GitHub API" >&2
+          PR_DATA=$(curl -sSf -H "Authorization: token ${GITHUB_TOKEN}" "${GITHUB_API_URL}")
         else
           echo "⚠️  WARNING: No GitHub authentication found, using unauthenticated API (rate limited)" >&2
-          PR_DATA=$(curl -sSf "${GITHUB_API_URL}")
+          PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>&1)
         fi
 
         if [[ -z "${PR_DATA}" ]]; then
