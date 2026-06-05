@@ -1,0 +1,101 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: post-group-testing-warning
+spec:
+  description: |
+    Posts a warning comment to the PR when group testing components fall back to stable images
+  params:
+    - name: fallback-warning
+      description: Warning message from generate-snapshot (empty if no fallbacks)
+      type: string
+    - name: pr-token-secret-name
+      description: Name of the Kubernetes secret containing the GitHub token
+      type: string
+      default: odh-github-secret
+    - name: pr-token-secret-key
+      description: Key in the secret that holds the GitHub token
+      type: string
+      default: commenter-token
+  steps:
+    - name: post-warning
+      image: quay.io/konflux-ci/konflux-test:stable
+      env:
+        - name: PR_NUMBER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+        - name: REPO_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
+        - name: REPO_ORG
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
+        - name: FALLBACK_WARNING
+          value: $(params.fallback-warning)
+        - name: PR_GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: $(params.pr-token-secret-name)
+              key: $(params.pr-token-secret-key)
+              optional: true
+      script: |
+        #!/bin/bash
+        set -e
+
+        # Exit early if no warnings
+        if [[ -z "${FALLBACK_WARNING}" ]]; then
+          echo "No fallback warnings - skipping PR comment"
+          exit 0
+        fi
+
+        echo "Posting group testing fallback warning to PR..."
+
+        # Build comment body
+        COMMENT_BODY=$(cat <<EOF
+        ## ⚠️ Group Testing - Image Fallback Warning
+
+        Some components in your group testing configuration are using **stable images** instead of PR-specific images:
+
+        ${FALLBACK_WARNING}
+
+        **Why?** The PR builds for these components haven't completed yet.
+
+        **What to do:**
+        - ✅ Wait for all PR builds to complete
+        - ✅ Re-trigger this pipeline with \`/retest\` to test with actual PR images
+        - ℹ️ Tests will still run, but using stable images for the components listed above
+
+        ---
+        <sub>🤖 Posted by Early-Gate Group Testing</sub>
+        EOF
+        )
+
+        # Post comment to PR
+        if [[ -z "${PR_GITHUB_TOKEN}" ]]; then
+          echo "⚠️ No GitHub token available, cannot post comment"
+          echo "Comment would have been:"
+          echo "${COMMENT_BODY}"
+          exit 0
+        fi
+
+        GITHUB_API_URL="https://api.github.com/repos/${REPO_ORG}/${REPO_NAME}/issues/${PR_NUMBER}/comments"
+
+        # Escape JSON properly
+        ESCAPED_BODY=$(echo "${COMMENT_BODY}" | jq -Rs .)
+
+        RESPONSE=$(curl -s -X POST \
+          -H "Authorization: token ${PR_GITHUB_TOKEN}" \
+          -H "Content-Type: application/json" \
+          "${GITHUB_API_URL}" \
+          -d "{\"body\": ${ESCAPED_BODY}}")
+
+        if echo "${RESPONSE}" | jq -e '.id' &>/dev/null; then
+          echo "✓ Comment posted successfully"
+          echo "Comment ID: $(echo "${RESPONSE}" | jq -r '.id')"
+        else
+          echo "⚠️ Failed to post comment"
+          echo "Response: ${RESPONSE}"
+        fi

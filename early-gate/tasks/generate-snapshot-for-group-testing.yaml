@@ -34,6 +34,8 @@ spec:
     name: SNAPSHOT_ARTIFACT
   - description: Resolved COMPONENTS JSON used to generate the snapshot
     name: group-components
+  - description: Warning message if any components fell back to stable (empty if all PRs found)
+    name: fallback-warning
   volumes:
   - name: workdir
     emptyDir: {}
@@ -95,6 +97,9 @@ spec:
         temp_file=$(mktemp)
         echo "{}" > "$temp_file"
 
+        # Track fallback warnings
+        FALLBACK_WARNINGS=""
+
         # Use CURRENT_PR_NUMBER if set, otherwise fall back to PR_NUMBER from labels
         DEFAULT_PR_NUMBER="${CURRENT_PR_NUMBER:-${PR_NUMBER}}"
 
@@ -131,6 +136,12 @@ spec:
               echo "   Reason: PR build may still be in progress" >&2
               echo "   Action: Falling back to ${FALLBACK_TAG} tag" >&2
               echo "   Impact: Group test will use stable image instead of PR code" >&2
+
+              # Track this fallback for PR comment
+              if [[ "$value_type" == "object" ]]; then
+                FALLBACK_WARNINGS="${FALLBACK_WARNINGS}- Component \`${component}\` from PR #${component_pr}: using \`${FALLBACK_TAG}\` (PR build not ready)\n"
+              fi
+
               TAG=${FALLBACK_TAG}
             fi
                 
@@ -232,6 +243,13 @@ spec:
         mkdir -p /var/workdir/snapshot
         cp "$temp_file" /var/workdir/snapshot/snapshot.json
         echo "Snapshot written to /var/workdir/snapshot/snapshot.json" >&2
+
+        # Output fallback warnings
+        if [[ -n "${FALLBACK_WARNINGS}" ]]; then
+          echo -e "${FALLBACK_WARNINGS}" > "$(results.fallback-warning.path)"
+        else
+          echo "" > "$(results.fallback-warning.path)"
+        fi
 
         # Cleanup
         rm -f "$temp_file"

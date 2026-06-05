@@ -261,9 +261,25 @@ spec:
       - name: pathInRepo
         value: early-gate/tasks/generate-snapshot-for-group-testing.yaml
 
-  - name: audit-snapshot
+  - name: post-group-testing-warning
     runAfter:
     - generate-snapshot
+    params:
+    - name: fallback-warning
+      value: $(tasks.generate-snapshot.results.fallback-warning)
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: earlygate2
+      - name: pathInRepo
+        value: early-gate/tasks/post-group-testing-warning.yaml
+
+  - name: audit-snapshot
+    runAfter:
+    - post-group-testing-warning
     params:
     - name: COMPONENTS
       value: $(tasks.generate-snapshot.results.group-components)
