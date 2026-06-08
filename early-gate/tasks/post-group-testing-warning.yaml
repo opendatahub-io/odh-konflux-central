@@ -58,11 +58,30 @@ spec:
 
         echo "Posting group testing summary to PR..."
 
-        # Check if there are fallbacks
+        # Check if there are fallbacks (trim whitespace first)
         HAS_FALLBACKS="false"
-        if [[ -n "${FALLBACK_WARNING}" ]]; then
+        TRIMMED_WARNING=$(echo "${FALLBACK_WARNING}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [[ -n "${TRIMMED_WARNING}" ]]; then
           HAS_FALLBACKS="true"
         fi
+
+        # First pass: extract unique PRs and map to repos (from component names)
+        # We'll infer repo from component name patterns in component_repo_map.json
+        COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+        COMPONENT_MAP=$(curl -sSf "${COMPONENT_MAP_URL}" 2>/dev/null || echo "{}")
+
+        declare -A PR_TO_REPO
+
+        while IFS='|' read -r pr comp tag status digest; do
+          if [[ -z "$pr" ]]; then continue; fi
+
+          # Find which repo this component belongs to
+          REPO=$(echo "${COMPONENT_MAP}" | jq -r --arg comp "${comp}" 'to_entries[] | select(.value | has($comp)) | .key' | head -1)
+
+          if [[ -n "$REPO" ]]; then
+            PR_TO_REPO[$pr]="$REPO"
+          fi
+        done <<< "${COMPONENT_TABLE}"
 
         # Build markdown table from TSV (PR|component|tag|status|digest)
         TABLE_HEADER="| PR | Component | Tag | Status | Digest |\n|---|---|---|---|---|\n"
@@ -71,13 +90,21 @@ spec:
         while IFS='|' read -r pr comp tag status digest; do
           if [[ -z "$pr" ]]; then continue; fi
 
+          # Make PR number a link if we know the repo
+          REPO="${PR_TO_REPO[$pr]}"
+          if [[ -n "$REPO" ]]; then
+            PR_LINK="[#${pr}](https://github.com/opendatahub-io/${REPO}/pull/${pr})"
+          else
+            PR_LINK="#${pr}"
+          fi
+
           if [[ "$status" == "ready" ]]; then
             STATUS_TEXT="PR build ready"
           else
             STATUS_TEXT="Using stable"
           fi
 
-          TABLE_ROWS="${TABLE_ROWS}| #${pr} | ${comp} | ${tag} | ${STATUS_TEXT} | ${digest} |\n"
+          TABLE_ROWS="${TABLE_ROWS}| ${PR_LINK} | ${comp} | ${tag} | ${STATUS_TEXT} | ${digest} |\n"
         done <<< "${COMPONENT_TABLE}"
 
         # Build comment
