@@ -8,21 +8,18 @@ Use this template to configure group testing for your PR.
 
 Copy this into your **leader PR description**:
 
-````markdown
+```markdown
 ## Group Testing
 This PR is tested together with related changes:
 
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/COLLABORATOR_REPO/pull/COLLABORATOR_PR_NUMBER
+early-gate-group-config
+https://github.com/opendatahub-io/COLLABORATOR_REPO/pull/COLLABORATOR_PR_NUMBER
 ```
-````
 
 **Important:**
-- ✅ **Only list collaborator PRs** (other repos' PRs) in the config
+- ✅ **Only list collaborator PRs** (other repos' PRs) - one URL per line
 - ✅ **Leader PR is automatic** - the PR where you add this config is always included
-- ❌ **Don't include the leader PR link** in the repos list (it's redundant)
+- ❌ **Don't include the leader PR link** (it's redundant)
 
 **Replace:**
 - `COLLABORATOR_REPO` with the collaborator repository name
@@ -34,18 +31,15 @@ repos:
 
 **In kserve PR #123 description:**
 
-````markdown
+```markdown
 ## Summary
 This PR updates the KServe API to support OAuth2 authentication.
 
 ## Group Testing
 This PR is tested together with related Feast changes:
 
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/feast/pull/456
-```
+early-gate-group-config
+https://github.com/opendatahub-io/feast/pull/456
 
 **What gets tested:**
 - ✅ This PR (kserve #123) - automatically included
@@ -59,16 +53,16 @@ repos:
 - [ ] Unit tests pass
 - [ ] Integration tests with Feast
 - [ ] OAuth2 flow end-to-end test
-````
+```
 
 ---
 
 ## Rules
 
-1. ✅ **Required marker:** `# early-gate-group-config` (exact match)
-2. ✅ **Required field:** `repos` (array with ≥1 entry)
+1. ✅ **Required marker:** `early-gate-group-config` (exact match)
+2. ✅ **PR URLs:** One per line after the marker
 3. ✅ **URL format:** `https://github.com/ORG/REPO/pull/NUMBER`
-4. ✅ **Valid YAML:** Use a YAML validator if unsure
+4. ✅ **Simple text:** No YAML, no formatting - just plain URLs
 
 ---
 
@@ -76,18 +70,15 @@ repos:
 
 For changes spanning 3+ repositories:
 
-````markdown
+```markdown
 ## Group Testing
 Testing authentication refactor across multiple services:
 
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/opendatahub-operator/pull/111
-  - https://github.com/opendatahub-io/kubeflow/pull/222
-  - https://github.com/opendatahub-io/notebook-controller/pull/333
+early-gate-group-config
+https://github.com/opendatahub-io/opendatahub-operator/pull/111
+https://github.com/opendatahub-io/kubeflow/pull/222
+https://github.com/opendatahub-io/notebook-controller/pull/333
 ```
-````
 
 ---
 
@@ -124,9 +115,9 @@ The group test runs automatically when you push to the **leader PR**.
 ## What Happens Behind the Scenes
 
 **Example: Config in kserve PR #123**
-```yaml
-repos:
-  - https://github.com/opendatahub-io/feast/pull/456
+```
+early-gate-group-config
+https://github.com/opendatahub-io/feast/pull/456
 ```
 
 **Pipeline execution:**
@@ -152,8 +143,8 @@ repos:
 ## Troubleshooting
 
 ### Config not detected?
-- Check for exact marker: `# early-gate-group-config`
-- Verify YAML syntax (indentation matters!)
+- Check for exact marker: `early-gate-group-config`
+- Verify URLs are on separate lines after marker
 - Ensure config is in PR description (not a comment)
 
 ### PR image not found?
@@ -183,14 +174,10 @@ gh pr create --repo opendatahub-io/feast --title "Update OAuth2 client"
 ### Day 2: Add Group Config
 Edit kserve PR #123 description to add:
 
-````markdown
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/kserve/pull/123
-  - https://github.com/opendatahub-io/feast/pull/456
+```markdown
+early-gate-group-config
+https://github.com/opendatahub-io/feast/pull/456
 ```
-````
 
 ### Day 3: Push Triggers Test
 ```bash

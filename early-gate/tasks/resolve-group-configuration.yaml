@@ -47,7 +47,7 @@ spec:
         echo "GITHUB_ORG=${GITHUB_ORG}" >&2
 
         # --- Constants ---
-        CONFIG_MARKER="# early-gate-group-config"
+        CONFIG_MARKER="early-gate-group-config"
         COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
 
         # --- Fetch component_repo_map.json (critical dependency) ---
@@ -152,50 +152,9 @@ spec:
         echo "✓ Group configuration marker found" >&2
         echo "true" > "$(results.has-group-config.path)"
 
-        # --- Extract YAML block ---
-        # Extract content between ```yaml and ``` after the marker
-        YAML_BLOCK=$(echo "${PR_BODY}" | awk "/${CONFIG_MARKER}/,/\`\`\`/" | grep -v '```' | grep -v "${CONFIG_MARKER}")
-
-        if [[ -z "${YAML_BLOCK}" ]]; then
-          echo "⚠️  WARNING: Config marker found but no valid YAML block" >&2
-          echo "   Falling back to single-PR mode" >&2
-          echo "false" > "$(results.has-group-config.path)"
-          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
-          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
-          exit 0
-        fi
-
-        echo "YAML block extracted:" >&2
-        echo "${YAML_BLOCK}" >&2
-
-        # --- Parse YAML to extract repo URLs ---
-        # Convert YAML to JSON using python (more reliable than yq for stdin)
-        YAML_JSON=$(python3 -c "import yaml, json, sys; print(json.dumps(yaml.safe_load(sys.stdin.read())))" <<< "${YAML_BLOCK}" 2>&1)
-
-        # Check if python parsing failed
-        if [[ $? -ne 0 ]]; then
-          echo "⚠️  WARNING: Failed to parse YAML with python: ${YAML_JSON}" >&2
-          echo "   Falling back to single-PR mode" >&2
-          echo "false" > "$(results.has-group-config.path)"
-          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
-          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
-          exit 0
-        fi
-
-        if [[ -z "${YAML_JSON}" || "${YAML_JSON}" == "null" ]]; then
-          echo "⚠️  WARNING: Failed to parse YAML configuration" >&2
-          echo "   Falling back to single-PR mode" >&2
-          echo "false" > "$(results.has-group-config.path)"
-          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
-          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
-          exit 0
-        fi
-
-        echo "Parsed YAML config:" >&2
-        echo "${YAML_JSON}" | jq '.' >&2
-
-        # --- Extract PR URLs from repos array ---
-        PR_URLS=$(echo "${YAML_JSON}" | jq -r '.repos[]? // empty')
+        # --- Extract PR URLs (simple format: one URL per line after marker) ---
+        # Extract all lines after the marker that look like GitHub PR URLs
+        PR_URLS=$(echo "${PR_BODY}" | awk "/${CONFIG_MARKER}/,0" | grep -E '^https://github\.com/[^/]+/[^/]+/pull/[0-9]+' || true)
 
         if [[ -z "${PR_URLS}" ]]; then
           echo "⚠️  WARNING: No PR URLs found in configuration" >&2
