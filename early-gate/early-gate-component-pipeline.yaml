@@ -141,7 +141,7 @@ spec:
     description: Quay tag used for image lookups by processors
   - name: enable-early-gate-testing
     type: string
-    default: "true"
+    default: "false"
     description: Triggers early gate test pipeline on comment /early-gate-test
 
   results:
