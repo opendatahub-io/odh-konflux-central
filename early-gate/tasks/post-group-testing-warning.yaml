@@ -4,10 +4,13 @@ metadata:
   name: post-group-testing-warning
 spec:
   description: |
-    Posts a warning comment to the PR when group testing components fall back to stable images
+    Posts a summary comment to the PR for group testing runs
   params:
     - name: fallback-warning
       description: Warning message from generate-snapshot (empty if no fallbacks)
+      type: string
+    - name: component-table
+      description: Component summary table (TSV format)
       type: string
     - name: pr-token-secret-name
       description: Name of the Kubernetes secret containing the GitHub token
@@ -18,7 +21,7 @@ spec:
       type: string
       default: commenter-token
   steps:
-    - name: post-warning
+    - name: post-summary
       image: quay.io/konflux-ci/konflux-test:stable
       env:
         - name: PR_NUMBER
@@ -35,6 +38,8 @@ spec:
               fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
         - name: FALLBACK_WARNING
           value: $(params.fallback-warning)
+        - name: COMPONENT_TABLE
+          value: $(params.component-table)
         - name: PR_GITHUB_TOKEN
           valueFrom:
             secretKeyRef:
@@ -45,46 +50,57 @@ spec:
         #!/bin/bash
         set -e
 
-        # Exit early if no warnings
-        if [[ -z "${FALLBACK_WARNING}" ]]; then
-          echo "No fallback warnings - skipping PR comment"
+        # Exit if no component table (not a group testing run)
+        if [[ -z "${COMPONENT_TABLE}" ]]; then
+          echo "No component table - not a group testing run"
           exit 0
         fi
 
-        echo "Posting group testing fallback warning to PR..."
+        echo "Posting group testing summary to PR..."
 
-        # Build comment body
-        COMMENT_BODY=$(cat <<EOF
-        ## ⚠️ Group Testing - Image Fallback Warning
+        # Check if there are fallbacks
+        HAS_FALLBACKS="false"
+        if [[ -n "${FALLBACK_WARNING}" ]]; then
+          HAS_FALLBACKS="true"
+        fi
 
-        Some components in your group testing configuration are using **stable images** instead of PR-specific images:
+        # Build markdown table from TSV (PR|component|tag|status|digest)
+        TABLE_HEADER="| PR | Component | Tag | Status | Digest |\n|---|---|---|---|---|\n"
+        TABLE_ROWS=""
 
-        ${FALLBACK_WARNING}
+        while IFS='|' read -r pr comp tag status digest; do
+          if [[ -z "$pr" ]]; then continue; fi
 
-        **Why?** The PR builds for these components haven't completed yet.
+          if [[ "$status" == "ready" ]]; then
+            STATUS_TEXT="PR build ready"
+          else
+            STATUS_TEXT="Using stable"
+          fi
 
-        **What to do:**
-        - ✅ Wait for all PR builds to complete
-        - ✅ Re-trigger this pipeline with \`/retest\` to test with actual PR images
-        - ℹ️ Tests will still run, but using stable images for the components listed above
+          TABLE_ROWS="${TABLE_ROWS}| #${pr} | ${comp} | ${tag} | ${STATUS_TEXT} | ${digest} |\n"
+        done <<< "${COMPONENT_TABLE}"
 
-        ---
-        <sub>🤖 Posted by Early-Gate Group Testing</sub>
-        EOF
-        )
+        # Build comment
+        if [[ "$HAS_FALLBACKS" == "true" ]]; then
+          TITLE="Group Testing Summary"
+          WARNING_NOTE="\n\nSome components fell back to stable images because PR builds have not completed yet. Re-trigger with /retest after all builds finish.\n"
+        else
+          TITLE="Group Testing Summary"
+          WARNING_NOTE=""
+        fi
 
-        # Post comment to PR
+        COMMENT_BODY="${TITLE}\n\nTesting multiple PRs together:\n\n${TABLE_HEADER}${TABLE_ROWS}${WARNING_NOTE}\n---\nPosted by Early-Gate Group Testing"
+
+        # Post to PR
         if [[ -z "${PR_GITHUB_TOKEN}" ]]; then
-          echo "⚠️ No GitHub token available, cannot post comment"
-          echo "Comment would have been:"
-          echo "${COMMENT_BODY}"
+          echo "No GitHub token available"
+          echo -e "Comment would have been:\n${COMMENT_BODY}"
           exit 0
         fi
 
         GITHUB_API_URL="https://api.github.com/repos/${REPO_ORG}/${REPO_NAME}/issues/${PR_NUMBER}/comments"
 
-        # Escape JSON properly
-        ESCAPED_BODY=$(echo "${COMMENT_BODY}" | jq -Rs .)
+        ESCAPED_BODY=$(echo -e "${COMMENT_BODY}" | jq -Rs .)
 
         RESPONSE=$(curl -s -X POST \
           -H "Authorization: token ${PR_GITHUB_TOKEN}" \
@@ -93,9 +109,7 @@ spec:
           -d "{\"body\": ${ESCAPED_BODY}}")
 
         if echo "${RESPONSE}" | jq -e '.id' &>/dev/null; then
-          echo "✓ Comment posted successfully"
-          echo "Comment ID: $(echo "${RESPONSE}" | jq -r '.id')"
+          echo "Comment posted successfully"
         else
-          echo "⚠️ Failed to post comment"
-          echo "Response: ${RESPONSE}"
+          echo "Failed to post comment: ${RESPONSE}"
         fi

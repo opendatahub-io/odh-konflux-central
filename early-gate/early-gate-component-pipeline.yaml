@@ -267,6 +267,8 @@ spec:
     params:
     - name: fallback-warning
       value: $(tasks.generate-snapshot.results.fallback-warning)
+    - name: component-table
+      value: $(tasks.generate-snapshot.results.component-table)
     taskRef:
       resolver: git
       params:

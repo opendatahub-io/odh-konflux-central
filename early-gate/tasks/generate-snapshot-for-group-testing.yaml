@@ -36,6 +36,8 @@ spec:
     name: group-components
   - description: Warning message if any components fell back to stable (empty if all PRs found)
     name: fallback-warning
+  - description: Component summary table for PR comment (TSV format - PR component tag status digest)
+    name: component-table
   volumes:
   - name: workdir
     emptyDir: {}
@@ -97,8 +99,9 @@ spec:
         temp_file=$(mktemp)
         echo "{}" > "$temp_file"
 
-        # Track fallback warnings
+        # Track fallback warnings and component table
         FALLBACK_WARNINGS=""
+        COMPONENT_TABLE=""
 
         # Use CURRENT_PR_NUMBER if set, otherwise fall back to PR_NUMBER from labels
         DEFAULT_PR_NUMBER="${CURRENT_PR_NUMBER:-${PR_NUMBER}}"
@@ -128,8 +131,10 @@ spec:
             echo "repo_path=${repo_path}"
 
             # Check if PR-specific image exists
+            IMAGE_STATUS=""
             if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
               echo "✓ Found image with tag ${TAG}"
+              IMAGE_STATUS="ready"
             else
               echo "⚠️  WARNING: Component '${component}' does not have PR image for tag ${TAG}" >&2
               echo "   Quay query returned: 404 Not Found" >&2
@@ -143,6 +148,7 @@ spec:
               fi
 
               TAG=${FALLBACK_TAG}
+              IMAGE_STATUS="fallback"
             fi
                 
             
@@ -232,6 +238,15 @@ spec:
                '. + {($key): {image: $image, "git.url": $giturl, "git.commit": $gitcommit, "image_tag": $image_tag}}' \
                "$temp_file" > "${temp_file}.tmp" && mv "${temp_file}.tmp" "$temp_file"
 
+            # Add to component table for PR comment (only for group testing components)
+            if [[ "$value_type" == "object" ]]; then
+              SHORT_DIGEST=$(echo "$manifest_digest" | cut -c 1-12)
+              if [[ -z "$SHORT_DIGEST" ]]; then
+                SHORT_DIGEST="N/A"
+              fi
+              COMPONENT_TABLE="${COMPONENT_TABLE}${component_pr}|${component}|${TAG}|${IMAGE_STATUS}|${SHORT_DIGEST}\n"
+            fi
+
             echo "" >&2
         done < <(echo "$json_string" | jq -r 'to_entries[] | @base64')
 
@@ -250,6 +265,9 @@ spec:
         else
           echo "" > "$(results.fallback-warning.path)"
         fi
+
+        # Output component table
+        echo -e "${COMPONENT_TABLE}" > "$(results.component-table.path)"
 
         # Cleanup
         rm -f "$temp_file"
