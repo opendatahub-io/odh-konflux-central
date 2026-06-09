@@ -24,3 +24,5 @@ config:
       early-gate-enabled: true
     MLServer:
       early-gate-enabled: true
+    data-science-pipelines:
+      early-gate-enabled: true
