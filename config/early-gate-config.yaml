@@ -24,3 +24,7 @@ config:
       early-gate-enabled: true
     MLServer:
       early-gate-enabled: true
+    odh-model-controller:
+      early-gate-enabled: true
+      additional-branches:
+        - incubating
