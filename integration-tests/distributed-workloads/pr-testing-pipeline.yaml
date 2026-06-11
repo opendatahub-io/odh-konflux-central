@@ -1,15 +1,12 @@
 ---
 apiVersion: tekton.dev/v1
-kind: PipelineRun
+kind: Pipeline
 metadata:
   name: odh-pr-test-distributed-workloads
   annotations:
     pipelinesascode.tekton.dev/on-event: "[pull_request]"
     pipelinesascode.tekton.dev/on-target-branch: "[main, stable]"
 spec:
-  timeouts:
-    pipeline: 1h
-  pipelineSpec:
     description: |
       An integration test which provisions an ephemeral Hypershift cluster, deploys the Kubeflow
       Trainer with the built distributed-workloads runtime images from a Konflux snapshot and

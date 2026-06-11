@@ -1,13 +1,9 @@
 ---
 apiVersion: tekton.dev/v1
-kind: PipelineRun
+kind: Pipeline
 metadata:
   name: odh-model-controller-e2e-test
 spec:
-  timeouts:
-    pipeline: 4h0m0s
-    tasks: 3h
-  pipelineSpec:
     description: |
       An integration test which provisions an ephemeral Hypershift cluster, deploys opendatahub-operator
       from a Konflux snapshot and runs the e2e tests against it.
