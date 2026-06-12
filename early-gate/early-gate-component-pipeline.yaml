@@ -265,6 +265,8 @@ spec:
     runAfter:
     - generate-snapshot
     params:
+    - name: has-group-config
+      value: $(tasks.resolve-group-configuration.results.has-group-config)
     - name: fallback-warning
       value: $(tasks.generate-snapshot.results.fallback-warning)
     - name: component-table

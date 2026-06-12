@@ -6,6 +6,9 @@ spec:
   description: |
     Posts a summary comment to the PR for group testing runs
   params:
+    - name: has-group-config
+      description: Whether this is a group testing run (true/false)
+      type: string
     - name: fallback-warning
       description: Warning message from generate-snapshot (empty if no fallbacks)
       type: string
@@ -40,6 +43,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
+        - name: HAS_GROUP_CONFIG
+          value: $(params.has-group-config)
         - name: FALLBACK_WARNING
           value: $(params.fallback-warning)
         - name: COMPONENT_TABLE
@@ -56,9 +61,16 @@ spec:
         #!/bin/bash
         set -e
 
-        # Exit if no component table (not a group testing run)
+        # Exit if not a group testing run
+        if [[ "${HAS_GROUP_CONFIG}" != "true" ]]; then
+          echo "Not a group testing run (has-group-config=${HAS_GROUP_CONFIG})"
+          echo "Skipping PR comment"
+          exit 0
+        fi
+
+        # Exit if no component table
         if [[ -z "${COMPONENT_TABLE}" ]]; then
-          echo "No component table - not a group testing run"
+          echo "No component table - skipping PR comment"
           exit 0
         fi
 
