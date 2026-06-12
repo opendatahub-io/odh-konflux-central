@@ -12,6 +12,10 @@ spec:
     - name: component-table
       description: Component summary table (TSV format)
       type: string
+    - name: invalid-repo-warnings
+      description: Warning messages for repos not found in component_repo_map.json
+      type: string
+      default: ""
     - name: pr-token-secret-name
       description: Name of the Kubernetes secret containing the GitHub token
       type: string
@@ -40,6 +44,8 @@ spec:
           value: $(params.fallback-warning)
         - name: COMPONENT_TABLE
           value: $(params.component-table)
+        - name: INVALID_REPO_WARNINGS
+          value: $(params.invalid-repo-warnings)
         - name: PR_GITHUB_TOKEN
           valueFrom:
             secretKeyRef:
@@ -110,13 +116,20 @@ spec:
         # Build comment
         if [[ "$HAS_FALLBACKS" == "true" ]]; then
           TITLE="Group Testing Summary"
-          WARNING_NOTE="\n\nSome components fell back to stable images because PR builds have not completed yet. Re-trigger with /retest after all builds finish.\n"
+          WARNING_NOTE="\n\n⚠️ Some components fell back to stable images because PR builds have not completed yet. Re-trigger with /retest after all builds finish.\n"
         else
           TITLE="Group Testing Summary"
           WARNING_NOTE=""
         fi
 
-        COMMENT_BODY="${TITLE}\n\nTesting multiple PRs together:\n\n${TABLE_HEADER}${TABLE_ROWS}${WARNING_NOTE}\n---\nPosted by Early-Gate Group Testing"
+        # Add invalid repo warnings if any
+        INVALID_REPO_NOTE=""
+        TRIMMED_INVALID_WARNINGS=$(echo "${INVALID_REPO_WARNINGS}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [[ -n "${TRIMMED_INVALID_WARNINGS}" ]]; then
+          INVALID_REPO_NOTE="\n\n### Configuration Warnings\n\n${INVALID_REPO_WARNINGS}\n"
+        fi
+
+        COMMENT_BODY="${TITLE}\n\nTesting multiple PRs together:\n\n${TABLE_HEADER}${TABLE_ROWS}${WARNING_NOTE}${INVALID_REPO_NOTE}\n---\nPosted by Early-Gate Group Testing"
 
         # Post to PR
         if [[ -z "${PR_GITHUB_TOKEN}" ]]; then

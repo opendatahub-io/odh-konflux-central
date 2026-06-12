@@ -63,6 +63,8 @@ https://github.com/opendatahub-io/feast/pull/456
 2. ✅ **PR URLs:** One per line after the marker
 3. ✅ **URL format:** `https://github.com/ORG/REPO/pull/NUMBER`
 4. ✅ **Simple text:** No YAML, no formatting - just plain URLs
+5. ✅ **Config block ends at:** Next `##` heading OR blank line (whichever comes first)
+6. ⚠️ **Invalid repos:** PRs from repos not in early-gate will trigger a warning but won't fail the pipeline
 
 ---
 
@@ -94,6 +96,7 @@ https://github.com/opendatahub-io/notebook-controller/pull/333
 - Add config to multiple PRs in the group (choose one leader)
 - Include PRs from outside `opendatahub-io` org (not supported yet)
 - Leave stale configs in merged PRs
+- Put other PR links after the config block without separating with `##` heading or blank line
 
 ---
 
@@ -146,6 +149,13 @@ https://github.com/opendatahub-io/feast/pull/456
 - Check for exact marker: `early-gate-group-config`
 - Verify URLs are on separate lines after marker
 - Ensure config is in PR description (not a comment)
+- Make sure config block ends with `##` heading or blank line
+
+### Invalid repo warning?
+- ⚠️ "Repo X is not configured for early-gate testing and was skipped"
+- This means the PR's repository is not in the early-gate system
+- The pipeline continues with valid repos only
+- Check the repo name in the component mapping
 
 ### PR image not found?
 - Check that PR builds have completed

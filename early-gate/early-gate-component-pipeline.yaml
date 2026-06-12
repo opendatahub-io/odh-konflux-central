@@ -269,6 +269,8 @@ spec:
       value: $(tasks.generate-snapshot.results.fallback-warning)
     - name: component-table
       value: $(tasks.generate-snapshot.results.component-table)
+    - name: invalid-repo-warnings
+      value: $(tasks.resolve-group-configuration.results.invalid-repo-warnings)
     taskRef:
       resolver: git
       params:

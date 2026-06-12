@@ -11,6 +11,8 @@ spec:
       description: Resolved components JSON with PR metadata for group testing
     - name: has-group-config
       description: true if group config found, false otherwise
+    - name: invalid-repo-warnings
+      description: Warning messages for repos not found in component_repo_map.json
   volumes:
     - name: workdir
       emptyDir: {}
@@ -47,8 +49,9 @@ spec:
         echo "GITHUB_ORG=${GITHUB_ORG}" >&2
 
         # --- Constants ---
-        CONFIG_MARKER="early-gate-group-config"
+        EARLYGATE_SECTION_PATTERN="earlygate"  # Case-insensitive search in ## headings
         COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+        ALLOWED_ORG="opendatahub-io"  # Only accept PRs from this GitHub org
 
         # --- Fetch component_repo_map.json (critical dependency) ---
         echo "Fetching component_repo_map.json..." >&2
@@ -124,6 +127,7 @@ spec:
           echo "⚠️  WARNING: Failed to fetch PR description from GitHub API" >&2
           echo "   Falling back to single-PR mode" >&2
           echo "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
           # Return components for current repo only
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           echo -n "${COMPONENTS}" > "$(results.group-components.path)"
@@ -133,12 +137,15 @@ spec:
         PR_BODY=$(echo "${PR_DATA}" | jq -r '.body // ""')
         echo "PR description fetched successfully" >&2
 
-        # --- Search for group config marker ---
-        echo "Searching for group configuration marker..." >&2
-        if ! echo "${PR_BODY}" | grep -q "${CONFIG_MARKER}"; then
-          echo "No group configuration found for this PR" >&2
+        # --- Search for Early Gate section (## heading containing "earlygate") ---
+        echo "Searching for Early Gate section in PR description..." >&2
+
+        # Check if there's a ## heading containing "earlygate" (case-insensitive)
+        if ! echo "${PR_BODY}" | grep -qi "^##.*${EARLYGATE_SECTION_PATTERN}"; then
+          echo "No Early Gate section found in PR description" >&2
           echo "Using single-PR mode (repo: ${REPO_NAME}, pr: ${PR_NUMBER})" >&2
           echo "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
           # Return components for current repo only
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           if [[ -z "${COMPONENTS}" || "${COMPONENTS}" == "null" ]]; then
@@ -149,17 +156,22 @@ spec:
           exit 0
         fi
 
-        echo "✓ Group configuration marker found" >&2
+        echo "✓ Early Gate section found" >&2
         echo "true" > "$(results.has-group-config.path)"
 
-        # --- Extract PR URLs (simple format: one URL per line after marker) ---
-        # Extract all lines after the marker that look like GitHub PR URLs
-        PR_URLS=$(echo "${PR_BODY}" | awk "/${CONFIG_MARKER}/,0" | grep -E '^https://github\.com/[^/]+/[^/]+/pull/[0-9]+' || true)
+        # --- Extract PR URLs from Early Gate section ---
+        # Find the section and extract URLs until the next ## heading
+        PR_URLS=$(echo "${PR_BODY}" | awk -v IGNORECASE=1 "
+          /^##.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
+          found && /^##/ { exit }
+          found && /^https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/ { print }
+        " || true)
 
         if [[ -z "${PR_URLS}" ]]; then
           echo "⚠️  WARNING: No PR URLs found in configuration" >&2
           echo "   Falling back to single-PR mode" >&2
           echo "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           echo -n "${COMPONENTS}" > "$(results.group-components.path)"
           exit 0
@@ -174,6 +186,9 @@ spec:
         echo "Step 1: Adding leader PR components (${REPO_NAME} #${PR_NUMBER})..." >&2
         TEMP_COMPONENTS=$(mktemp)
         echo "{}" > "${TEMP_COMPONENTS}"
+
+        # Initialize warnings tracking
+        WARNINGS=""
 
         # Get leader PR components with PR metadata
         LEADER_COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
@@ -219,12 +234,36 @@ spec:
           echo "  Repo: ${REPO}" >&2
           echo "  PR: ${PR}" >&2
 
+          # Security check: Only allow PRs from opendatahub-io organization
+          if [[ "${ORG}" != "${ALLOWED_ORG}" ]]; then
+            echo "⚠️  WARNING: PR from unauthorized organization: ${ORG}" >&2
+            echo "   Only PRs from ${ALLOWED_ORG} are allowed" >&2
+            echo "   Skipping this entry" >&2
+            # Track warning for PR comment
+            WARNING_MSG="⚠️ PR from \`${ORG}/${REPO}\` (#${PR}) was skipped - only PRs from \`${ALLOWED_ORG}\` organization are allowed."
+            if [[ -z "${WARNINGS}" ]]; then
+              WARNINGS="${WARNING_MSG}"
+            else
+              WARNINGS="${WARNINGS}
+${WARNING_MSG}"
+            fi
+            continue
+          fi
+
           # Lookup components for this repo in component_repo_map.json
           REPO_COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO}" '.[$repo]')
 
           if [[ -z "${REPO_COMPONENTS}" || "${REPO_COMPONENTS}" == "null" ]]; then
             echo "⚠️  WARNING: No components found for repo: ${REPO}" >&2
             echo "   Skipping this repo" >&2
+            # Track warning for PR comment
+            WARNING_MSG="⚠️ Repo \`${ORG}/${REPO}\` from PR #${PR} is not configured for early-gate testing and was skipped."
+            if [[ -z "${WARNINGS}" ]]; then
+              WARNINGS="${WARNING_MSG}"
+            else
+              WARNINGS="${WARNINGS}
+${WARNING_MSG}"
+            fi
             continue
           fi
 
@@ -261,12 +300,21 @@ spec:
           echo "⚠️  WARNING: No valid components resolved from group configuration" >&2
           echo "   Falling back to single-PR mode" >&2
           echo "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           echo -n "${COMPONENTS}" > "$(results.group-components.path)"
         else
           echo "✓ Group components resolved successfully:" >&2
           echo "${FINAL_COMPONENTS}" | jq '.' >&2
           echo -n "${FINAL_COMPONENTS}" > "$(results.group-components.path)"
+
+          # Output warnings if any
+          if [[ -n "${WARNINGS}" ]]; then
+            echo "" >&2
+            echo "⚠️  Invalid repo warnings:" >&2
+            echo "${WARNINGS}" >&2
+          fi
+          echo -n "${WARNINGS}" > "$(results.invalid-repo-warnings.path)"
         fi
 
         # Cleanup

@@ -8,18 +8,27 @@ A system that lets you test multiple related PRs together in early-gate pipeline
 
 ### 1. **User adds config to PR description**
 ```
+## Group Testing
 early-gate-group-config
 https://github.com/opendatahub-io/kserve/pull/1505
 https://github.com/opendatahub-io/data-science-pipelines-operator/pull/1061
+
+## Other Section  ← Config block stops here
 ```
+
+**Config block boundaries:**
+- Starts at `early-gate-group-config` marker
+- Ends at next `##` heading OR blank line
+- Only URLs within this block are parsed
 
 ### 2. **Pipeline detects and resolves**
 When PR pipeline triggers, it:
 - Reads PR description from GitHub API
 - Finds the marker `early-gate-group-config`
-- Extracts collaborator PR URLs
+- Extracts collaborator PR URLs (stops at next `##` or blank line)
 - **Automatically includes leader PR** (the one with the config)
 - Looks up components for each repo in `component_repo_map.json`
+- **Warns if repo not found** (skips that PR, continues with valid ones)
 
 ### 3. **Builds component list with PR metadata**
 ```json
@@ -50,7 +59,9 @@ Shows table with:
 - Status (ready or fallback)
 - Image digests
 
-Warns **only if** some components fell back to stable.
+**Warnings (shown only when applicable):**
+- Some components fell back to stable (PR builds not ready)
+- Some repos not configured for early-gate (invalid repos skipped)
 
 ---
 
@@ -60,9 +71,10 @@ Warns **only if** some components fell back to stable.
 
 **`resolve-group-configuration.yaml`**
 - Fetches PR description from GitHub
-- Parses config marker and PR URLs
+- Parses config marker and PR URLs (stops at `##` heading or blank line)
 - Maps PR URLs → repos → components
-- Outputs: resolved component JSON with PR metadata
+- Tracks repos not found in component mapping
+- Outputs: resolved component JSON with PR metadata + invalid repo warnings
 
 **`post-group-testing-warning.yaml`**
 - Receives component table and fallback warnings
