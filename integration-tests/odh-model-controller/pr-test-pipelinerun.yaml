@@ -110,6 +110,7 @@ spec:
               echo -n "${GIT_ORG}" > "$(results.git-org.path)"
               echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
       - name: provision-eaas-space-kserve
+        timeout: "10m"
         runAfter:
           - check-prerequisites
         taskRef:
@@ -131,6 +132,7 @@ spec:
             operator: notin
             values: ["push"]
       - name: provision-cluster-kserve
+        timeout: "4h0m0s"
         runAfter:
           - provision-eaas-space-kserve
         taskSpec:
@@ -188,6 +190,7 @@ spec:
 
 
       - name: e2e-odh-kserve
+        timeout: "2h0m0s"
         runAfter:
           - provision-cluster-kserve
         params:
@@ -346,6 +349,7 @@ spec:
 
 
       - name: provision-eaas-space-llmisvc
+        timeout: "10m"
         runAfter:
           - check-prerequisites
         taskRef:
@@ -367,6 +371,7 @@ spec:
             operator: in
             values: ["pull_request", "retest-all-comment", "on-comment", "test-comment"]
       - name: provision-cluster-llmisvc
+        timeout: "4h0m0s"
         runAfter:
           - provision-eaas-space-llmisvc
         taskSpec:
@@ -424,6 +429,7 @@ spec:
 
 
       - name: e2e-odh-llmisvc
+        timeout: "2h0m0s"
         runAfter:
           - provision-cluster-llmisvc
         params:

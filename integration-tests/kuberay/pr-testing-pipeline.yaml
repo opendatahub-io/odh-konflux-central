@@ -85,6 +85,7 @@ spec:
                 echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
 
       - name: provision-eaas-space
+        timeout: "10m"
         runAfter:
           - audit-snapshot
         taskRef:
@@ -103,6 +104,7 @@ spec:
             value: $(context.pipelineRun.uid)
 
       - name: provision-cluster
+        timeout: "4h0m0s"
         runAfter:
           - provision-eaas-space
         taskSpec:
@@ -155,7 +157,7 @@ spec:
                   value: m5.2xlarge
 
       - name: deploy-and-test
-        timeout: 90m
+        timeout: "4h0m0s"
         runAfter:
           - provision-cluster
         taskSpec:

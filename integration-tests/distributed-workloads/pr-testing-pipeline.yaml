@@ -93,6 +93,7 @@ spec:
                 echo -n "${TRIGGER_COMPONENT}" > "$(results.trigger-component.path)"
 
       - name: provision-eaas-space
+        timeout: "10m"
         runAfter:
           - audit-snapshot
         taskRef:
@@ -110,6 +111,7 @@ spec:
           - name: ownerUid
             value: $(context.pipelineRun.uid)
       - name: provision-cluster
+        timeout: "4h0m0s"
         runAfter:
           - provision-eaas-space
         taskSpec:
@@ -161,7 +163,7 @@ spec:
                 - name: instanceType
                   value: m5.2xlarge
       - name: deploy-and-test
-        timeout: 50m
+        timeout: "4h0m0s"
         runAfter:
           - provision-cluster
         taskSpec:
