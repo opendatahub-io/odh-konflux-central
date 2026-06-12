@@ -244,8 +244,7 @@ spec:
             if [[ -z "${WARNINGS}" ]]; then
               WARNINGS="${WARNING_MSG}"
             else
-              WARNINGS="${WARNINGS}
-${WARNING_MSG}"
+              WARNINGS="${WARNINGS}"$'\n'"${WARNING_MSG}"
             fi
             continue
           fi
@@ -261,8 +260,7 @@ ${WARNING_MSG}"
             if [[ -z "${WARNINGS}" ]]; then
               WARNINGS="${WARNING_MSG}"
             else
-              WARNINGS="${WARNINGS}
-${WARNING_MSG}"
+              WARNINGS="${WARNINGS}"$'\n'"${WARNING_MSG}"
             fi
             continue
           fi
