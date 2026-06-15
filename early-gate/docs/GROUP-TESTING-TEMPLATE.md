@@ -9,10 +9,7 @@ Use this template to configure group testing for your PR.
 Copy this into your **leader PR description**:
 
 ```markdown
-## Group Testing
-This PR is tested together with related changes:
-
-early-gate-group-config
+## Early Gate Testing
 https://github.com/opendatahub-io/COLLABORATOR_REPO/pull/COLLABORATOR_PR_NUMBER
 ```
 
@@ -35,10 +32,7 @@ https://github.com/opendatahub-io/COLLABORATOR_REPO/pull/COLLABORATOR_PR_NUMBER
 ## Summary
 This PR updates the KServe API to support OAuth2 authentication.
 
-## Group Testing
-This PR is tested together with related Feast changes:
-
-early-gate-group-config
+## Early Gate Testing
 https://github.com/opendatahub-io/feast/pull/456
 
 **What gets tested:**
@@ -59,12 +53,13 @@ https://github.com/opendatahub-io/feast/pull/456
 
 ## Rules
 
-1. ✅ **Required marker:** `early-gate-group-config` (exact match)
-2. ✅ **PR URLs:** One per line after the marker
-3. ✅ **URL format:** `https://github.com/ORG/REPO/pull/NUMBER`
+1. ✅ **Required heading:** `## Early Gate Testing` (or any heading containing "earlygate", case-insensitive)
+2. ✅ **PR URLs:** One per line under the heading
+3. ✅ **URL format:** `https://github.com/opendatahub-io/REPO/pull/NUMBER`
 4. ✅ **Simple text:** No YAML, no formatting - just plain URLs
-5. ✅ **Config block ends at:** Next `##` heading OR blank line (whichever comes first)
-6. ⚠️ **Invalid repos:** PRs from repos not in early-gate will trigger a warning but won't fail the pipeline
+5. ✅ **Config block ends at:** Next `##` heading
+6. ⚠️ **Only ODH repos:** Only PRs from `opendatahub-io` organization are allowed
+7. ⚠️ **Invalid repos:** PRs from repos not configured for early-gate will trigger a warning
 
 ---
 
@@ -73,10 +68,7 @@ https://github.com/opendatahub-io/feast/pull/456
 For changes spanning 3+ repositories:
 
 ```markdown
-## Group Testing
-Testing authentication refactor across multiple services:
-
-early-gate-group-config
+## Early Gate Testing
 https://github.com/opendatahub-io/opendatahub-operator/pull/111
 https://github.com/opendatahub-io/kubeflow/pull/222
 https://github.com/opendatahub-io/notebook-controller/pull/333
