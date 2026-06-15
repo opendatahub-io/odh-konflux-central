@@ -775,6 +775,7 @@ spec:
     runAfter:
     - validate-fbc
     - apply-tags-fbc
+    - generate-snapshot
     params:
     - name: catalog-image-url
       value: $(tasks.build-fbc-container.results.IMAGE_URL)
