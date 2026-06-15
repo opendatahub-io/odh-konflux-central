@@ -33,7 +33,7 @@ spec:
         echo "PR_NUMBER=${PR_NUMBER}" >&2
         echo "REPO_NAME=${REPO_NAME}" >&2
 
-        EARLYGATE_SECTION_PATTERN="earlygate"
+        EARLYGATE_SECTION_PATTERN="early.*gate"  # Matches "earlygate", "early gate", "early-gate", etc.
         ALLOWED_ORG="opendatahub-io"
 
         # --- Fetch PR description from GitHub API ---
