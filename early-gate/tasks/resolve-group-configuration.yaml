@@ -13,6 +13,8 @@ spec:
       description: true if group config found, false otherwise
     - name: invalid-repo-warnings
       description: Warning messages for repos not found in component_repo_map.json
+    - name: format-help-warning
+      description: Helpful message when earlygate is mentioned incorrectly or PR URLs found outside section
   volumes:
     - name: workdir
       emptyDir: {}
@@ -128,6 +130,7 @@ spec:
           echo "   Falling back to single-PR mode" >&2
           echo "false" > "$(results.has-group-config.path)"
           echo -n "" > "$(results.invalid-repo-warnings.path)"
+          echo -n "" > "$(results.format-help-warning.path)"
           # Return components for current repo only
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           echo -n "${COMPONENTS}" > "$(results.group-components.path)"
@@ -146,6 +149,24 @@ spec:
           echo "Using single-PR mode (repo: ${REPO_NAME}, pr: ${PR_NUMBER})" >&2
           echo "false" > "$(results.has-group-config.path)"
           echo -n "" > "$(results.invalid-repo-warnings.path)"
+
+          # --- Check for common mistakes and provide helpful guidance ---
+          FORMAT_HELP=""
+
+          # Check 1: "earlygate" mentioned but not in ## heading
+          if echo "${PR_BODY}" | grep -qi "${EARLYGATE_SECTION_PATTERN}"; then
+            echo "Found 'earlygate' mention but not in proper ## heading format" >&2
+            FORMAT_HELP="## ⚠️ Group Testing Format Issue"$'\n\n'"Found \`earlygate\` mentioned in your PR description, but it's not in the correct format for group testing."$'\n\n'"**To enable group testing, use this format:**"$'\n\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"**Requirements:**"$'\n'"- Must be a \`##\` heading containing \"earlygate\""$'\n'"- Only PRs from \`opendatahub-io\` organization"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
+          else
+            # Check 2: GitHub PR URLs found in description
+            if echo "${PR_BODY}" | grep -q "https://github.com/opendatahub-io/[^/]*/pull/[0-9]"; then
+              echo "Found opendatahub-io PR URLs but not marked for group testing" >&2
+              FORMAT_HELP="## ℹ️ Group Testing Available"$'\n\n'"Found GitHub PR URLs in your description. If you want to test these PRs together, use group testing:"$'\n\n'"**Format:**"$'\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
+            fi
+          fi
+
+          echo -n "${FORMAT_HELP}" > "$(results.format-help-warning.path)"
+
           # Return components for current repo only
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           if [[ -z "${COMPONENTS}" || "${COMPONENTS}" == "null" ]]; then
@@ -158,6 +179,7 @@ spec:
 
         echo "✓ Early Gate section found" >&2
         echo "true" > "$(results.has-group-config.path)"
+        echo -n "" > "$(results.format-help-warning.path)"  # No format help needed
 
         # --- Extract PR URLs from Early Gate section ---
         # Find the section and extract URLs until the next ## heading
@@ -168,10 +190,12 @@ spec:
         " || true)
 
         if [[ -z "${PR_URLS}" ]]; then
-          echo "⚠️  WARNING: No PR URLs found in configuration" >&2
+          echo "⚠️  WARNING: No PR URLs found in Early Gate section" >&2
           echo "   Falling back to single-PR mode" >&2
           echo "false" > "$(results.has-group-config.path)"
           echo -n "" > "$(results.invalid-repo-warnings.path)"
+          FORMAT_HELP="## ⚠️ Empty Early Gate Section"$'\n\n'"Found an Early Gate section in your PR description, but no PR URLs were listed."$'\n\n'"**Add PR URLs like this:**"$'\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
+          echo -n "${FORMAT_HELP}" > "$(results.format-help-warning.path)"
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           echo -n "${COMPONENTS}" > "$(results.group-components.path)"
           exit 0
@@ -299,6 +323,7 @@ spec:
           echo "   Falling back to single-PR mode" >&2
           echo "false" > "$(results.has-group-config.path)"
           echo -n "" > "$(results.invalid-repo-warnings.path)"
+          echo -n "" > "$(results.format-help-warning.path)"
           COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           echo -n "${COMPONENTS}" > "$(results.group-components.path)"
         else

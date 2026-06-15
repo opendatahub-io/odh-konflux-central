@@ -272,6 +272,8 @@ spec:
       value: $(tasks.generate-snapshot.results.component-table)
     - name: invalid-repo-warnings
       value: $(tasks.resolve-group-configuration.results.invalid-repo-warnings)
+    - name: format-help-warning
+      value: $(tasks.resolve-group-configuration.results.format-help-warning)
     taskRef:
       resolver: git
       params:
