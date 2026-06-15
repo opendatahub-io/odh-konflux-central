@@ -111,11 +111,27 @@ spec:
         value: early-gate/tasks/check-prerequisites.yaml
 
   # --------------------------------------------------------------------------
-  # 2. Check for ongoing jobs — scan PR comments for idempotency
+  # 2. Extract group repositories — read Early Gate section from PR description
+  # --------------------------------------------------------------------------
+  - name: extract-group-repos
+    runAfter:
+    - check-prerequisites
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: earlygate2
+      - name: pathInRepo
+        value: early-gate/tasks/extract-group-repos.yaml
+
+  # --------------------------------------------------------------------------
+  # 3. Check for ongoing jobs — scan PR comments for idempotency
   # --------------------------------------------------------------------------
   - name: check-ongoing-jobs
     runAfter:
-    - check-prerequisites
+    - extract-group-repos
     taskRef:
       resolver: git
       params:
@@ -144,7 +160,7 @@ spec:
       value: $(params.jenkins-url-secret-key)
 
   # --------------------------------------------------------------------------
-  # 3. Trigger test pipeline — dispatch GitHub workflow, post queue-url-comment
+  # 4. Trigger test pipeline — dispatch GitHub workflow, post queue-url-comment
   #    Skipped when a previous run left an active queue-url or job-url comment
   # --------------------------------------------------------------------------
   - name: trigger-test-pipeline
@@ -182,9 +198,11 @@ spec:
       value: $(params.jenkins-url-secret-key)
     - name: delete-intermediate-comments
       value: $(params.delete-intermediate-comments)
+    - name: repositories
+      value: $(tasks.extract-group-repos.results.repositories)
 
   # --------------------------------------------------------------------------
-  # 4a. Monitor (fresh) — runs after trigger-test-pipeline for new jobs
+  # 5a. Monitor (fresh) — runs after trigger-test-pipeline for new jobs
   #     Receives queue-url and correlation-id from trigger-test-pipeline results
   # --------------------------------------------------------------------------
   - name: monitor-fresh
@@ -235,7 +253,7 @@ spec:
       value: $(params.jenkins-url-secret-key)
 
   # --------------------------------------------------------------------------
-  # 4b. Monitor (resume) — runs when check-ongoing-jobs found an active job
+  # 5b. Monitor (resume) — runs when check-ongoing-jobs found an active job
   #     Receives job-url and correlation-id from check-ongoing-jobs results
   # --------------------------------------------------------------------------
   - name: monitor-resume

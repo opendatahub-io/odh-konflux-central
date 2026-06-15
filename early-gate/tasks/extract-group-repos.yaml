@@ -1,0 +1,98 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: extract-group-repos
+spec:
+  description: |
+    Extracts repository names from Early Gate Testing section in PR description
+    for passing to Jenkins trigger workflow
+  results:
+    - name: repositories
+      description: Comma-separated list of repository names (leader + collaborators)
+    - name: has-group-config
+      description: true if group config found, false otherwise
+  steps:
+    - name: extract-repos
+      image: quay.io/konflux-ci/konflux-test:stable
+      env:
+        - name: PR_NUMBER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+        - name: REPO_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
+        - name: GITHUB_ORG
+          value: "opendatahub-io"
+      script: |
+        #!/bin/bash
+        set -e
+
+        echo "=== Extract Group Repos Task ===" >&2
+        echo "PR_NUMBER=${PR_NUMBER}" >&2
+        echo "REPO_NAME=${REPO_NAME}" >&2
+
+        EARLYGATE_SECTION_PATTERN="earlygate"
+        ALLOWED_ORG="opendatahub-io"
+
+        # --- Fetch PR description from GitHub API ---
+        echo "Fetching PR description from GitHub..." >&2
+        GITHUB_API_URL="https://api.github.com/repos/${GITHUB_ORG}/${REPO_NAME}/pulls/${PR_NUMBER}"
+
+        # Unauthenticated call (rate limited but sufficient for most cases)
+        PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>&1 || echo "")
+
+        if [[ -z "${PR_DATA}" ]]; then
+          echo "Failed to fetch PR description" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          echo -n "${REPO_NAME}" > "$(results.repositories.path)"
+          exit 0
+        fi
+
+        PR_BODY=$(echo "${PR_DATA}" | jq -r '.body // ""')
+
+        # --- Check for Early Gate section ---
+        if ! echo "${PR_BODY}" | grep -qi "^##.*${EARLYGATE_SECTION_PATTERN}"; then
+          echo "No Early Gate section found" >&2
+          echo "false" > "$(results.has-group-config.path)"
+          echo -n "${REPO_NAME}" > "$(results.repositories.path)"
+          exit 0
+        fi
+
+        echo "✓ Early Gate section found" >&2
+        echo "true" > "$(results.has-group-config.path)"
+
+        # --- Extract PR URLs ---
+        PR_URLS=$(echo "${PR_BODY}" | awk -v IGNORECASE=1 "
+          /^##.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
+          found && /^##/ { exit }
+          found && /^https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/ { print }
+        " || true)
+
+        # --- Start with leader repo ---
+        REPOS="${REPO_NAME}"
+
+        # --- Extract repo names from URLs ---
+        while IFS= read -r url; do
+          if [[ ! "${url}" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)$ ]]; then
+            continue
+          fi
+
+          ORG="${BASH_REMATCH[1]}"
+          REPO="${BASH_REMATCH[2]}"
+
+          # Security: only ODH repos
+          if [[ "${ORG}" != "${ALLOWED_ORG}" ]]; then
+            echo "⚠️  Skipping non-ODH repo: ${ORG}/${REPO}" >&2
+            continue
+          fi
+
+          # Add to list (avoid duplicates)
+          if ! echo ",${REPOS}," | grep -q ",${REPO},"; then
+            REPOS="${REPOS},${REPO}"
+          fi
+        done <<< "${PR_URLS}"
+
+        echo "Final repository list: ${REPOS}" >&2
+        echo -n "${REPOS}" > "$(results.repositories.path)"
