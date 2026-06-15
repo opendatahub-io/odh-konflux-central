@@ -52,6 +52,9 @@ spec:
 
         PR_BODY=$(echo "${PR_DATA}" | jq -r '.body // ""')
 
+        # Remove Windows line endings (CR) if present
+        PR_BODY=$(echo "${PR_BODY}" | tr -d '\r')
+
         # --- Check for Early Gate section ---
         if ! echo "${PR_BODY}" | grep -qi "^##.*${EARLYGATE_SECTION_PATTERN}"; then
           echo "No Early Gate section found" >&2
