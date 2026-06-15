@@ -64,10 +64,14 @@ spec:
         echo "true" > "$(results.has-group-config.path)"
 
         # --- Extract PR URLs ---
+        # Allow flexible formatting: whitespace, bullets, dashes, etc.
         PR_URLS=$(echo "${PR_BODY}" | awk -v IGNORECASE=1 "
           /^##.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
           found && /^##/ { exit }
-          found && /^https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/ { print }
+          found && /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/ {
+            match(\$0, /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/)
+            print substr(\$0, RSTART, RLENGTH)
+          }
         " || true)
 
         # --- Start with leader repo ---

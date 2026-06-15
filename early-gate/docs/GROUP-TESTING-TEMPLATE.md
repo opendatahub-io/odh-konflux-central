@@ -54,12 +54,19 @@ https://github.com/opendatahub-io/feast/pull/456
 ## Rules
 
 1. ✅ **Required heading:** `## Early Gate Testing` (or any heading containing "earlygate", case-insensitive)
-2. ✅ **PR URLs:** One per line under the heading
+2. ✅ **PR URLs:** One per line under the heading (bullets/dashes optional, flexible formatting)
 3. ✅ **URL format:** `https://github.com/opendatahub-io/REPO/pull/NUMBER`
-4. ✅ **Simple text:** No YAML, no formatting - just plain URLs
-5. ✅ **Config block ends at:** Next `##` heading
-6. ⚠️ **Only ODH repos:** Only PRs from `opendatahub-io` organization are allowed
-7. ⚠️ **Invalid repos:** PRs from repos not configured for early-gate will trigger a warning
+4. ✅ **Config block ends at:** Next `##` heading
+5. ⚠️ **Only ODH repos:** Only PRs from `opendatahub-io` organization are allowed
+6. ⚠️ **Invalid repos:** PRs from repos not configured for early-gate will trigger a warning
+
+**Flexible formatting examples (all work):**
+```markdown
+## Early Gate Testing
+https://github.com/opendatahub-io/kserve/pull/123
+- https://github.com/opendatahub-io/feast/pull/456
+  - https://github.com/opendatahub-io/notebook/pull/789
+```
 
 ---
 
