@@ -38,9 +38,9 @@
 
 **Why this split:** Tekton task runs inside Konflux cluster (native PipelineRun access). Chai Bot provides native Jira/GitHub/Slack tools + knowledge base. GitHub Actions bridges the Konflux API gap for reruns.
 
-### Ops Advisor: Chai Bot Native Integration
+### Ops Advisor: Hybrid (Existing Slack Workflow + Chai Bot)
 
-Configure Chai Bot `rhoai-ops-buddy` persona on `#rhoai-devtestops-requests` (channel `C07TF3MBMMW`). Chai Bot natively watches channels, answers with indexed knowledge, and responds in-thread -- no custom shadow-bot or GitLab CI infrastructure needed.
+Retain the existing Slack workflow for structured request intake (category, details, severity). Add a new `rhoai-ops-advisor` Chai Bot persona mapped to `#rhoai-devtestops-requests` (channel `C07TF3MBMMW`). A Slack workflow step auto-mentions `@chai-bot` on each new request, triggering AI-powered analysis and guidance. No custom shadow-bot or GitLab CI infrastructure needed -- Chai Bot natively responds when @-mentioned in mapped channels. Full specification in Component 3 below.
 
 ---
 
@@ -211,11 +211,282 @@ ORDER BY priority DESC, created ASC
 
 ## Component 3: Ops Advisor
 
-1. Request in `#ship-users` to create `rhoai-ops-buddy` persona, map `#rhoai-devtestops-requests` channel
-2. Knowledge sources: RHOAI Slack channels, Jira (`RHODS`/`RHOAI`), `odh-konflux-central` + related repos, runbooks/design docs from Google Drive
-3. Custom instructions markdown (version-controlled in `odh-konflux-central`): role, expertise (Konflux, pipelines, OLM, operators), escalation rules, response quality guidelines
-4. Tools: Jira (indexed + live), GitHub (indexed + live), web_fetch, orgdata
-5. Verified Knowledge: review channel for team to teach domain-specific corrections
+### Architecture: Hybrid (Existing Slack Workflow + Chai Bot Channel Mapping)
+
+The `#rhoai-devtestops-requests` channel already uses a Slack workflow form with structured fields (Item, Details, Severity). Ops Advisor preserves this structured intake and adds Chai Bot as the AI first-responder. Three layers:
+
+| Layer | Action | Owner |
+|-------|--------|-------|
+| Existing Slack Workflow (KEEP) | Structured intake with category dropdown (Access & Privileges, Build Issues, Infrastructure, New build onboarding, Other), details, severity | Existing -- no change |
+| Chai Bot Channel Mapping (ADD) | Request `#ship-users` to map the channel to a new `rhoai-ops-advisor` persona | DevTestOps -> Ship team |
+| Slack Workflow Step (ADD) | Auto-post a message in each request thread mentioning `@chai-bot` with the structured request details. See [Slack Workflow Setup Guide](../ops-advisor/slack-workflow-setup.md) for step-by-step instructions. | DevTestOps |
+
+Auto-mention message template (posted by Slack workflow in the request thread):
+
+```
+@chai-bot A new request has been submitted.
+**Category:** {Item}
+**Severity:** {Severity}
+**Details:** {Details}
+**Submitted by:** {Created By}
+Please analyze this request and provide guidance.
+```
+
+**Note:** The original design stated "Chai Bot natively watches channels, answers with indexed knowledge, and responds in-thread -- no custom shadow-bot or GitLab CI infrastructure needed." This is accurate -- Chai Bot does natively respond when @-mentioned in a mapped channel. The Slack workflow step simply automates the @-mention so that every request triggers an AI response without manual tagging.
+
+### Persona: `rhoai-ops-advisor`
+
+A separate persona from Build Buddy's `rhoai-ops-buddy` -- different knowledge scopes, interaction patterns (reactive vs autonomous), and independent rollout timelines.
+
+```yaml
+- name: rhoai-ops-advisor
+  description: "AI first-responder for RHOAI DevTestOps request handling"
+  google_docs:
+    user_submitted:
+      trusted_org: true
+    resources:
+    - url: <Component Onboarding Guide URL>
+      description: RHOAI Component Onboarding Guide
+    - url: <Access Management Guide URL>
+      description: RHOAI Access Management via app-interface
+    - url: <Konflux Quickstart Guide URL>
+      description: Konflux Quickstart Guide
+    - url: <Production Release Guide URL>
+      description: RHOAI Production Release Guide
+    - url: <Conforma Documentation URL>
+      description: RHOAI Conforma Documentation
+  archivists:
+  - name: devtestops-requests-history
+    datastore: rhoai-devtestops-requests
+  - name: build-notifications-history
+    datastore: rhoai-build-notifications
+  - name: jira-rhoaieng
+    datastore: jira-rhoaieng
+  tools:
+  - path: tools/jira
+  - path: tools/web_fetch
+  - path: experts/orgdata
+  effort: high
+  studio_effort: medium
+  instructions:
+  - glob: instructions/rhoai_ops_advisor/01_role.md
+    section: identity
+```
+
+### Knowledge Sources
+
+| Source Type | Specific Sources |
+|------------|------------------|
+| Slack Channels (Indexed) | `#rhoai-devtestops-requests` (C07TF3MBMMW), `#rhoai-build-notifications`, `#odh-build-notifications` |
+| Jira (Indexed + Live) | `RHOAIENG`, `RHAIENG` -- filtered to DevTestOps-relevant components |
+| GitHub Repos (Indexed + Live) | `opendatahub/odh-konflux-central`, `red-hat-data-services/rhods-devops-infra`, `red-hat-data-services/Cloud-Cost-Optimization` |
+| Google Drive (Pre-configured, Live) | Component Onboarding Guide, Access Management via app-interface, Konflux Quickstart, Production Release Guide, Stage Release Guide, Conforma docs, ROSA install guide |
+| Web Pages | `https://konflux.pages.redhat.com/docs/` |
+| Tools | Jira (indexed + live), GitHub (indexed + live), web_fetch, orgdata (Cyborg) |
+
+### Custom Instructions
+
+Version-controlled at `doc/ops-advisor/instructions/01_role.md` in this repository. Key sections:
+
+- **Identity:** Ops Advisor for RHOAI DevTestOps request channel
+- **Core Behaviors:** Analyze before responding, self-service first, be specific (exact commands/URLs/paths), state confidence, use structured response format
+- **Classification Logic:** Primary classification from Slack workflow category field, secondary LLM-based classification
+- **Escalation Routing:** Topic-keyword to team-handle mapping
+- **DIY Assessment:** Criteria for self-service vs escalation
+- **Response Format:** Understanding -> Assessment -> Guidance -> Next Steps
+- **Domain Expertise:** Konflux CI/CD, RHOAI components, OLM operators, multi-arch builds, app-interface, cloud infra, test infra
+- **Constraints:** Never create Jira without confirmation, never merge PRs, never share credentials, refuse PII/customer data, respect on-duty handler
+
+### Request Classification
+
+**Primary classification** from the Slack workflow `Item` field:
+
+| Workflow Category | Classification | Typical Action |
+|---|---|---|
+| Access & Privileges | `self-service` or `needs-approval` | Guide to app-interface MR process, or flag for admin merge |
+| Build Issues | `troubleshooting` or `needs-devops` | Analyze logs, check known patterns, provide debug steps |
+| Infrastructure | `troubleshooting` or `needs-intervention` | Check cluster status, provide self-service steps, or escalate |
+| New build onboarding | `self-service-guided` | Walk through onboarding prerequisites and the onboarding AI skill |
+| Other | `classify-from-details` | LLM classification on the free-text details |
+
+**Secondary classification** (LLM-based, when primary is insufficient):
+
+1. CAN the requestor resolve this themselves with guidance? -> `self-service`
+2. Does this require elevated access that only DevTestOps has? -> `needs-approval`
+3. Is infrastructure fundamentally broken and needs admin intervention? -> `needs-intervention`
+4. Is this a knowledge question with no action needed? -> `informational`
+
+Default: provide self-service guidance first. Escalate only if the user already tried, the task inherently requires admin access, or infra is in a state users cannot remediate. If uncertain, state confidence and offer escalation.
+
+### Escalation Routing
+
+| Topic | Keywords / Signals | Escalation Handle |
+|---|---|---|
+| Component onboarding | "onboarding", "new component", "Konflux pipeline", "pipelinerun", "Quay repo", "FBCF", "nudge config" | `@openshift-ai-devops-components-guardian` |
+| Build failures, CI/CD | "build failure", "Konflux build", "hermetic", "prefetch", "Cachi2", "buildah", "multi-arch", "PipelineRun failed", "auto-merge" | `@openshift-ai-devops-build-guardian` |
+| Conforma / Enterprise Contract | "conforma", "enterprise contract", "policy violation", "SLSA", "provenance", "attestation", "release policy" | `@openshift-ai-devops-conforma-guardian` |
+| Test infrastructure, clusters | "cluster stuck", "hibernation", "EaaS", "ROSA", "Jenkins", "test cluster", "GPU", "quota", "cloud resources" | `@openshift-ai-testops-infra-guardian` |
+| Test execution, results | "test failure", "test flake", "BVT", "smoke test", "tier1", "pytest", "opendatahub-tests", "test results" | `@openshift-ai-testops-quality-guardian` |
+| Anything else / unclear | No pattern match, or multi-domain | `@openshift-ai-devtestops-ic` |
+
+The routing table is encoded in the persona instructions and also stored as Verified Knowledge so the team can update it without redeployment.
+
+### DIY vs DevTestOps Assessment
+
+**Tasks the requestor CAN self-serve (provide DIY guidance):**
+
+| Task | Self-Service Path |
+|---|---|
+| Get GitHub/Quay/AWS/Konflux access | Submit app-interface MR for `data/teams/rhoai/users/{username}.yml` |
+| Initiate component onboarding | Run `/create-component-onboarding-jira` AI skill; ensure prerequisites (fork, `Dockerfile.konflux`, UBI9 base) |
+| Provision test clusters | Use Jenkins `rhoai-test-flow` job for ROSA/OSD/OSIA |
+| Debug build failures (first pass) | Check PipelineRun logs in Konflux UI, examine task failure |
+| Run smoke/BVT tests | Trigger via ITS or Jenkins job |
+| Check build status | Use Konflux UI or the build-status AI skill |
+
+**Tasks that NEED DevTestOps (escalate):**
+
+| Task | Why |
+|---|---|
+| app-interface MR fails checks / blocked by bot | Admin override required |
+| Cluster stuck deleting / failing to resume | Hive/cloud console admin access |
+| Hermetic build dependency resolution failures | Pipeline template expertise |
+| Pipeline template changes | PR to `odh-konflux-central` required |
+| Scarce GPU node coordination | Manual scheduling across teams |
+| Conforma policy waivers | DevOps approval and policy file update |
+
+### Feedback & Interaction UX
+
+Chai Bot's native feedback mechanisms:
+- **Emoji reactions:** thumbs-up/thumbs-down on any bot message
+- **Text feedback:** `@chai-bot feedback: ...`
+- **Action buttons:** Chai Bot presents approval buttons for actions like Jira creation
+
+**Interaction flow:**
+
+```
+1. Slack workflow creates request thread with structured fields
+2. Workflow auto-posts @chai-bot mention with request details
+3. Chai Bot responds with analysis + guidance + self-service steps
+4. Chai Bot appends: "Was this helpful? React with 👍 if resolved, or 👎 if you need human assistance."
+5a. 👍 -> Chai Bot: "Glad I could help! Marking as resolved."
+5b. 👎 -> Chai Bot: "I'll bring in the team. @{escalation-handle} — needs human attention."
+5c. No reaction 4 hours -> gentle reminder
+5d. No reaction 24 hours -> auto-escalate to @openshift-ai-devtestops-ic
+```
+
+For Jira ticket creation: Chai Bot presents action buttons `[Create Jira Ticket] [No, I'll handle it]`.
+
+### Jira Ticket Creation
+
+When Ops Advisor determines a request needs DevTestOps work tracked in Jira, and the requestor confirms:
+
+| Field | Value |
+|---|---|
+| Project | `RHOAIENG` |
+| Issue Type | `Task` |
+| Summary | `[Ops Advisor] {category}: {brief description}` |
+| Description | Slack thread permalink, requestor, category, severity, full request details, Ops Advisor assessment, troubleshooting attempted |
+| Labels | `ops-advisor`, `from-slack`, `{category-slug}` (e.g., `build-issue`, `access-request`, `infra-problem`, `onboarding`) |
+| Priority | Mapped from Slack severity: low -> Minor, medium -> Major, high -> Critical |
+
+**Duplicate detection:** JQL query before creating:
+
+```
+project = RHOAIENG AND labels = "ops-advisor" AND labels = "{category-slug}"
+  AND summary ~ "{key-terms}" AND status NOT IN (Closed, Resolved, Done)
+  AND created >= -7d
+```
+
+Match found: link to existing ticket instead of creating duplicate.
+
+### Request Lifecycle
+
+```
+NEW --> ANALYZING --> GUIDANCE_PROVIDED --> RESOLVED / ESCALATED / STALE
+```
+
+| State | Trigger | Slack Manifestation |
+|---|---|---|
+| `NEW` | Workflow form submitted | Structured message posted in channel |
+| `ANALYZING` | Chai Bot @-mentioned | "Looking into this..." |
+| `GUIDANCE_PROVIDED` | Analysis complete | Full response with feedback prompt |
+| `RESOLVED` | thumbs-up reaction, or on-duty handler marks "done" | "Marking as resolved." |
+| `ESCALATED` | thumbs-down reaction, or cannot classify | Team handle tagged |
+| `JIRA_CREATED` | Jira ticket created (sub-state of ESCALATED) | Jira link posted in thread |
+| `STALE` | No activity 48h -> reminder; 72h -> marked stale | Reminder posted, then stale notice |
+
+"Closing" a request = on-duty handler sets Slack workflow item status to "done" (existing mechanism).
+
+### Response Time Targets
+
+| Stage | Target |
+|---|---|
+| AI first response | < 2 minutes (automated) |
+| Human escalation pickup | < 4 business hours |
+| Human resolution (simple) | < 1 business day |
+| Human resolution (complex, Jira) | Per sprint planning |
+
+### Duplicate Request Handling
+
+- **Jira:** JQL dedup query (7-day window, matching keywords) before creation
+- **Slack:** Check indexed history for recent threads on same topic; link if found
+- **FAQ detection:** If same question asked 3+ times in 30 days, prompt team to create Verified Knowledge lesson
+
+### Error Handling
+
+| Scenario | Response |
+|---|---|
+| Cannot classify request | "I'm not sure how to categorize this. @openshift-ai-devtestops-ic" |
+| Jira API unavailable | Notify user, retry on next cycle, alert on-duty handler |
+| No relevant knowledge found | "I don't have specific guidance. @{handle}. Consider teaching me with `@chai-bot learn: ...`" |
+| No response for 48h | Post reminder; mark stale at 72h |
+| Wrong guidance (thumbs-down + correction) | Auto-escalate; prompt Verified Knowledge correction |
+| Rate limit / quota exceeded | "I've reached my daily limit. @openshift-ai-devtestops-ic will take over." |
+
+### Verified Knowledge (Continuous Improvement)
+
+- **VK review channel (Phase 1):** `#rhoai-devtestops-requests` itself (self-governing -- the Integration Guide confirms: "any team member can both contribute and review lessons")
+- **Teaching workflow:** When Chai Bot is corrected, handler posts `@chai-bot learn: ...` -> lesson synthesized -> peer review -> approved -> immediately influences future answers
+- **Monthly curation session:** Review knowledge gaps, accuracy issues, outdated VK lessons
+- **Weekly gap reporting:** Scheduled task posts interaction metrics and knowledge gaps to `#ops-buddy-status`
+- **Shared VK:** Cross-reference Build Buddy's VK datastore so knowledge is shared across both agents
+
+### Privacy & Compliance
+
+Before Phase 0, complete these steps:
+
+1. **Pin a notification** in `#rhoai-devtestops-requests` (required by Chai Bot Integration Guide):
+   > This channel's conversation history is indexed by Chai Bot (@chai-bot) to help answer questions and provide guidance. To opt out of live message processing: `@chai-bot /forget`. To opt out of Slack history indexing: submit the Slack History AI Data Opt-Out form.
+2. **Confirm no PII/customer data** in channel (engineering-internal requests -- should be safe)
+3. **User consent:** Users run `@chai-bot /consent` before bot processes their live messages
+
+### Ops Advisor Observability
+
+| Metric | Source | Target (Phase 1) | Target (Steady State) |
+|---|---|---|---|
+| First response time | Slack thread timestamps | < 2 min (automated) | < 2 min |
+| Self-service resolution rate | thumbs-up without escalation / total | 20% | 40% |
+| Classification accuracy | Sampled manual review | 70% | 85% |
+| User satisfaction | thumbs-up / (thumbs-up + thumbs-down) | 60% | 80% |
+| Jira ticket accuracy | Correct fields / total created | 90% | 95% |
+| Knowledge gap rate | Requests with no relevant knowledge | Track only | Decreasing trend |
+
+Weekly scheduled task posts metrics to `#ops-buddy-status`.
+
+### Ops Advisor Rollout
+
+| Phase | Duration | Scope | Exit Criteria |
+|---|---|---|---|
+| **0: Preparation** | 1 week | Persona creation, channel mapping, knowledge indexing, privacy notification | Persona live, responding to direct @-mentions |
+| **1: Shadow Mode** | 2 weeks | On-duty handler manually tags `@chai-bot` on selected requests; no auto-respond, no Jira creation, no auto-escalation | 70%+ classification accuracy, 60%+ satisfaction |
+| **2: Auto-respond + Oversight** | 2 weeks | Slack workflow auto-mentions Chai Bot; on-duty handler monitors all threads; Jira creation + escalation enabled | 75%+ accuracy, 20%+ self-service resolution, zero harmful answers |
+| **3: Full Autonomy** | Ongoing | Chai Bot is first responder; on-duty handler focuses on escalated requests only | 40%+ self-service resolution, 80%+ satisfaction |
+
+**Rollback:**
+- Remove Slack workflow step that auto-mentions `@chai-bot` (immediate, no code change)
+- If more severe: remove channel mapping via `#ship-users` request
+- Persona and knowledge remain intact for re-enablement
 
 ---
 
@@ -319,10 +590,15 @@ End-of-cycle summary posted to `#ops-buddy-status`.
 | 2 | Polling interval | 1 hour (Chai Bot min) | Sufficient for Phase 1; negotiate shorter later |
 | 3 | Chai Bot persona | New `rhoai-ops-buddy` | Clean separation of knowledge/tools/tasks |
 | 4 | GitHub App | New `odh-ops-buddy` | Isolated permissions and audit trail |
-| 5 | Ops Advisor | Chai Bot native | Zero new infrastructure needed |
+| 5 | Ops Advisor architecture | Hybrid: existing Slack Workflow + Chai Bot channel mapping | Structured intake preserved; AI augments, does not replace |
 | 6 | Slack thread linking | Search-based | No pipeline changes for thread_ts |
 | 7 | Code freeze behavior | Pause PRs only | Continue analysis + reruns during freeze |
 | 8 | Task location | `rhoai-konflux-tasks` repo | Follows existing git resolver pattern |
+| 9 | Ops Advisor persona | Separate `rhoai-ops-advisor` | Independent scope, instructions, and rollout from Build Buddy |
+| 10 | Escalation routing | Topic-keyword to team-handle mapping in persona instructions + VK | Maintainable by team without redeployment |
+| 11 | Feedback mechanism | Native Chai Bot emoji reactions + action buttons | No custom UX needed; leverages existing Chai Bot capabilities |
+| 12 | Jira project for Ops Advisor tickets | `RHOAIENG` | Consistent with existing team practices |
+| 13 | VK review channel | `#rhoai-devtestops-requests` (Phase 1) | Self-governing; team has domain expertise in this channel |
 
 ---
 
@@ -335,6 +611,11 @@ End-of-cycle summary posted to `#ops-buddy-status`.
 | GitHub App | RHOAI DevOps (self) | Create `odh-ops-buddy` with component repo access |
 | Konflux secrets | Konflux admin | Provision `ops-buddy-jira-secret` in both tenants |
 | Tekton task | RHOAI DevOps (self) | Create `create-jira-on-failure` in `rhoai-konflux-tasks` |
+| Ops Advisor persona | Ship/Chai Bot (`#ship-users`) | Create `rhoai-ops-advisor` persona, map `#rhoai-devtestops-requests` channel |
+| Ops Advisor knowledge indexing | Ship/Chai Bot (`#ship-users`) | Index Slack history, configure Jira/GitHub/Google Drive sources |
+| Slack workflow update | RHOAI DevOps (self) | Add `@chai-bot` auto-mention step to existing Slack workflow |
+| Privacy notification | RHOAI DevOps (self) | Pin Chai Bot data collection notification in `#rhoai-devtestops-requests` |
+| Ops Advisor instructions | RHOAI DevOps (self) | Write and review `doc/ops-advisor/instructions/01_role.md` |
 
 ---
 
@@ -351,7 +632,13 @@ End-of-cycle summary posted to `#ops-buddy-status`.
 2. Weekly metrics: classification accuracy, auto-resolution rate, false positive rate
 3. Slack audit: accurate and non-noisy messages
 
-### Post Full Rollout
+### Post Full Rollout (Build Buddy)
 1. Monthly: MTTR, auto-resolution rate, PR acceptance rate
 2. Quarterly: expand auto-fix categories based on observed patterns
 3. Feedback: team flags bad agent actions via Jira comments
+
+### Ops Advisor Verification
+1. **Phase 0:** Confirm persona responds to manual @-mentions in `#rhoai-devtestops-requests`
+2. **Phase 1:** Sample 20 requests, manually score classification accuracy and response quality against the taxonomy
+3. **Phase 2:** Track automated metrics (self-service resolution rate, user satisfaction, classification accuracy)
+4. **Phase 3:** Weekly metrics dashboard in `#ops-buddy-status`; monthly VK curation session to review knowledge gaps and outdated lessons
