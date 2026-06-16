@@ -99,9 +99,11 @@ spec:
         temp_file=$(mktemp)
         echo "{}" > "$temp_file"
 
-        # Track fallback warnings and component table
-        FALLBACK_WARNINGS=""
-        COMPONENT_TABLE=""
+        # Track fallback warnings and component table (use temp files to avoid subshell issues)
+        FALLBACK_WARNINGS_FILE=$(mktemp)
+        COMPONENT_TABLE_FILE=$(mktemp)
+        > "$FALLBACK_WARNINGS_FILE"
+        > "$COMPONENT_TABLE_FILE"
 
         # Use CURRENT_PR_NUMBER if set, otherwise fall back to PR_NUMBER from labels
         DEFAULT_PR_NUMBER="${CURRENT_PR_NUMBER:-${PR_NUMBER}}"
@@ -144,7 +146,7 @@ spec:
 
               # Track this fallback for PR comment
               if [[ "$value_type" == "object" ]]; then
-                FALLBACK_WARNINGS="${FALLBACK_WARNINGS}- Component \`${component}\` from PR #${component_pr}: using \`${FALLBACK_TAG}\` (PR build not ready)\n"
+                echo "- Component \`${component}\` from PR #${component_pr}: using \`${FALLBACK_TAG}\` (PR build not ready)" >> "$FALLBACK_WARNINGS_FILE"
               fi
 
               TAG=${FALLBACK_TAG}
@@ -244,7 +246,7 @@ spec:
               if [[ -z "$SHORT_DIGEST" ]]; then
                 SHORT_DIGEST="N/A"
               fi
-              COMPONENT_TABLE="${COMPONENT_TABLE}${component_pr}|${component}|${TAG}|${IMAGE_STATUS}|${SHORT_DIGEST}\n"
+              echo "${component_pr}|${component}|${TAG}|${IMAGE_STATUS}|${SHORT_DIGEST}" >> "$COMPONENT_TABLE_FILE"
             fi
 
             echo "" >&2
@@ -260,17 +262,17 @@ spec:
         echo "Snapshot written to /var/workdir/snapshot/snapshot.json" >&2
 
         # Output fallback warnings
-        if [[ -n "${FALLBACK_WARNINGS}" ]]; then
-          echo -e "${FALLBACK_WARNINGS}" > "$(results.fallback-warning.path)"
+        if [[ -s "$FALLBACK_WARNINGS_FILE" ]]; then
+          cat "$FALLBACK_WARNINGS_FILE" > "$(results.fallback-warning.path)"
         else
           echo "" > "$(results.fallback-warning.path)"
         fi
 
         # Output component table
-        echo -e "${COMPONENT_TABLE}" > "$(results.component-table.path)"
+        cat "$COMPONENT_TABLE_FILE" > "$(results.component-table.path)"
 
         # Cleanup
-        rm -f "$temp_file"
+        rm -f "$temp_file" "$FALLBACK_WARNINGS_FILE" "$COMPONENT_TABLE_FILE"
 
     - name: create-trusted-artifact
       image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
