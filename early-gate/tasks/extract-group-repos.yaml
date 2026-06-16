@@ -45,7 +45,7 @@ spec:
 
         if [[ -z "${PR_DATA}" ]]; then
           echo "Failed to fetch PR description" >&2
-          echo "false" > "$(results.has-group-config.path)"
+          echo -n "false" > "$(results.has-group-config.path)"
           echo -n "${REPO_NAME}" > "$(results.repositories.path)"
           exit 0
         fi
@@ -58,13 +58,13 @@ spec:
         # --- Check for Early Gate section ---
         if ! echo "${PR_BODY}" | grep -qi "^##.*${EARLYGATE_SECTION_PATTERN}"; then
           echo "No Early Gate section found" >&2
-          echo "false" > "$(results.has-group-config.path)"
+          echo -n "false" > "$(results.has-group-config.path)"
           echo -n "${REPO_NAME}" > "$(results.repositories.path)"
           exit 0
         fi
 
         echo "✓ Early Gate section found" >&2
-        echo "true" > "$(results.has-group-config.path)"
+        echo -n "true" > "$(results.has-group-config.path)"
 
         # --- Extract PR URLs ---
         # Allow flexible formatting: whitespace, bullets, dashes, etc.
