@@ -99,6 +99,15 @@ spec:
       echo "FBC_IMAGE: ${FBC_IMAGE}"
       printf '%s' "${FBC_IMAGE}" > "$(results.fbc-image.path)"
 
+      # --- Debug: Show parameters ---
+      echo "=== Post Build Complete Comment Parameters ===" >&2
+      echo "HAS_GROUP_CONFIG='${HAS_GROUP_CONFIG}'" >&2
+      echo "COMPONENT_TABLE length: ${#COMPONENT_TABLE}" >&2
+      echo "COMPONENT_TABLE (first 200 chars): ${COMPONENT_TABLE:0:200}" >&2
+      echo "FALLBACK_WARNING: ${FALLBACK_WARNING}" >&2
+      echo "INVALID_REPO_WARNINGS: ${INVALID_REPO_WARNINGS}" >&2
+      echo "FORMAT_HELP_WARNING length: ${#FORMAT_HELP_WARNING}" >&2
+
       # --- Build the FBC build complete section (always included) ---
       BUILD_SECTION=$(printf ':white_check_mark: **Early Gate Build - Complete**\n\n| Field | Value |\n|-------|-------|\n| **Status** | :white_check_mark: SUCCESS |\n| **FBC Image** | %s |' \
         "${FBC_IMAGE}")
