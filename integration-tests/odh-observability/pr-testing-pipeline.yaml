@@ -227,18 +227,6 @@ spec:
                 cd src_code
                 git checkout "${GIT_COMMIT}"
 
-                # Split container image into repository and tag for Helm overrides
-                IMAGE_REPO="${COMPONENT_IMAGE%@*}"
-                IMAGE_TAG="${COMPONENT_IMAGE##*@}"
-                if [ "${IMAGE_TAG}" = "${COMPONENT_IMAGE}" ]; then
-                  IMAGE_REPO="${COMPONENT_IMAGE%:*}"
-                  IMAGE_TAG="${COMPONENT_IMAGE##*:}"
-                else
-                  IMAGE_TAG="@${IMAGE_TAG}"
-                fi
-                echo "IMAGE_REPO: ${IMAGE_REPO}"
-                echo "IMAGE_TAG: ${IMAGE_TAG}"
-
                 echo "Installing cert-manager (required by webhook TLS)..."
                 oc apply -f - <<EOF
                 apiVersion: v1
@@ -285,10 +273,13 @@ spec:
                 oc wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=300s
 
                 echo "Deploying odh-observability operator via Helm..."
-                helm install odh-observability charts/odh-observability \
-                  --set image.repository="${IMAGE_REPO}" \
-                  --set image.tag="${IMAGE_TAG}" \
-                  --wait --timeout 5m
+                helm install odh-observability charts/odh-observability --timeout 5m
+
+                echo "Patching deployment with Konflux-built image..."
+                oc set image deployment/odh-observability manager="${COMPONENT_IMAGE}" \
+                  -n opendatahub-operator-system
+                oc rollout status deployment/odh-observability \
+                  -n opendatahub-operator-system --timeout=5m
 
                 echo "Running e2e tests..."
                 mkdir -p "${ARTIFACT_DIR}"
