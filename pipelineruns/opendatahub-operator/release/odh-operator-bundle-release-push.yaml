@@ -60,7 +60,6 @@ spec:
         - IMG_TAG=$$OUTPUT_IMAGE_TAG$$
         - IMAGE_TAG_BASE=quay.io/opendatahub/opendatahub-operator
         - BUNDLE_IMG=quay.io/opendatahub/opendatahub-operator-bundle:$$OUTPUT_IMAGE_TAG$$
-        - GOLANG_VERSION=1.25
         - BUILD_TYPE=$$BUILD_TYPE$$
     - name: additional-labels
       value:
