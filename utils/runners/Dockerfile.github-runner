@@ -8,7 +8,7 @@
 # Ubuntu 22.04 is used because the runner's installdependencies.sh
 # requires apt and Debian/Ubuntu packages.
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ARG RUNNER_VERSION=2.334.0
 
