@@ -1,0 +1,271 @@
+name: Merge Gatekeeper (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: number
+      head_sha:
+        required: true
+        type: string
+      target_branch:
+        required: true
+        type: string
+      repo:
+        required: true
+        type: string
+    secrets:
+      APP_ID:
+        required: true
+      APP_PRIVATE_KEY:
+        required: true
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    outputs:
+      eligible: ${{ steps.evaluate.outputs.eligible }}
+    steps:
+      - name: Checkout config
+        uses: actions/checkout@v4
+        with:
+          repository: opendatahub-io/odh-konflux-central
+          path: config-repo
+          sparse-checkout: config/post-code-freeze-config.yaml
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: getsentry/action-github-app-token@v2
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Evaluate merge eligibility
+        id: evaluate
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPO: ${{ inputs.repo }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: |
+          set -euo pipefail
+          CONFIG_FILE="config-repo/config/post-code-freeze-config.yaml"
+          REPO_SHORT="${REPO#*/}"
+
+          pip install yq > /dev/null 2>&1
+
+          # ── 1. Parse freeze windows ──
+          FREEZE_WINDOWS=$(yq -r \
+            ".repos[\"${REPO_SHORT}\"].branches[\"${TARGET_BRANCH}\"].freeze_windows //
+             .repos[\"${REPO_SHORT}\"].branches[\"*\"].freeze_windows //
+             .defaults.freeze_windows //
+             empty" \
+            "$CONFIG_FILE" 2>/dev/null || echo "[]")
+
+          # ── 2. Check time against freeze windows ──
+          IN_FREEZE="false"
+          FREEZE_REASON=""
+          CURRENT_EPOCH=$(date -u +%s)
+          CURRENT_DOW=$(date -u +%u)    # 1=Mon, 7=Sun
+          CURRENT_HOUR=$(date -u +%H)
+          CURRENT_MIN=$(date -u +%M)
+          CURRENT_MINS=$((10#$CURRENT_HOUR * 60 + 10#$CURRENT_MIN))
+
+          # Absolute windows (start_date/end_date)
+          ABS_WINDOWS=$(echo "$FREEZE_WINDOWS" | \
+            yq -r '.[] | select(.type == "absolute") | @json' 2>/dev/null || true)
+          while IFS= read -r window; do
+            [ -z "$window" ] && continue
+            START=$(echo "$window" | jq -r '.start_date')
+            END=$(echo "$window" | jq -r '.end_date')
+            REASON=$(echo "$window" | jq -r '.reason // "Scheduled freeze"')
+            START_TS=$(date -u -d "$START" +%s 2>/dev/null || date -u -jf "%Y-%m-%dT%H:%M:%SZ" "$START" +%s)
+            END_TS=$(date -u -d "$END" +%s 2>/dev/null || date -u -jf "%Y-%m-%dT%H:%M:%SZ" "$END" +%s)
+            if [ "$CURRENT_EPOCH" -ge "$START_TS" ] && [ "$CURRENT_EPOCH" -le "$END_TS" ]; then
+              IN_FREEZE="true"
+              FREEZE_REASON="$REASON"
+              break
+            fi
+          done <<< "$ABS_WINDOWS"
+
+          # Recurring windows (day_of_week + time range)
+          if [ "$IN_FREEZE" = "false" ]; then
+            REC_WINDOWS=$(echo "$FREEZE_WINDOWS" | \
+              yq -r '.[] | select(.type == "recurring") | @json' 2>/dev/null || true)
+            while IFS= read -r window; do
+              [ -z "$window" ] && continue
+              DAYS=$(echo "$window" | jq -r '.days_of_week[]' 2>/dev/null)
+              START_TIME=$(echo "$window" | jq -r '.start_time')
+              END_TIME=$(echo "$window" | jq -r '.end_time')
+              REASON=$(echo "$window" | jq -r '.reason // "Recurring freeze"')
+              START_MINS=$((10#${START_TIME%%:*} * 60 + 10#${START_TIME##*:}))
+              END_MINS=$((10#${END_TIME%%:*} * 60 + 10#${END_TIME##*:}))
+              for day in $DAYS; do
+                if [ "$CURRENT_DOW" -eq "$day" ] && \
+                   [ "$CURRENT_MINS" -ge "$START_MINS" ] && \
+                   [ "$CURRENT_MINS" -le "$END_MINS" ]; then
+                  IN_FREEZE="true"
+                  FREEZE_REASON="$REASON (until ${END_TIME} UTC)"
+                  break 2
+                fi
+              done
+            done <<< "$REC_WINDOWS"
+          fi
+
+          # ── 3. Check emergency override ──
+          OVERRIDE_ACTIVE="false"
+          OVERRIDE_LABEL=$(yq -r '.emergency_override.label // "emergency-override"' "$CONFIG_FILE")
+          PR_LABELS=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels -q '.labels[].name')
+
+          if echo "$PR_LABELS" | grep -qx "$OVERRIDE_LABEL"; then
+            OVERRIDE_EVENTS=$(gh api "/repos/${REPO}/issues/${PR_NUMBER}/events" \
+              --jq "[.[] | select(.event == \"labeled\" and .label.name == \"${OVERRIDE_LABEL}\")] | last")
+            OVERRIDE_ACTOR=$(echo "$OVERRIDE_EVENTS" | jq -r '.actor.login // empty')
+            AUTHORIZED=$(yq -r '.emergency_override.authorized_users[]' "$CONFIG_FILE" 2>/dev/null || true)
+            if echo "$AUTHORIZED" | grep -qx "$OVERRIDE_ACTOR"; then
+              OVERRIDE_ACTIVE="true"
+            fi
+          fi
+
+          # ── 4. Check prerequisites ──
+          PREREQS_MET="true"
+          FAILURES=""
+
+          # Required labels
+          REQ_LABELS=$(yq -r \
+            ".repos[\"${REPO_SHORT}\"].prerequisites.required_labels[] //
+             .defaults.prerequisites.required_labels[] // empty" \
+            "$CONFIG_FILE" 2>/dev/null || true)
+          for label in $REQ_LABELS; do
+            if ! echo "$PR_LABELS" | grep -qx "$label"; then
+              PREREQS_MET="false"
+              FAILURES="${FAILURES}Missing label: ${label}. "
+            fi
+          done
+
+          # Required CI checks
+          REQ_CHECKS=$(yq -r \
+            ".repos[\"${REPO_SHORT}\"].prerequisites.required_ci_checks[] //
+             .defaults.prerequisites.required_ci_checks[] // empty" \
+            "$CONFIG_FILE" 2>/dev/null || true)
+          for check in $REQ_CHECKS; do
+            STATE=$(gh api "/repos/${REPO}/commits/${HEAD_SHA}/status" \
+              --jq ".statuses[] | select(.context == \"${check}\") | .state" 2>/dev/null | tail -1)
+            if [ "$STATE" != "success" ]; then
+              PREREQS_MET="false"
+              FAILURES="${FAILURES}CI check '${check}' not passing (${STATE:-not found}). "
+            fi
+          done
+
+          # Min approvals
+          MIN_APPROVALS=$(yq -r \
+            ".repos[\"${REPO_SHORT}\"].prerequisites.min_approvals //
+             .defaults.prerequisites.min_approvals // 1" \
+            "$CONFIG_FILE" 2>/dev/null)
+          ACTUAL=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json reviews \
+            --jq '[.reviews[] | select(.state == "APPROVED")] | length')
+          if [ "$ACTUAL" -lt "$MIN_APPROVALS" ]; then
+            PREREQS_MET="false"
+            FAILURES="${FAILURES}Need ${MIN_APPROVALS} approvals, have ${ACTUAL}. "
+          fi
+
+          # Draft check
+          IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json isDraft -q '.isDraft')
+          if [ "$IS_DRAFT" = "true" ]; then
+            PREREQS_MET="false"
+            FAILURES="${FAILURES}PR is a draft. "
+          fi
+
+          # ── 5. Determine eligibility ──
+          ELIGIBLE="false"
+          DESCRIPTION=""
+
+          if [ "$IN_FREEZE" = "true" ] && [ "$OVERRIDE_ACTIVE" = "false" ]; then
+            DESCRIPTION="Merge frozen: ${FREEZE_REASON}"
+          elif [ "$PREREQS_MET" = "false" ]; then
+            DESCRIPTION="Prerequisites not met: ${FAILURES}"
+          else
+            ELIGIBLE="true"
+            if [ "$OVERRIDE_ACTIVE" = "true" ]; then
+              DESCRIPTION="Eligible (emergency override by authorized user)"
+            else
+              DESCRIPTION="All checks passed — eligible for merge"
+            fi
+          fi
+
+          DESCRIPTION=$(echo "$DESCRIPTION" | head -c 140)
+
+          echo "eligible=$ELIGIBLE" >> "$GITHUB_OUTPUT"
+          echo "in_freeze=$IN_FREEZE" >> "$GITHUB_OUTPUT"
+          echo "override=$OVERRIDE_ACTIVE" >> "$GITHUB_OUTPUT"
+          echo "description=$DESCRIPTION" >> "$GITHUB_OUTPUT"
+
+      - name: Report merge-gatekeeper status
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          STATE="failure"
+          [ "${{ steps.evaluate.outputs.eligible }}" = "true" ] && STATE="success"
+
+          gh api "/repos/${{ inputs.repo }}/statuses/${{ inputs.head_sha }}" \
+            --method POST \
+            --field state="$STATE" \
+            --field context="merge-gatekeeper" \
+            --field description="${{ steps.evaluate.outputs.description }}" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Auto-merge if eligible and labeled
+        if: steps.evaluate.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          PR_LABELS=$(gh pr view "${{ inputs.pr_number }}" --repo "${{ inputs.repo }}" \
+            --json labels -q '.labels[].name')
+
+          if echo "$PR_LABELS" | grep -qx "auto-merge"; then
+            echo "Auto-merge label found. Merging PR #${{ inputs.pr_number }}..."
+            gh pr merge "${{ inputs.pr_number }}" \
+              --repo "${{ inputs.repo }}" --merge --admin
+          else
+            echo "Eligible but no auto-merge label. Waiting."
+          fi
+
+      - name: Update PR comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          REPO="${{ inputs.repo }}"
+          PR="${{ inputs.pr_number }}"
+
+          if [ "${{ steps.evaluate.outputs.eligible }}" = "true" ]; then
+            ICON=":white_check_mark:"
+            TITLE="Eligible for merge"
+          else
+            ICON=":x:"
+            TITLE="Not eligible for merge"
+          fi
+
+          BODY="${ICON} **Merge Gatekeeper: ${TITLE}**"
+          BODY="${BODY}\n\n${{ steps.evaluate.outputs.description }}"
+
+          if [ "${{ steps.evaluate.outputs.in_freeze }}" = "true" ] && \
+             [ "${{ steps.evaluate.outputs.override }}" = "false" ]; then
+            BODY="${BODY}\n\n:snowflake: Code freeze is active. PR will be re-evaluated when freeze ends."
+          fi
+
+          BODY="${BODY}\n\n---\n_Updated: $(date -u '+%Y-%m-%d %H:%M UTC') | [Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
+
+          # Upsert comment (update existing or create new)
+          EXISTING=$(gh api "/repos/${REPO}/issues/${PR}/comments" \
+            --jq '.[] | select(.body | contains("Merge Gatekeeper:")) | .id' 2>/dev/null | tail -1)
+
+          if [ -n "$EXISTING" ]; then
+            gh api "/repos/${REPO}/issues/${PR}/comments/${EXISTING}" \
+              --method PATCH --field body="$(echo -e "$BODY")"
+          else
+            gh api "/repos/${REPO}/issues/${PR}/comments" \
+              --method POST --field body="$(echo -e "$BODY")"
+          fi

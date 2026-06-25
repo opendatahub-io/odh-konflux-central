@@ -1,0 +1,99 @@
+# Post-Code-Freeze Gatekeeper Configuration
+# Hierarchy: repo-specific settings override defaults.
+# Branch matching: exact match first, then wildcard "*".
+
+# ── Per-Release Freeze Rulesets ──
+# The Ruleset Lifecycle Workflow reads this section to create/delete
+# GitHub rulesets on-demand when freeze windows start/end.
+releases:
+  rhoai-2.18:
+    branch_patterns:
+      - "refs/heads/release-2.18*"
+      - "refs/heads/rhoai-2.18*"
+    freeze_start: "2026-06-15T00:00:00Z"
+    freeze_end: "2026-06-22T00:00:00Z"
+    reason: "RHOAI 2.18 release freeze"
+    repos:
+      - odh-dashboard
+      - opendatahub-operator
+      - odh-model-controller
+
+# ── Merge Gatekeeper Configuration ──
+# The sections below drive PR evaluation (prerequisites, recurring
+# freeze windows, emergency overrides) when a freeze ruleset is active.
+
+defaults:
+  freeze_windows:
+    - type: recurring
+      days_of_week: [6, 7]        # Saturday, Sunday (1=Mon, 7=Sun)
+      start_time: "00:00"          # UTC
+      end_time: "23:59"
+      reason: "Weekend freeze"
+
+  prerequisites:
+    required_labels: []
+    required_ci_checks: []
+    min_approvals: 1
+    block_draft_prs: true
+
+  auto_merge:
+    enabled: true
+    label: "auto-merge"
+    merge_method: "merge"          # merge | squash | rebase
+
+emergency_override:
+  label: "emergency-override"
+  authorized_users:
+    - dchouras
+    - odh-release-lead
+  require_audit_comment: true
+
+repos:
+  odh-dashboard:
+    branches:
+      main:
+        freeze_windows:
+          # Absolute: release freeze with specific dates
+          - type: absolute
+            start_date: "2026-06-15T00:00:00Z"
+            end_date: "2026-06-22T00:00:00Z"
+            reason: "RHOAI 2.23 release freeze"
+
+          # Recurring: Friday evening through Monday morning
+          - type: recurring
+            days_of_week: [5]
+            start_time: "17:00"
+            end_time: "23:59"
+            reason: "Friday evening freeze"
+          - type: recurring
+            days_of_week: [1]
+            start_time: "00:00"
+            end_time: "09:00"
+            reason: "Monday morning freeze"
+
+        prerequisites:
+          required_labels:
+            - "approved"
+          required_ci_checks:
+            - "build-check"
+          min_approvals: 2
+
+      "release-*":
+        freeze_windows:
+          - type: absolute
+            start_date: "2026-06-20T00:00:00Z"
+            end_date: "2026-07-01T00:00:00Z"
+            reason: "Release branch locked for GA"
+        prerequisites:
+          required_labels:
+            - "release-approved"
+          min_approvals: 2
+
+  opendatahub-operator:
+    branches:
+      "*":
+        prerequisites:
+          required_ci_checks:
+            - "unit-tests"
+            - "e2e-tests"
+          min_approvals: 2

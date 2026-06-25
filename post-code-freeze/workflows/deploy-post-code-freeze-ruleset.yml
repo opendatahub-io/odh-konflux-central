@@ -1,0 +1,80 @@
+name: Deploy Post-Code-Freeze Ruleset
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Repository name (e.g., odh-dashboard)'
+        required: true
+        type: string
+      action:
+        description: 'create | update | delete'
+        required: true
+        type: choice
+        options: [create, update, delete]
+      branch_patterns:
+        description: 'Comma-separated branch patterns'
+        required: true
+        default: 'main,release-*,rhoai-*'
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: getsentry/action-github-app-token@v2
+        with:
+          app_id: ${{ secrets.ODH_DEVOPS_APP_ID }}
+          private_key: ${{ secrets.ODH_DEVOPS_APP_PRIVATE_KEY }}
+
+      - name: Get App Installation ID
+        id: install
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          ID=$(gh api "/repos/opendatahub-io/${{ inputs.target_repo }}/installation" --jq '.id')
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+      - name: Apply ruleset
+        if: inputs.action != 'delete'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          REPO="opendatahub-io/${{ inputs.target_repo }}"
+          IFS=',' read -ra BRANCHES <<< "${{ inputs.branch_patterns }}"
+          INCLUDES=$(printf '%s\n' "${BRANCHES[@]}" | jq -R . | jq -s 'map("refs/heads/" + .)')
+
+          PAYLOAD=$(jq -n \
+            --arg name "post-code-freeze-gatekeeper" \
+            --argjson id "${{ steps.install.outputs.id }}" \
+            --argjson includes "$INCLUDES" \
+            '{
+              name: $name,
+              target: "branch",
+              enforcement: "active",
+              conditions: { ref_name: { include: $includes, exclude: [] } },
+              bypass_actors: [{ actor_id: $id, actor_type: "Integration", bypass_mode: "always" }],
+              rules: [
+                { type: "creation" },
+                { type: "deletion" },
+                { type: "non_fast_forward" },
+                { type: "pull_request", parameters: {
+                    required_approving_review_count: 1,
+                    dismiss_stale_reviews_on_push: true
+                }},
+                { type: "required_status_checks", parameters: {
+                    strict_status_checks_policy: true,
+                    required_status_checks: [{ context: "merge-gatekeeper" }]
+                }}
+              ]
+            }')
+
+          if [ "${{ inputs.action }}" = "create" ]; then
+            gh api "/repos/${REPO}/rulesets" --method POST --input - <<< "$PAYLOAD"
+          else
+            RULESET_ID=$(gh api "/repos/${REPO}/rulesets" \
+              --jq '.[] | select(.name == "post-code-freeze-gatekeeper") | .id')
+            gh api "/repos/${REPO}/rulesets/${RULESET_ID}" --method PUT --input - <<< "$PAYLOAD"
+          fi

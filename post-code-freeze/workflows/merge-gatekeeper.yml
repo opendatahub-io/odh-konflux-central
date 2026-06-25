@@ -1,0 +1,47 @@
+name: Merge Gatekeeper
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  # Single PR evaluation (PR events)
+  single-pr:
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+    uses: opendatahub-io/odh-konflux-central/.github/workflows/reusable-merge-gatekeeper.yml@main
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      head_sha: ${{ github.event.pull_request.head.sha }}
+      target_branch: ${{ github.event.pull_request.base.ref }}
+      repo: ${{ github.repository }}
+    secrets:
+      APP_ID: ${{ secrets.ODH_DEVOPS_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.ODH_DEVOPS_APP_PRIVATE_KEY }}
+
+  # Re-evaluate all open PRs (cron + manual dispatch)
+  all-open-prs:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: getsentry/action-github-app-token@v2
+        with:
+          app_id: ${{ secrets.ODH_DEVOPS_APP_ID }}
+          private_key: ${{ secrets.ODH_DEVOPS_APP_PRIVATE_KEY }}
+
+      - name: Dispatch for each open PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh pr list --repo "${{ github.repository }}" --state open \
+            --json number -q '.[].number' | while read -r PR_NUM; do
+            echo "Dispatching re-evaluation for PR #${PR_NUM}"
+            gh workflow run merge-gatekeeper.yml \
+              --repo "${{ github.repository }}" 2>/dev/null || true
+          done
