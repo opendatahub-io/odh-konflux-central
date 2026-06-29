@@ -1,0 +1,36 @@
+flowchart TD
+    subgraph Normal["Normal Development (No Freeze)"]
+        N1["No freeze ruleset exists"]
+        N2["Humans merge PRs normally"]
+    end
+
+    subgraph Lifecycle["Ruleset Lifecycle Workflow (Cron)"]
+        L1["Cron: every 15 min"]
+        L2["Read config YAML"]
+        L3{"Freeze window\nactive?"}
+        L4{"Ruleset\nexists?"}
+        L5["CREATE ruleset"]
+        L6{"Freeze\nended?"}
+        L7{"Ruleset\nexists?"}
+        L8["DELETE ruleset"]
+    end
+
+    subgraph Freeze["During Freeze (Ruleset Active)"]
+        F1["Per-release ruleset:\nfreeze-rhoai-2.18"]
+        F2["Merge Gatekeeper workflow\nevaluates prerequisites"]
+        F3["App merges eligible PRs"]
+    end
+
+    L1 --> L2 --> L3
+    L3 -->|Yes| L4
+    L4 -->|No| L5 --> Freeze
+    L4 -->|Already exists| Freeze
+    L3 -->|No| L6
+    L6 -->|Yes| L7
+    L7 -->|Yes| L8 --> Normal
+    L7 -->|Already deleted| Normal
+    L6 -->|No| Normal
+
+    style Normal fill:#e8f5e9,stroke:#388e3c
+    style Lifecycle fill:#fff3e0,stroke:#f57c00
+    style Freeze fill:#e3f2fd,stroke:#1976d2

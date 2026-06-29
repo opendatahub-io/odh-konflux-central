@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant Cron as Lifecycle Cron
+    participant GH as GitHub
+    participant WF as Gatekeeper
+    participant App as GitHub App
+
+    Note over Cron,GH: Freeze starts
+    Cron->>GH: Create freeze-rhoai-2.18 ruleset
+
+    GH->>WF: PR event on frozen branch
+    WF->>WF: Check prerequisites
+    alt Eligible
+        WF->>GH: Set status: SUCCESS
+        App->>GH: Merge PR (if auto-merge label)
+    else Not eligible
+        WF->>GH: Set status: FAILURE + comment reason
+    end
+
+    Note over Cron,GH: Freeze ends
+    Cron->>GH: Delete ruleset — humans merge normally

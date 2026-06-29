@@ -211,6 +211,8 @@ ORDER BY priority DESC, created ASC
 
 ## Component 3: Ops Advisor
 
+> **Implementation docs:** See [`doc/ops-advisor/`](../ops-advisor/design.md) for the standalone design, per-category Chai Bot messages, Slack Workflow setup guide, and persona instructions reflecting the implemented solution.
+
 ### Architecture: Hybrid (Existing Slack Workflow + Chai Bot Channel Mapping)
 
 The `#rhoai-devtestops-requests` channel already uses a Slack workflow form with structured fields (Item, Details, Severity). Ops Advisor preserves this structured intake and adds Chai Bot as the AI first-responder. Three layers:
