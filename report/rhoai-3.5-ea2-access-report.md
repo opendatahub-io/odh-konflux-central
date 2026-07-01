@@ -1,242 +1,120 @@
-# RHOAI 3.5 EA2 Branch — Repository Access & Merge Activity Report
+# RHOAI 3.5 EA2 Branch — PR Merge Activity Report
 
 **Organization:** [red-hat-data-services](https://github.com/red-hat-data-services)  
 **Branch:** `rhoai-3.5-ea.2`  
 **Total Repos with Branch:** 68  
 **Generated:** 2026-07-01  
-**PRs Merged Since June 20, 2026:** 653
+**Human-Merged PRs Since June 20, 2026:** 39  
+**Repos with Human-Merged PRs:** 21
 
-> **Note:** Most repos share the same ~560 org-wide write members via team access.
-> Per-repo sections below list only **Admin** and **Maintain** roles (which vary per repo).
-> The full elevated-access list is in Section 3.
+> **Note:** Bot-merged PRs (konflux-internal-p02[bot], github-actions[bot]) are excluded.
+> All 596 org members have write (merge) access via the org-level base permission setting
+> (**Settings > Member privileges > Base permissions: Write**).
 
 ---
 
 ## 1. Summary
 
-| # | Repository | Admin | Maintain | Write | PRs Merged (since Jun 20) |
-|---|-----------|-------|----------|-------|--------------------------|
-| 1 | [MLServer](https://github.com/red-hat-data-services/MLServer/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 1 |
-| 2 | [NeMo-Guardrails](https://github.com/red-hat-data-services/NeMo-Guardrails/tree/rhoai-3.5-ea.2) | 8 | 28 | 560 | 1 |
-| 3 | [RHOAI-Build-Config](https://github.com/red-hat-data-services/RHOAI-Build-Config/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 209 |
-| 4 | [agents-operator](https://github.com/red-hat-data-services/agents-operator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 9 |
-| 5 | [ai-gateway-operator](https://github.com/red-hat-data-services/ai-gateway-operator/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 3 |
-| 6 | [ai-gateway-payload-processing](https://github.com/red-hat-data-services/ai-gateway-payload-processing/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 3 |
-| 7 | [argo-workflows](https://github.com/red-hat-data-services/argo-workflows/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 7 |
-| 8 | [autox-ci](https://github.com/red-hat-data-services/autox-ci/tree/rhoai-3.5-ea.2) | 12 | 28 | 556 | 0 |
-| 9 | [batch-gateway](https://github.com/red-hat-data-services/batch-gateway/tree/rhoai-3.5-ea.2) | 9 | 27 | 560 | 0 |
-| 10 | [conforma-reporter](https://github.com/red-hat-data-services/conforma-reporter/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 11 | [data-science-pipelines](https://github.com/red-hat-data-services/data-science-pipelines/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 5 |
-| 12 | [data-science-pipelines-operator](https://github.com/red-hat-data-services/data-science-pipelines-operator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 3 |
-| 13 | [distributed-workloads](https://github.com/red-hat-data-services/distributed-workloads/tree/rhoai-3.5-ea.2) | 8 | 33 | 555 | 1 |
-| 14 | [eval-hub](https://github.com/red-hat-data-services/eval-hub/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 3 |
-| 15 | [feast](https://github.com/red-hat-data-services/feast/tree/rhoai-3.5-ea.2) | 8 | 33 | 555 | 1 |
-| 16 | [fms-guardrails-orchestrator](https://github.com/red-hat-data-services/fms-guardrails-orchestrator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 1 |
-| 17 | [guardrails-detectors](https://github.com/red-hat-data-services/guardrails-detectors/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 18 | [guardrails-regex-detector](https://github.com/red-hat-data-services/guardrails-regex-detector/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 19 | [konflux-central](https://github.com/red-hat-data-services/konflux-central/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 6 |
-| 20 | [kserve](https://github.com/red-hat-data-services/kserve/tree/rhoai-3.5-ea.2) | 8 | 27 | 562 | 9 |
-| 21 | [kserve-autogluon-server](https://github.com/red-hat-data-services/kserve-autogluon-server/tree/rhoai-3.5-ea.2) | 11 | 27 | 558 | 0 |
-| 22 | [kube-auth-proxy](https://github.com/red-hat-data-services/kube-auth-proxy/tree/rhoai-3.5-ea.2) | 8 | 28 | 560 | 1 |
-| 23 | [kube-rbac-proxy](https://github.com/red-hat-data-services/kube-rbac-proxy/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 3 |
-| 24 | [kubeflow](https://github.com/red-hat-data-services/kubeflow/tree/rhoai-3.5-ea.2) | 10 | 27 | 559 | 7 |
-| 25 | [kuberay](https://github.com/red-hat-data-services/kuberay/tree/rhoai-3.5-ea.2) | 8 | 30 | 558 | 7 |
-| 26 | [llama-stack-provider-ragas](https://github.com/red-hat-data-services/llama-stack-provider-ragas/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 27 | [llama-stack-provider-trustyai-garak](https://github.com/red-hat-data-services/llama-stack-provider-trustyai-garak/tree/rhoai-3.5-ea.2) | 8 | 28 | 560 | 0 |
-| 28 | [llm-d-async](https://github.com/red-hat-data-services/llm-d-async/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 0 |
-| 29 | [llm-d-batch-gateway-operator](https://github.com/red-hat-data-services/llm-d-batch-gateway-operator/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 2 |
-| 30 | [llm-d-inference-scheduler](https://github.com/red-hat-data-services/llm-d-inference-scheduler/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 31 | [llm-d-kv-cache](https://github.com/red-hat-data-services/llm-d-kv-cache/tree/rhoai-3.5-ea.2) | 9 | 27 | 560 | 0 |
-| 32 | [llm-d-latency-predictor](https://github.com/red-hat-data-services/llm-d-latency-predictor/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 1 |
-| 33 | [llm-d-router](https://github.com/red-hat-data-services/llm-d-router/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 0 |
-| 34 | [lm-evaluation-harness](https://github.com/red-hat-data-services/lm-evaluation-harness/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 35 | [lm-evaluation-harness-sobha](https://github.com/red-hat-data-services/lm-evaluation-harness-sobha/tree/rhoai-3.5-ea.2) | 9 | 27 | 560 | 0 |
-| 36 | [ml-metadata](https://github.com/red-hat-data-services/ml-metadata/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 5 |
-| 37 | [mlflow](https://github.com/red-hat-data-services/mlflow/tree/rhoai-3.5-ea.2) | 8 | 29 | 559 | 0 |
-| 38 | [mlflow-operator](https://github.com/red-hat-data-services/mlflow-operator/tree/rhoai-3.5-ea.2) | 8 | 29 | 559 | 4 |
-| 39 | [model-metadata-collection](https://github.com/red-hat-data-services/model-metadata-collection/tree/rhoai-3.5-ea.2) | 8 | 28 | 560 | 2 |
-| 40 | [model-registry](https://github.com/red-hat-data-services/model-registry/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 7 |
-| 41 | [model-registry-operator](https://github.com/red-hat-data-services/model-registry-operator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 4 |
-| 42 | [models-as-a-service](https://github.com/red-hat-data-services/models-as-a-service/tree/rhoai-3.5-ea.2) | 8 | 36 | 552 | 8 |
-| 43 | [models-perf-benchmark-data](https://github.com/red-hat-data-services/models-perf-benchmark-data/tree/rhoai-3.5-ea.2) | 8 | 28 | 560 | 0 |
-| 44 | [must-gather](https://github.com/red-hat-data-services/must-gather/tree/rhoai-3.5-ea.2) | 8 | 28 | 560 | 0 |
-| 45 | [notebooks](https://github.com/red-hat-data-services/notebooks/tree/rhoai-3.5-ea.2) | 10 | 30 | 557 | 0 |
-| 46 | [odh-cli](https://github.com/red-hat-data-services/odh-cli/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 1 |
-| 47 | [odh-dashboard](https://github.com/red-hat-data-services/odh-dashboard/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 10 |
-| 48 | [odh-gitops](https://github.com/red-hat-data-services/odh-gitops/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 49 | [odh-model-controller](https://github.com/red-hat-data-services/odh-model-controller/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 1 |
-| 50 | [ogx-distribution](https://github.com/red-hat-data-services/ogx-distribution/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 1 |
-| 51 | [ogx-k8s-operator](https://github.com/red-hat-data-services/ogx-k8s-operator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 1 |
-| 52 | [openvino_model_server](https://github.com/red-hat-data-services/openvino_model_server/tree/rhoai-3.5-ea.2) | 9 | 27 | 560 | 0 |
-| 53 | [pipelines-components](https://github.com/red-hat-data-services/pipelines-components/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 1 |
-| 54 | [rhaii-cluster-validation](https://github.com/red-hat-data-services/rhaii-cluster-validation/tree/rhoai-3.5-ea.2) | 10 | 28 | 558 | 0 |
-| 55 | [rhoai-additional-images](https://github.com/red-hat-data-services/rhoai-additional-images/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 56 | [rhoai-mcp](https://github.com/red-hat-data-services/rhoai-mcp/tree/rhoai-3.5-ea.2) | 9 | 26 | 561 | 0 |
-| 57 | [rhods-operator](https://github.com/red-hat-data-services/rhods-operator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 312 |
-| 58 | [spark-operator](https://github.com/red-hat-data-services/spark-operator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 2 |
-| 59 | [trainer](https://github.com/red-hat-data-services/trainer/tree/rhoai-3.5-ea.2) | 8 | 30 | 558 | 0 |
-| 60 | [trainer-operator](https://github.com/red-hat-data-services/trainer-operator/tree/rhoai-3.5-ea.2) | 9 | 27 | 560 | 0 |
-| 61 | [training-operator](https://github.com/red-hat-data-services/training-operator/tree/rhoai-3.5-ea.2) | 8 | 30 | 558 | 3 |
-| 62 | [trustyai-explainability](https://github.com/red-hat-data-services/trustyai-explainability/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 1 |
-| 63 | [trustyai-service-operator](https://github.com/red-hat-data-services/trustyai-service-operator/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 3 |
-| 64 | [vllm-cpu](https://github.com/red-hat-data-services/vllm-cpu/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 65 | [vllm-gaudi](https://github.com/red-hat-data-services/vllm-gaudi/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 0 |
-| 66 | [vllm-orchestrator-gateway](https://github.com/red-hat-data-services/vllm-orchestrator-gateway/tree/rhoai-3.5-ea.2) | 8 | 27 | 561 | 1 |
-| 67 | [workbenches-operator](https://github.com/red-hat-data-services/workbenches-operator/tree/rhoai-3.5-ea.2) | 9 | 27 | 560 | 0 |
-| 68 | [workload-variant-autoscaler](https://github.com/red-hat-data-services/workload-variant-autoscaler/tree/rhoai-3.5-ea.2) | 9 | 27 | 560 | 3 |
+| # | Repository | PRs Merged | Unique Mergers |
+|---|-----------|------------|----------------|
+| 1 | [MLServer](https://github.com/red-hat-data-services/MLServer/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 2 | [NeMo-Guardrails](https://github.com/red-hat-data-services/NeMo-Guardrails/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 3 | [RHOAI-Build-Config](https://github.com/red-hat-data-services/RHOAI-Build-Config/tree/rhoai-3.5-ea.2) | 2 | 2 |
+| 4 | [agents-operator](https://github.com/red-hat-data-services/agents-operator/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 5 | [ai-gateway-operator](https://github.com/red-hat-data-services/ai-gateway-operator/tree/rhoai-3.5-ea.2) | 3 | 2 |
+| 6 | [ai-gateway-payload-processing](https://github.com/red-hat-data-services/ai-gateway-payload-processing/tree/rhoai-3.5-ea.2) | 2 | 2 |
+| 7 | [argo-workflows](https://github.com/red-hat-data-services/argo-workflows/tree/rhoai-3.5-ea.2) | 3 | 2 |
+| 8 | [autox-ci](https://github.com/red-hat-data-services/autox-ci/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 9 | [batch-gateway](https://github.com/red-hat-data-services/batch-gateway/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 10 | [conforma-reporter](https://github.com/red-hat-data-services/conforma-reporter/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 11 | [data-science-pipelines](https://github.com/red-hat-data-services/data-science-pipelines/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 12 | [data-science-pipelines-operator](https://github.com/red-hat-data-services/data-science-pipelines-operator/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 13 | [distributed-workloads](https://github.com/red-hat-data-services/distributed-workloads/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 14 | [eval-hub](https://github.com/red-hat-data-services/eval-hub/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 15 | [feast](https://github.com/red-hat-data-services/feast/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 16 | [fms-guardrails-orchestrator](https://github.com/red-hat-data-services/fms-guardrails-orchestrator/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 17 | [guardrails-detectors](https://github.com/red-hat-data-services/guardrails-detectors/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 18 | [guardrails-regex-detector](https://github.com/red-hat-data-services/guardrails-regex-detector/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 19 | [konflux-central](https://github.com/red-hat-data-services/konflux-central/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 20 | [kserve](https://github.com/red-hat-data-services/kserve/tree/rhoai-3.5-ea.2) | 2 | 2 |
+| 21 | [kserve-autogluon-server](https://github.com/red-hat-data-services/kserve-autogluon-server/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 22 | [kube-auth-proxy](https://github.com/red-hat-data-services/kube-auth-proxy/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 23 | [kube-rbac-proxy](https://github.com/red-hat-data-services/kube-rbac-proxy/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 24 | [kubeflow](https://github.com/red-hat-data-services/kubeflow/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 25 | [kuberay](https://github.com/red-hat-data-services/kuberay/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 26 | [llama-stack-provider-ragas](https://github.com/red-hat-data-services/llama-stack-provider-ragas/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 27 | [llama-stack-provider-trustyai-garak](https://github.com/red-hat-data-services/llama-stack-provider-trustyai-garak/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 28 | [llm-d-async](https://github.com/red-hat-data-services/llm-d-async/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 29 | [llm-d-batch-gateway-operator](https://github.com/red-hat-data-services/llm-d-batch-gateway-operator/tree/rhoai-3.5-ea.2) | 2 | 2 |
+| 30 | [llm-d-inference-scheduler](https://github.com/red-hat-data-services/llm-d-inference-scheduler/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 31 | [llm-d-kv-cache](https://github.com/red-hat-data-services/llm-d-kv-cache/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 32 | [llm-d-latency-predictor](https://github.com/red-hat-data-services/llm-d-latency-predictor/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 33 | [llm-d-router](https://github.com/red-hat-data-services/llm-d-router/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 34 | [lm-evaluation-harness](https://github.com/red-hat-data-services/lm-evaluation-harness/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 35 | [lm-evaluation-harness-sobha](https://github.com/red-hat-data-services/lm-evaluation-harness-sobha/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 36 | [ml-metadata](https://github.com/red-hat-data-services/ml-metadata/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 37 | [mlflow](https://github.com/red-hat-data-services/mlflow/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 38 | [mlflow-operator](https://github.com/red-hat-data-services/mlflow-operator/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 39 | [model-metadata-collection](https://github.com/red-hat-data-services/model-metadata-collection/tree/rhoai-3.5-ea.2) | 2 | 1 |
+| 40 | [model-registry](https://github.com/red-hat-data-services/model-registry/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 41 | [model-registry-operator](https://github.com/red-hat-data-services/model-registry-operator/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 42 | [models-as-a-service](https://github.com/red-hat-data-services/models-as-a-service/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 43 | [models-perf-benchmark-data](https://github.com/red-hat-data-services/models-perf-benchmark-data/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 44 | [must-gather](https://github.com/red-hat-data-services/must-gather/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 45 | [notebooks](https://github.com/red-hat-data-services/notebooks/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 46 | [odh-cli](https://github.com/red-hat-data-services/odh-cli/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 47 | [odh-dashboard](https://github.com/red-hat-data-services/odh-dashboard/tree/rhoai-3.5-ea.2) | 5 | 4 |
+| 48 | [odh-gitops](https://github.com/red-hat-data-services/odh-gitops/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 49 | [odh-model-controller](https://github.com/red-hat-data-services/odh-model-controller/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 50 | [ogx-distribution](https://github.com/red-hat-data-services/ogx-distribution/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 51 | [ogx-k8s-operator](https://github.com/red-hat-data-services/ogx-k8s-operator/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 52 | [openvino_model_server](https://github.com/red-hat-data-services/openvino_model_server/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 53 | [pipelines-components](https://github.com/red-hat-data-services/pipelines-components/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 54 | [rhaii-cluster-validation](https://github.com/red-hat-data-services/rhaii-cluster-validation/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 55 | [rhoai-additional-images](https://github.com/red-hat-data-services/rhoai-additional-images/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 56 | [rhoai-mcp](https://github.com/red-hat-data-services/rhoai-mcp/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 57 | [rhods-operator](https://github.com/red-hat-data-services/rhods-operator/tree/rhoai-3.5-ea.2) | 5 | 4 |
+| 58 | [spark-operator](https://github.com/red-hat-data-services/spark-operator/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 59 | [trainer](https://github.com/red-hat-data-services/trainer/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 60 | [trainer-operator](https://github.com/red-hat-data-services/trainer-operator/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 61 | [training-operator](https://github.com/red-hat-data-services/training-operator/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 62 | [trustyai-explainability](https://github.com/red-hat-data-services/trustyai-explainability/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 63 | [trustyai-service-operator](https://github.com/red-hat-data-services/trustyai-service-operator/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 64 | [vllm-cpu](https://github.com/red-hat-data-services/vllm-cpu/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 65 | [vllm-gaudi](https://github.com/red-hat-data-services/vllm-gaudi/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 66 | [vllm-orchestrator-gateway](https://github.com/red-hat-data-services/vllm-orchestrator-gateway/tree/rhoai-3.5-ea.2) | 1 | 1 |
+| 67 | [workbenches-operator](https://github.com/red-hat-data-services/workbenches-operator/tree/rhoai-3.5-ea.2) | 0 | 0 |
+| 68 | [workload-variant-autoscaler](https://github.com/red-hat-data-services/workload-variant-autoscaler/tree/rhoai-3.5-ea.2) | 2 | 1 |
 
 ---
 
-## 2. Per-Repository Details
+## 2. Per-Repository PR Details
 
 ### 1. MLServer
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [github-actions[bot]](https://github.com/github-actions[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 2. NeMo-Guardrails
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-misiura](https://github.com/m-misiura) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 3. RHOAI-Build-Config
 
-**Admins & Maintainers:**
+**2 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#24595](https://github.com/red-hat-data-services/RHOAI-Build-Config/pull/24595) | update rhaii 3.5ea2 iamges | [moulalis](https://github.com/moulalis) | [unknown](https://github.com/unknown) | 2026-06-25 |
+| [#24385](https://github.com/red-hat-data-services/RHOAI-Build-Config/pull/24385) | Remove odh-agents-operator from bundle relatedImages and build-config (offboa... | [alexxfan](https://github.com/alexxfan) | [unknown](https://github.com/unknown) | 2026-06-23 |
 
-**PR Merge Authors (since Jun 20): 209 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 207 |
 | [alexxfan](https://github.com/alexxfan) | 1 |
 | [moulalis](https://github.com/moulalis) | 1 |
 
@@ -244,98 +122,31 @@
 
 ### 4. agents-operator
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#20](https://github.com/red-hat-data-services/agents-operator/pull/20) | offboard agents operator from 3.5-EA.2 | [alexxfan](https://github.com/alexxfan) | [unknown](https://github.com/unknown) | 2026-06-23 |
 
-**PR Merge Authors (since Jun 20): 9 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 8 |
 | [alexxfan](https://github.com/alexxfan) | 1 |
 
 ---
 
 ### 5. ai-gateway-operator
 
-**Admins & Maintainers:**
+**3 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [ubhattarai](https://github.com/ubhattarai) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#9](https://github.com/red-hat-data-services/ai-gateway-operator/pull/9) | fix: update resourceNames to match renamed batch-gateway RBAC resources | [yizhaodev](https://github.com/yizhaodev) | [unknown](https://github.com/unknown) | 2026-06-26 |
+| [#8](https://github.com/red-hat-data-services/ai-gateway-operator/pull/8) | version: bump llm-d-batch-gateway-operator manifests | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-26 |
+| [#7](https://github.com/red-hat-data-services/ai-gateway-operator/pull/7) | fix: missing version in the AIGateway CR | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-26 |
 
-**PR Merge Authors (since Jun 20): 3 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -346,103 +157,36 @@
 
 ### 6. ai-gateway-payload-processing
 
-**Admins & Maintainers:**
+**2 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [wznoinsk](https://github.com/wznoinsk) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#86](https://github.com/red-hat-data-services/ai-gateway-payload-processing/pull/86) | chore: cherry-pick upstream PR #352 — sync version to v0.1.0-rc.2 | [chaitanya1731](https://github.com/chaitanya1731) | [unknown](https://github.com/unknown) | 2026-06-24 |
+| [#83](https://github.com/red-hat-data-services/ai-gateway-payload-processing/pull/83) | update dockerfile.konflux to match dockerfile update | [Peterk04](https://github.com/Peterk04) | [unknown](https://github.com/unknown) | 2026-06-22 |
 
-**PR Merge Authors (since Jun 20): 3 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
 | [chaitanya1731](https://github.com/chaitanya1731) | 1 |
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
 | [Peterk04](https://github.com/Peterk04) | 1 |
 
 ---
 
 ### 7. argo-workflows
 
-**Admins & Maintainers:**
+**3 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#700](https://github.com/red-hat-data-services/argo-workflows/pull/700) | chore: Update Dockerfiles to use Go toolset 1.26.3 and native Go FIPS 140 con... | [hbelmiro](https://github.com/hbelmiro) | [unknown](https://github.com/unknown) | 2026-06-24 |
+| [#697](https://github.com/red-hat-data-services/argo-workflows/pull/697) | chore: bump go toolset | [Peterk04](https://github.com/Peterk04) | [unknown](https://github.com/unknown) | 2026-06-22 |
+| [#696](https://github.com/red-hat-data-services/argo-workflows/pull/696) | chore: bump go toolset | [Peterk04](https://github.com/Peterk04) | [unknown](https://github.com/unknown) | 2026-06-22 |
 
-**PR Merge Authors (since Jun 20): 7 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 4 |
 | [Peterk04](https://github.com/Peterk04) | 2 |
 | [hbelmiro](https://github.com/hbelmiro) | 1 |
 
@@ -450,299 +194,63 @@
 
 ### 8. autox-ci
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [dryszka](https://github.com/dryszka) | Admin |
-| [jakub-walaszczyk](https://github.com/jakub-walaszczyk) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [Mateusz-Switala](https://github.com/Mateusz-Switala) | Admin |
-| [piotrhm](https://github.com/piotrhm) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [Medokins](https://github.com/Medokins) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 9. batch-gateway
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [zdtsw](https://github.com/zdtsw) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 10. conforma-reporter
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 11. data-science-pipelines
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#1544](https://github.com/red-hat-data-services/data-science-pipelines/pull/1544) | chore: Update Konflux Dockerfiles to use Go toolset 1.26.3 and native Go FIPS... | [hbelmiro](https://github.com/hbelmiro) | [unknown](https://github.com/unknown) | 2026-06-24 |
 
-**PR Merge Authors (since Jun 20): 5 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 4 |
 | [hbelmiro](https://github.com/hbelmiro) | 1 |
 
 ---
 
 ### 12. data-science-pipelines-operator
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#1031](https://github.com/red-hat-data-services/data-science-pipelines-operator/pull/1031) | chore: Merge main into rhoai-3.5-ea.2 | [hbelmiro](https://github.com/hbelmiro) | [unknown](https://github.com/unknown) | 2026-06-24 |
 
-**PR Merge Authors (since Jun 20): 3 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 2 |
 | [hbelmiro](https://github.com/hbelmiro) | 1 |
 
 ---
 
 ### 13. distributed-workloads
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [amsharma3](https://github.com/amsharma3) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [astefanutti](https://github.com/astefanutti) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [ChristianZaccaria](https://github.com/ChristianZaccaria) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [dimakis](https://github.com/dimakis) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [Fiona-Waters](https://github.com/Fiona-Waters) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [sutaakar](https://github.com/sutaakar) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#695](https://github.com/red-hat-data-services/distributed-workloads/pull/695) | Bump peft 0.17.0 to 0.18.1 in torch280 training images | [kapil27](https://github.com/kapil27) | [unknown](https://github.com/unknown) | 2026-06-29 |
 
-**PR Merge Authors (since Jun 20): 1 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -752,103 +260,19 @@ _No PRs merged since June 20, 2026._
 
 ### 14. eval-hub
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 3 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 3 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 15. feast
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [amsharma3](https://github.com/amsharma3) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [franciscojavierarceo](https://github.com/franciscojavierarceo) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [lokeshrangineni](https://github.com/lokeshrangineni) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [redhatHameed](https://github.com/redhatHameed) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [tchughesiv](https://github.com/tchughesiv) | Maintain |
-| [tmihalac](https://github.com/tmihalac) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#259](https://github.com/red-hat-data-services/feast/pull/259) | [RHOAIENG-71376] Fix grpc runtime failure by configuring re2 shared library p... | [puneetsharma21](https://github.com/puneetsharma21) | [unknown](https://github.com/unknown) | 2026-06-26 |
 
-**PR Merge Authors (since Jun 20): 1 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -858,47 +282,13 @@ _No PRs merged since June 20, 2026._
 
 ### 16. fms-guardrails-orchestrator
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#255](https://github.com/red-hat-data-services/fms-guardrails-orchestrator/pull/255) | :construction: Fix UBI repo IDs to match conforma known_rpm_repositories list | [m-misiura](https://github.com/m-misiura) | [unknown](https://github.com/unknown) | 2026-06-22 |
 
-**PR Merge Authors (since Jun 20): 1 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -908,194 +298,45 @@ _No PRs merged since June 20, 2026._
 
 ### 17. guardrails-detectors
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 18. guardrails-regex-detector
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 19. konflux-central
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#2489](https://github.com/red-hat-data-services/konflux-central/pull/2489) | Remove odh-agents-operator-v3-5-ea-2 push PipelineRun (offboarding) | [alexxfan](https://github.com/alexxfan) | [unknown](https://github.com/unknown) | 2026-06-23 |
 
-**PR Merge Authors (since Jun 20): 6 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 5 |
 | [alexxfan](https://github.com/alexxfan) | 1 |
 
 ---
 
 ### 20. kserve
 
-**Admins & Maintainers:**
+**2 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#4387](https://github.com/red-hat-data-services/kserve/pull/4387) | update: components version | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-30 |
+| [#4388](https://github.com/red-hat-data-services/kserve/pull/4388) | RHOAIENG-71150: fix(llmisvc): disable readOnlyRootFilesystem for nvidia-cdi-h... | [pierDipi](https://github.com/pierDipi) | [unknown](https://github.com/unknown) | 2026-06-24 |
 
-**PR Merge Authors (since Jun 20): 9 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 7 |
 | [pierDipi](https://github.com/pierDipi) | 1 |
 | [zdtsw](https://github.com/zdtsw) | 1 |
 
@@ -1103,441 +344,62 @@ _No PRs merged since June 20, 2026._
 
 ### 21. kserve-autogluon-server
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [DorotaDR](https://github.com/DorotaDR) | Admin |
-| [dryszka](https://github.com/dryszka) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [LukaszCmielowski](https://github.com/LukaszCmielowski) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 22. kube-auth-proxy
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [resoluteCoder](https://github.com/resoluteCoder) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 23. kube-rbac-proxy
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 3 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 3 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 24. kubeflow
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [openshift-ci-robot](https://github.com/openshift-ci-robot) | Admin |
-| [openshift-merge-robot](https://github.com/openshift-merge-robot) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 7 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 7 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 25. kuberay
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [astefanutti](https://github.com/astefanutti) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [sutaakar](https://github.com/sutaakar) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [szaher](https://github.com/szaher) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 7 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 7 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 26. llama-stack-provider-ragas
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 27. llama-stack-provider-trustyai-garak
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [saichandrapandraju](https://github.com/saichandrapandraju) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 28. llm-d-async
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [ubhattarai](https://github.com/ubhattarai) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 29. llm-d-batch-gateway-operator
 
-**Admins & Maintainers:**
+**2 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [ubhattarai](https://github.com/ubhattarai) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#18](https://github.com/red-hat-data-services/llm-d-batch-gateway-operator/pull/18) | [sync] fix: render inferenceObjective into inference gateway config | [yizhaodev](https://github.com/yizhaodev) | [unknown](https://github.com/unknown) | 2026-06-26 |
+| [#17](https://github.com/red-hat-data-services/llm-d-batch-gateway-operator/pull/17) | [sync] fix: for 3.5 ea2 build | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-26 |
 
-**PR Merge Authors (since Jun 20): 2 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -1548,481 +410,78 @@ _No PRs merged since June 20, 2026._
 
 ### 30. llm-d-inference-scheduler
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 31. llm-d-kv-cache
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [zdtsw](https://github.com/zdtsw) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 32. llm-d-latency-predictor
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 33. llm-d-router
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [ubhattarai](https://github.com/ubhattarai) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 34. lm-evaluation-harness
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 35. lm-evaluation-harness-sobha
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [scheruku-rh](https://github.com/scheruku-rh) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 36. ml-metadata
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 5 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 5 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 37. mlflow
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [HumairAK](https://github.com/HumairAK) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [mprahl](https://github.com/mprahl) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 38. mlflow-operator
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [HumairAK](https://github.com/HumairAK) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [mprahl](https://github.com/mprahl) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#410](https://github.com/red-hat-data-services/mlflow-operator/pull/410) | [rhoai-3.5-ea.2] Preserve failed upgrade resources for debugging | [mprahl](https://github.com/mprahl) | [unknown](https://github.com/unknown) | 2026-06-24 |
 
-**PR Merge Authors (since Jun 20): 4 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 3 |
 | [mprahl](https://github.com/mprahl) | 1 |
 
 ---
 
 ### 39. model-metadata-collection
 
-**Admins & Maintainers:**
+**2 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [dhirajsb](https://github.com/dhirajsb) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#180](https://github.com/red-hat-data-services/model-metadata-collection/pull/180) | feat(catalog): add EA2 models to Other models catalog for RHOAI 3.5 EA2 (#162) | [chambridge](https://github.com/chambridge) | [unknown](https://github.com/unknown) | 2026-06-26 |
+| [#170](https://github.com/red-hat-data-services/model-metadata-collection/pull/170) | text-embedding models for EA2 | [chambridge](https://github.com/chambridge) | [unknown](https://github.com/unknown) | 2026-06-22 |
 
-**PR Merge Authors (since Jun 20): 2 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -2032,406 +491,72 @@ _No PRs merged since June 20, 2026._
 
 ### 40. model-registry
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 7 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 7 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 41. model-registry-operator
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 4 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 4 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 42. models-as-a-service
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [chaitanya1731](https://github.com/chaitanya1731) | Maintain |
-| [cooktheryan](https://github.com/cooktheryan) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [dmytro-zaharnytskyi](https://github.com/dmytro-zaharnytskyi) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [ishitasequeira](https://github.com/ishitasequeira) | Maintain |
-| [israel-hdez](https://github.com/israel-hdez) | Maintain |
-| [jland-redhat](https://github.com/jland-redhat) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [nerdalert](https://github.com/nerdalert) | Maintain |
-| [nirrozenbaum](https://github.com/nirrozenbaum) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [usize](https://github.com/usize) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#539](https://github.com/red-hat-data-services/models-as-a-service/pull/539) | fix: cherry-pick #1040 - update ipp config format and image to match llm-d fr... | [chaitanya1731](https://github.com/chaitanya1731) | [unknown](https://github.com/unknown) | 2026-06-24 |
 
-**PR Merge Authors (since Jun 20): 8 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 7 |
 | [chaitanya1731](https://github.com/chaitanya1731) | 1 |
 
 ---
 
 ### 43. models-perf-benchmark-data
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [Al-Pragliola](https://github.com/Al-Pragliola) | Maintain |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 44. must-gather
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-| [zdtsw](https://github.com/zdtsw) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 45. notebooks
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [openshift-ci-robot](https://github.com/openshift-ci-robot) | Admin |
-| [openshift-merge-robot](https://github.com/openshift-merge-robot) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [atheo89](https://github.com/atheo89) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [harshad16](https://github.com/harshad16) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [VaishnaviHire](https://github.com/VaishnaviHire) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 46. odh-cli
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [m-rafeeq](https://github.com/m-rafeeq) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 47. odh-dashboard
 
-**Admins & Maintainers:**
+**5 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#2130](https://github.com/red-hat-data-services/odh-dashboard/pull/2130) | Apply Feast UI tests init error workaround | [Srihari1192](https://github.com/Srihari1192) | [unknown](https://github.com/unknown) | 2026-06-26 |
+| [#2102](https://github.com/red-hat-data-services/odh-dashboard/pull/2102) | Revert agent-ops BFF manifests from 3.5-EA2 [RHOAIENG-70465] | [Gkrumbach07](https://github.com/Gkrumbach07) | [unknown](https://github.com/unknown) | 2026-06-25 |
+| [#2103](https://github.com/red-hat-data-services/odh-dashboard/pull/2103) | Fix MLflow test selectors for upstream v3.13.0 'Edit experiment' rename (#8255) | [FedeAlonso](https://github.com/FedeAlonso) | [unknown](https://github.com/unknown) | 2026-06-24 |
+| [#2082](https://github.com/red-hat-data-services/odh-dashboard/pull/2082) | fix(cypress): replace Monaco internal API with DOM-based interactions… | [FedeAlonso](https://github.com/FedeAlonso) | [unknown](https://github.com/unknown) | 2026-06-22 |
+| [#2079](https://github.com/red-hat-data-services/odh-dashboard/pull/2079) | fix(backend): add tslib as explicit production dependency | [antowaddle](https://github.com/antowaddle) | [unknown](https://github.com/unknown) | 2026-06-22 |
 
-**PR Merge Authors (since Jun 20): 10 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 5 |
 | [FedeAlonso](https://github.com/FedeAlonso) | 2 |
 | [antowaddle](https://github.com/antowaddle) | 1 |
 | [Gkrumbach07](https://github.com/Gkrumbach07) | 1 |
@@ -2441,143 +566,25 @@ _No PRs merged since June 20, 2026._
 
 ### 48. odh-gitops
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 49. odh-model-controller
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 50. ogx-distribution
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#126](https://github.com/red-hat-data-services/ogx-distribution/pull/126) | chore: update ogx to v1.1.3+rhaiv.0 for 3.5-ea.2 | [nathan-weinberg](https://github.com/nathan-weinberg) | [unknown](https://github.com/unknown) | 2026-06-29 |
 
-**PR Merge Authors (since Jun 20): 1 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -2587,339 +594,56 @@ _No PRs merged since June 20, 2026._
 
 ### 51. ogx-k8s-operator
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 52. openvino_model_server
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [openshift-merge-robot](https://github.com/openshift-merge-robot) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 53. pipelines-components
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [wznoinsk](https://github.com/wznoinsk) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 54. rhaii-cluster-validation
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [aneeshkp](https://github.com/aneeshkp) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dagrayvid](https://github.com/dagrayvid) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rajkiranjoshi](https://github.com/rajkiranjoshi) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 55. rhoai-additional-images
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 56. rhoai-mcp
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 57. rhods-operator
 
-**Admins & Maintainers:**
+**5 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#33071](https://github.com/red-hat-data-services/rhods-operator/pull/33071) | Chore: aigateway is missing from default DSC yaml | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-26 |
+| [#32709](https://github.com/red-hat-data-services/rhods-operator/pull/32709) | [sync] feat: add ai-gateway module into operator (#3625) | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-25 |
+| [#32267](https://github.com/red-hat-data-services/rhods-operator/pull/32267) | fix(gateway): [3.5-ea.2] add egress rules to kube-auth-proxy NetworkPolicy fo... | [ugiordan](https://github.com/ugiordan) | [unknown](https://github.com/unknown) | 2026-06-24 |
+| [#32261](https://github.com/red-hat-data-services/rhods-operator/pull/32261) | fix: update  manifest config for odh-ai-gateway-operator | [riprasad](https://github.com/riprasad) | [unknown](https://github.com/unknown) | 2026-06-23 |
+| [#32246](https://github.com/red-hat-data-services/rhods-operator/pull/32246) | Remove odh-agents-operator from operator manifests (offboarding) | [alexxfan](https://github.com/alexxfan) | [unknown](https://github.com/unknown) | 2026-06-23 |
 
-**PR Merge Authors (since Jun 20): 312 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 307 |
 | [zdtsw](https://github.com/zdtsw) | 2 |
 | [alexxfan](https://github.com/alexxfan) | 1 |
 | [riprasad](https://github.com/riprasad) | 1 |
@@ -2929,438 +653,61 @@ _No PRs merged since June 20, 2026._
 
 ### 58. spark-operator
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 2 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 2 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 59. trainer
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [abhijeet-dhumal](https://github.com/abhijeet-dhumal) | Maintain |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [ChughShilpa](https://github.com/ChughShilpa) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [sutaakar](https://github.com/sutaakar) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 60. trainer-operator
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [sutaakar](https://github.com/sutaakar) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 61. training-operator
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [astefanutti](https://github.com/astefanutti) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [sutaakar](https://github.com/sutaakar) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [szaher](https://github.com/szaher) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 3 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 3 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 62. trustyai-explainability
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 1 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 63. trustyai-service-operator
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-**PR Merge Authors (since Jun 20): 3 PRs**
-
-| Merged By | PRs |
-|-----------|-----|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 3 |
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 64. vllm-cpu
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 65. vllm-gaudi
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 66. vllm-orchestrator-gateway
 
-**Admins & Maintainers:**
+**1 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#138](https://github.com/red-hat-data-services/vllm-orchestrator-gateway/pull/138) | :construction: Fix UBI repo IDs to match conforma known_rpm_repositories list | [m-misiura](https://github.com/m-misiura) | [unknown](https://github.com/unknown) | 2026-06-22 |
 
-**PR Merge Authors (since Jun 20): 1 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
@@ -3370,202 +717,33 @@ _No PRs merged since June 20, 2026._
 
 ### 67. workbenches-operator
 
-**Admins & Maintainers:**
-
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [jstourac](https://github.com/jstourac) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
-
-_No PRs merged since June 20, 2026._
+_No human-merged PRs since June 20, 2026._
 
 ---
 
 ### 68. workload-variant-autoscaler
 
-**Admins & Maintainers:**
+**2 PRs merged**
 
-| User | Role |
-|------|------|
-| [accorvin](https://github.com/accorvin) | Admin |
-| [ckhordiasma](https://github.com/ckhordiasma) | Admin |
-| [dchourasia](https://github.com/dchourasia) | Admin |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | Admin |
-| [kahowell](https://github.com/kahowell) | Admin |
-| [lphiri](https://github.com/lphiri) | Admin |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | Admin |
-| [riprasad](https://github.com/riprasad) | Admin |
-| [zdtsw](https://github.com/zdtsw) | Admin |
-| [alexxfan](https://github.com/alexxfan) | Maintain |
-| [aloganat](https://github.com/aloganat) | Maintain |
-| [apodhrad](https://github.com/apodhrad) | Maintain |
-| [BabbarPB08](https://github.com/BabbarPB08) | Maintain |
-| [bjp-rocks](https://github.com/bjp-rocks) | Maintain |
-| [crackcodecamp](https://github.com/crackcodecamp) | Maintain |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | Maintain |
-| [jstetina](https://github.com/jstetina) | Maintain |
-| [KorneAlex](https://github.com/KorneAlex) | Maintain |
-| [ldimaggi](https://github.com/ldimaggi) | Maintain |
-| [liswang89](https://github.com/liswang89) | Maintain |
-| [m-rafeeq](https://github.com/m-rafeeq) | Maintain |
-| [MatejHorinek](https://github.com/MatejHorinek) | Maintain |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | Maintain |
-| [MohammadiIram](https://github.com/MohammadiIram) | Maintain |
-| [moulalis](https://github.com/moulalis) | Maintain |
-| [Navyashree0923](https://github.com/Navyashree0923) | Maintain |
-| [pablofelix](https://github.com/pablofelix) | Maintain |
-| [Peterk04](https://github.com/Peterk04) | Maintain |
-| [rroshan-rh](https://github.com/rroshan-rh) | Maintain |
-| [san7ket](https://github.com/san7ket) | Maintain |
-| [sghai](https://github.com/sghai) | Maintain |
-| [swattamw2024](https://github.com/swattamw2024) | Maintain |
-| [syelluma123](https://github.com/syelluma123) | Maintain |
-| [ubhattarai](https://github.com/ubhattarai) | Maintain |
-| [wznoinsk](https://github.com/wznoinsk) | Maintain |
-| [yash2189](https://github.com/yash2189) | Maintain |
+| PR | Title | Author | Merged By | Merged At |
+|-----|-------|--------|-----------|-----------|
+| [#191](https://github.com/red-hat-data-services/workload-variant-autoscaler/pull/191) | fix: watch-namespace should be empty string, same as cluster-scope watch | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-30 |
+| [#179](https://github.com/red-hat-data-services/workload-variant-autoscaler/pull/179) | Sync: changes from upstream 0.8 release to RHDS 3.5 ea2 | [zdtsw](https://github.com/zdtsw) | [unknown](https://github.com/unknown) | 2026-06-24 |
 
-**PR Merge Authors (since Jun 20): 3 PRs**
+**Merge authors summary:**
 
 | Merged By | PRs |
 |-----------|-----|
 | [zdtsw](https://github.com/zdtsw) | 2 |
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 1 |
 
 ---
 
-## 3. Cross-Repository Admins & Maintainers
+## 3. Cross-Repository PR Merge Authors
 
-**Unique users with Admin or Maintain role:** 83
-
-| User | Admin In | Maintain In | Total Repos |
-|------|----------|-------------|-------------|
-| [abhijeet-dhumal](https://github.com/abhijeet-dhumal) | 0 | 1 | 68 |
-| [accorvin](https://github.com/accorvin) | 68 | 0 | 68 |
-| [Al-Pragliola](https://github.com/Al-Pragliola) | 0 | 1 | 68 |
-| [alexxfan](https://github.com/alexxfan) | 2 | 66 | 68 |
-| [aloganat](https://github.com/aloganat) | 0 | 68 | 68 |
-| [amsharma3](https://github.com/amsharma3) | 0 | 2 | 68 |
-| [aneeshkp](https://github.com/aneeshkp) | 1 | 0 | 68 |
-| [apodhrad](https://github.com/apodhrad) | 0 | 68 | 68 |
-| [astefanutti](https://github.com/astefanutti) | 0 | 3 | 68 |
-| [atheo89](https://github.com/atheo89) | 0 | 1 | 68 |
-| [BabbarPB08](https://github.com/BabbarPB08) | 0 | 68 | 68 |
-| [bjp-rocks](https://github.com/bjp-rocks) | 0 | 68 | 68 |
-| [chaitanya1731](https://github.com/chaitanya1731) | 0 | 1 | 68 |
-| [ChristianZaccaria](https://github.com/ChristianZaccaria) | 0 | 1 | 68 |
-| [ChughShilpa](https://github.com/ChughShilpa) | 0 | 1 | 68 |
-| [ckhordiasma](https://github.com/ckhordiasma) | 68 | 0 | 68 |
-| [cooktheryan](https://github.com/cooktheryan) | 0 | 1 | 68 |
-| [crackcodecamp](https://github.com/crackcodecamp) | 0 | 68 | 68 |
-| [dagrayvid](https://github.com/dagrayvid) | 1 | 0 | 68 |
-| [dchourasia](https://github.com/dchourasia) | 68 | 0 | 68 |
-| [dhirajsb](https://github.com/dhirajsb) | 0 | 1 | 68 |
-| [dimakis](https://github.com/dimakis) | 0 | 1 | 68 |
-| [dmytro-zaharnytskyi](https://github.com/dmytro-zaharnytskyi) | 0 | 1 | 68 |
-| [DorotaDR](https://github.com/DorotaDR) | 1 | 0 | 68 |
-| [dryszka](https://github.com/dryszka) | 2 | 0 | 68 |
-| [ekarpovi-rh](https://github.com/ekarpovi-rh) | 0 | 68 | 68 |
-| [Fiona-Waters](https://github.com/Fiona-Waters) | 0 | 1 | 68 |
-| [franciscojavierarceo](https://github.com/franciscojavierarceo) | 0 | 1 | 68 |
-| [harshad16](https://github.com/harshad16) | 0 | 1 | 68 |
-| [HumairAK](https://github.com/HumairAK) | 0 | 2 | 68 |
-| [ishitasequeira](https://github.com/ishitasequeira) | 0 | 1 | 68 |
-| [israel-hdez](https://github.com/israel-hdez) | 0 | 1 | 68 |
-| [jakub-walaszczyk](https://github.com/jakub-walaszczyk) | 1 | 0 | 68 |
-| [jkoehler-redhat](https://github.com/jkoehler-redhat) | 68 | 0 | 68 |
-| [jland-redhat](https://github.com/jland-redhat) | 0 | 1 | 68 |
-| [jstetina](https://github.com/jstetina) | 0 | 68 | 68 |
-| [jstourac](https://github.com/jstourac) | 1 | 0 | 68 |
-| [kahowell](https://github.com/kahowell) | 68 | 0 | 68 |
-| [KorneAlex](https://github.com/KorneAlex) | 0 | 68 | 68 |
-| [ldimaggi](https://github.com/ldimaggi) | 0 | 68 | 68 |
-| [liswang89](https://github.com/liswang89) | 0 | 68 | 68 |
-| [lokeshrangineni](https://github.com/lokeshrangineni) | 0 | 1 | 68 |
-| [lphiri](https://github.com/lphiri) | 68 | 0 | 68 |
-| [LukaszCmielowski](https://github.com/LukaszCmielowski) | 1 | 0 | 68 |
-| [m-misiura](https://github.com/m-misiura) | 0 | 1 | 68 |
-| [m-rafeeq](https://github.com/m-rafeeq) | 1 | 67 | 68 |
-| [MatejHorinek](https://github.com/MatejHorinek) | 0 | 68 | 68 |
-| [Mateusz-Switala](https://github.com/Mateusz-Switala) | 1 | 0 | 68 |
-| [mchamsed-rh](https://github.com/mchamsed-rh) | 1 | 67 | 68 |
-| [Medokins](https://github.com/Medokins) | 0 | 1 | 68 |
-| [MohammadiIram](https://github.com/MohammadiIram) | 0 | 68 | 68 |
-| [moulalis](https://github.com/moulalis) | 0 | 68 | 68 |
-| [mprahl](https://github.com/mprahl) | 0 | 2 | 68 |
-| [Navyashree0923](https://github.com/Navyashree0923) | 0 | 68 | 68 |
-| [nerdalert](https://github.com/nerdalert) | 0 | 1 | 68 |
-| [nirrozenbaum](https://github.com/nirrozenbaum) | 0 | 1 | 68 |
-| [openshift-ci-robot](https://github.com/openshift-ci-robot) | 2 | 0 | 68 |
-| [openshift-merge-robot](https://github.com/openshift-merge-robot) | 3 | 0 | 68 |
-| [pablofelix](https://github.com/pablofelix) | 0 | 68 | 68 |
-| [Peterk04](https://github.com/Peterk04) | 0 | 68 | 68 |
-| [piotrhm](https://github.com/piotrhm) | 1 | 0 | 68 |
-| [rajkiranjoshi](https://github.com/rajkiranjoshi) | 0 | 1 | 68 |
-| [redhatHameed](https://github.com/redhatHameed) | 0 | 1 | 68 |
-| [resoluteCoder](https://github.com/resoluteCoder) | 0 | 1 | 68 |
-| [rhods-ci-bot](https://github.com/rhods-ci-bot) | 68 | 0 | 68 |
-| [riprasad](https://github.com/riprasad) | 68 | 0 | 68 |
-| [rroshan-rh](https://github.com/rroshan-rh) | 0 | 68 | 68 |
-| [saichandrapandraju](https://github.com/saichandrapandraju) | 0 | 1 | 68 |
-| [san7ket](https://github.com/san7ket) | 0 | 68 | 68 |
-| [scheruku-rh](https://github.com/scheruku-rh) | 1 | 0 | 68 |
-| [sghai](https://github.com/sghai) | 0 | 68 | 68 |
-| [sutaakar](https://github.com/sutaakar) | 1 | 4 | 68 |
-| [swattamw2024](https://github.com/swattamw2024) | 0 | 68 | 68 |
-| [syelluma123](https://github.com/syelluma123) | 0 | 68 | 68 |
-| [szaher](https://github.com/szaher) | 0 | 2 | 68 |
-| [tchughesiv](https://github.com/tchughesiv) | 0 | 1 | 68 |
-| [tmihalac](https://github.com/tmihalac) | 0 | 1 | 68 |
-| [ubhattarai](https://github.com/ubhattarai) | 4 | 64 | 68 |
-| [usize](https://github.com/usize) | 0 | 1 | 68 |
-| [VaishnaviHire](https://github.com/VaishnaviHire) | 0 | 1 | 68 |
-| [wznoinsk](https://github.com/wznoinsk) | 2 | 66 | 68 |
-| [yash2189](https://github.com/yash2189) | 0 | 68 | 68 |
-| [zdtsw](https://github.com/zdtsw) | 3 | 1 | 68 |
-
----
-
-## 4. Cross-Repository PR Merge Authors (since Jun 20, 2026)
-
-**Total unique users who merged PRs:** 22
+**Total unique human mergers:** 20
 
 | User | Repos Merged Into | Total PRs |
 |------|-------------------|-----------|
-| [konflux-internal-p02[bot]](https://github.com/konflux-internal-p02[bot]) | 31 | 613 |
 | [zdtsw](https://github.com/zdtsw) | 5 | 8 |
 | [alexxfan](https://github.com/alexxfan) | 4 | 4 |
 | [hbelmiro](https://github.com/hbelmiro) | 3 | 3 |
@@ -3576,7 +754,6 @@ _No PRs merged since June 20, 2026._
 | [m-misiura](https://github.com/m-misiura) | 2 | 2 |
 | [yizhaodev](https://github.com/yizhaodev) | 2 | 2 |
 | [antowaddle](https://github.com/antowaddle) | 1 | 1 |
-| [github-actions[bot]](https://github.com/github-actions[bot]) | 1 | 1 |
 | [Gkrumbach07](https://github.com/Gkrumbach07) | 1 | 1 |
 | [kapil27](https://github.com/kapil27) | 1 | 1 |
 | [moulalis](https://github.com/moulalis) | 1 | 1 |
