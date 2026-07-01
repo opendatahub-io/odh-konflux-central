@@ -16,7 +16,7 @@
 #   RUNNER_EPHEMERAL - true/false (default: false)
 #   RUNNER_WORKDIR   - Working directory (default: _work)
 
-set -eo pipefail
+set -o pipefail
 
 # ---------------------------------------------------------------
 # Defaults
@@ -39,20 +39,24 @@ if [[ -n "${missing}" ]]; then
 fi
 
 # ---------------------------------------------------------------
-# Cleanup on shutdown
+# Cleanup on shutdown (only deregister on graceful stop)
 # ---------------------------------------------------------------
-CLEANUP_DONE=0
+GRACEFUL_SHUTDOWN=0
+RUNNER_PID=""
 
-cleanup() {
-  if [[ "${CLEANUP_DONE}" -eq 1 ]]; then return; fi
-  CLEANUP_DONE=1
-
-  echo "Removing runner configuration for '${RUNNER_NAME}'..." >&2
+graceful_stop() {
+  GRACEFUL_SHUTDOWN=1
+  echo "Graceful shutdown requested — deregistering '${RUNNER_NAME}'..." >&2
+  if [[ -n "${RUNNER_PID}" ]]; then
+    kill -TERM "${RUNNER_PID}" 2>/dev/null || true
+    wait "${RUNNER_PID}" 2>/dev/null || true
+  fi
   ./config.sh remove --token "${RUNNER_TOKEN}" 2>&1 \
     || echo "WARNING: config.sh remove failed (runner may already be removed)" >&2
+  exit 0
 }
 
-trap cleanup SIGTERM SIGINT EXIT
+trap graceful_stop SIGTERM SIGINT
 
 # ---------------------------------------------------------------
 # Docker-in-Docker: align externals path with the host-mounted dir
@@ -74,35 +78,46 @@ if [[ -n "${RUNNER_WORKDIR:-}" ]]; then
 fi
 
 # ---------------------------------------------------------------
-# Configure runner
+# Configure runner (skip if already configured from a previous run)
 # ---------------------------------------------------------------
-echo "Configuring runner '${RUNNER_NAME}' for org '${GITHUB_ORG}'..." >&2
-echo "  Group:     ${RUNNER_GROUP}" >&2
-echo "  Labels:    ${RUNNER_LABELS}" >&2
-echo "  Ephemeral: ${RUNNER_EPHEMERAL}" >&2
+if [[ -f .runner && -f .credentials ]]; then
+  echo "Runner '${RUNNER_NAME}' already configured — reusing existing credentials." >&2
+else
+  echo "Configuring runner '${RUNNER_NAME}' for org '${GITHUB_ORG}'..." >&2
+  echo "  Group:     ${RUNNER_GROUP}" >&2
+  echo "  Labels:    ${RUNNER_LABELS}" >&2
+  echo "  Ephemeral: ${RUNNER_EPHEMERAL}" >&2
 
-CONFIG_ARGS=(
-  --url "https://github.com/${GITHUB_ORG}"
-  --token "${RUNNER_TOKEN}"
-  --name "${RUNNER_NAME}"
-  --labels "${RUNNER_LABELS}"
-  --runnergroup "${RUNNER_GROUP}"
-  --work "${RUNNER_WORKDIR}"
-  --unattended
-  --replace
-  --disableupdate
-)
+  CONFIG_ARGS=(
+    --url "https://github.com/${GITHUB_ORG}"
+    --token "${RUNNER_TOKEN}"
+    --name "${RUNNER_NAME}"
+    --labels "${RUNNER_LABELS}"
+    --runnergroup "${RUNNER_GROUP}"
+    --work "${RUNNER_WORKDIR}"
+    --unattended
+    --replace
+    --disableupdate
+  )
 
-if [[ "${RUNNER_EPHEMERAL}" == "true" ]]; then
-  CONFIG_ARGS+=(--ephemeral)
+  if [[ "${RUNNER_EPHEMERAL}" == "true" ]]; then
+    CONFIG_ARGS+=(--ephemeral)
+  fi
+
+  ./config.sh "${CONFIG_ARGS[@]}"
 fi
 
-./config.sh "${CONFIG_ARGS[@]}"
-
 # ---------------------------------------------------------------
-# Run
+# Run (foreground — signals reach the runner directly)
 # ---------------------------------------------------------------
 echo "Runner '${RUNNER_NAME}' is starting..." >&2
 ./bin/Runner.Listener run --startuptype service &
 RUNNER_PID=$!
 wait ${RUNNER_PID}
+EXIT_CODE=$?
+
+if [[ "${GRACEFUL_SHUTDOWN}" -eq 0 && ${EXIT_CODE} -ne 0 ]]; then
+  echo "Runner crashed (exit ${EXIT_CODE}) — keeping registration for restart." >&2
+  sleep 5
+fi
+exit ${EXIT_CODE}
