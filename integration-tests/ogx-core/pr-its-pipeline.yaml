@@ -19,6 +19,20 @@ spec:
     - name: artifact-browser-url
       default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
       description: URL of the artifact browser.
+    - name: inference-model
+      default: 'Qwen/Qwen3-0.6B'
+      description: Inference model served by vLLM (must match --served-model-name).
+    - name: embedding-model
+      default: 'ibm-granite/granite-embedding-125m-english'
+      description: Embedding model served by vLLM.
+    - name: test-runner-image
+      default: 'quay.io/rh-ee-ahladenk/ogx-test-runner:latest'
+      description: Pre-built image with test dependencies (curl, uv, Node.js).
+
+  results:
+    - name: TEST_OUTPUT
+      description: Functional test results in Konflux format
+      value: $(tasks.functional-tests.results.TEST_OUTPUT)
 
   tasks:
     # ── Standard boilerplate ──────────────────────────────────────────────
@@ -133,6 +147,9 @@ spec:
             type: string
           - name: component-image
             type: string
+        results:
+          - name: TEST_OUTPUT
+            description: Test results in Konflux format
         sidecars:
           - name: postgres
             image: pgvector/pgvector:pg17
@@ -148,13 +165,13 @@ spec:
                 command: ["pg_isready", "-U", "ogx", "-d", "ogx"]
               initialDelaySeconds: 5
               periodSeconds: 3
-            resources:
+            computeResources:
               requests:
-                memory: "256Mi"
-                cpu: "250m"
-              limits:
                 memory: "512Mi"
-                cpu: "500m"
+                cpu: "1"
+              limits:
+                memory: "1Gi"
+                cpu: "1"
 
           - name: vllm-inference
             image: quay.io/opendatahub/vllm-cpu:Qwen3-0.6B-granite-embedding-125m-english
@@ -169,11 +186,11 @@ spec:
               - "--model"
               - "/root/.cache/Qwen/Qwen3-0.6B"
               - "--served-model-name"
-              - "Qwen/Qwen3-0.6B"
+              - "$(params.inference-model)"
               - "--max-model-len"
               - "8192"
               - "--gpu-memory-utilization"
-              - "0.50"
+              - "0.10"
             readinessProbe:
               httpGet:
                 path: /health
@@ -181,7 +198,7 @@ spec:
               initialDelaySeconds: 60
               periodSeconds: 10
               failureThreshold: 60
-            resources:
+            computeResources:
               requests:
                 memory: "4Gi"
                 cpu: "2"
@@ -199,7 +216,7 @@ spec:
               - "--model"
               - "/root/.cache/ibm-granite/granite-embedding-125m-english"
               - "--served-model-name"
-              - "ibm-granite/granite-embedding-125m-english"
+              - "$(params.embedding-model)"
               - "--gpu-memory-utilization"
               - "0.05"
               - "--hf-overrides"
@@ -211,12 +228,12 @@ spec:
               initialDelaySeconds: 60
               periodSeconds: 10
               failureThreshold: 60
-            resources:
+            computeResources:
               requests:
-                memory: "1Gi"
+                memory: "2Gi"
                 cpu: "1"
               limits:
-                memory: "2Gi"
+                memory: "4Gi"
                 cpu: "2"
 
           - name: ogx
@@ -247,11 +264,29 @@ spec:
               - name: TRUSTYAI_LMEVAL_USE_K8S
                 value: "False"
               - name: VLLM_URL
-                value: "http://localhost:8000/v1"
+                value: "http://127.0.0.1:8000/v1"
+              - name: VLLM_API_TOKEN
+                value: "dummy"
+              - name: VLLM_TLS_VERIFY
+                value: "false"
+              - name: VLLM_REFRESH_MODELS
+                value: "true"
               - name: VLLM_EMBEDDING_URL
-                value: "http://localhost:8001/v1"
+                value: "http://127.0.0.1:8001/v1"
+              - name: VLLM_EMBEDDING_API_TOKEN
+                value: "dummy"
+              - name: VLLM_EMBEDDING_TLS_VERIFY
+                value: "false"
+              - name: VLLM_EMBEDDING_REFRESH_MODELS
+                value: "true"
+              - name: REGISTRY_REFRESH_INTERVAL_SECONDS
+                value: "15"
               - name: EMBEDDING_MODEL
-                value: "ibm-granite/granite-embedding-125m-english"
+                value: "$(params.embedding-model)"
+              - name: VLLM_REFRESH_MODELS
+                value: "true"
+              - name: REGISTRY_REFRESH_INTERVAL_SECONDS
+                value: "15"
             readinessProbe:
               httpGet:
                 path: /v1/health
@@ -259,71 +294,81 @@ spec:
               initialDelaySeconds: 15
               periodSeconds: 5
               failureThreshold: 60
-            resources:
+            computeResources:
               requests:
-                memory: "512Mi"
-                cpu: "500m"
-              limits:
                 memory: "1Gi"
                 cpu: "1"
+              limits:
+                memory: "2Gi"
+                cpu: "2"
 
         steps:
           - name: clone-repo
             image: alpine/git
+            env:
+              - name: GIT_URL
+                value: $(params.git-url)
+              - name: GIT_REV
+                value: $(params.git-rev)
             script: |
-              echo "Cloning $(params.git-url) @ $(params.git-rev)"
-              git clone --depth 1 --branch $(params.git-rev) $(params.git-url) /workspace/source
-              ls /workspace/source/tests/functional/
+              echo "Cloning ${GIT_URL} @ ${GIT_REV}"
+              rm -rf /workspace/repo
+              git clone --depth 1 --branch "${GIT_REV}" "${GIT_URL}" /workspace/repo
+              ls /workspace/repo/tests/functional/
 
           - name: run-functional-tests
-            image: python:3.12-slim
-            onError: continue
+            image: $(params.test-runner-image)
             env:
               - name: BASE_URL
-                value: "http://localhost:8321"
+                value: "http://127.0.0.1:8321"
               - name: HEALTH_CHECK_TIMEOUT
                 value: "600"
               - name: ARTIFACT_DIR
                 value: /workspace/artifacts-dir
-            workingDir: /workspace/source/tests/functional
+              - name: INFERENCE_MODEL
+                value: "vllm-inference/$(params.inference-model)"
+              - name: EMBEDDING_MODEL
+                value: "vllm-embedding/$(params.embedding-model)"
             script: |
               #!/bin/bash
               set -euo pipefail
+              cd /workspace/repo/tests/functional
+
               mkdir -p "${ARTIFACT_DIR}"
 
-              # Install uv
-              curl -LsSf https://astral.sh/uv/install.sh | sh
-              export PATH="$HOME/.local/bin:$PATH"
-
-              # Install Node.js for Bruno CLI
-              apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
-              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-              apt-get install -y --no-install-recommends nodejs
-
-              # Install Python deps
+              # Install Python deps + Bruno CLI + Jupyter kernel
               uv sync
-
-              # Install Bruno CLI
+              uv run python -m ipykernel install --user --name ogx-functional
               cd bruno && npm install && cd ..
 
-              # Discover models from OGX (names include provider prefix)
-              MODELS_JSON=$(curl -sf "${BASE_URL}/v1/models" 2>/dev/null || echo '{"data":[]}')
-              export INFERENCE_MODEL=$(echo "${MODELS_JSON}" | python3 -c '
-              import json,sys
-              for m in json.load(sys.stdin).get("data",[]):
-                  meta = m.get("custom_metadata",{}) or {}
-                  if meta.get("model_type") != "embedding":
-                      print(m["id"]); sys.exit(0)
-              print("")')
-              export EMBEDDING_MODEL=$(echo "${MODELS_JSON}" | python3 -c '
-              import json,sys
-              for m in json.load(sys.stdin).get("data",[]):
-                  meta = m.get("custom_metadata",{}) or {}
-                  if meta.get("model_type") == "embedding":
-                      print(m["id"]); sys.exit(0)
-              print("")')
-              echo "Discovered INFERENCE_MODEL=${INFERENCE_MODEL}"
-              echo "Discovered EMBEDDING_MODEL=${EMBEDDING_MODEL}"
+              echo "INFERENCE_MODEL=${INFERENCE_MODEL}"
+              echo "EMBEDDING_MODEL=${EMBEDDING_MODEL}"
+
+              # Wait for vLLM inference (max 5 min), then register model in OGX
+              echo "Waiting for vLLM inference..."
+              VLLM_TIMEOUT=300
+              VLLM_ELAPSED=0
+              while ! curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; do
+                if [ $((VLLM_ELAPSED % 30)) -eq 0 ]; then
+                  echo "  ${VLLM_ELAPSED}s: checking ports and connectivity..."
+                  ss -tlnp 2>/dev/null | grep -E '8000|8001|8321|5432' || echo "    no matching ports"
+                  echo "  curl verbose:"
+                  curl -v http://127.0.0.1:8000/health 2>&1 | head -8 || true
+                fi
+                sleep 5
+                VLLM_ELAPSED=$((VLLM_ELAPSED + 5))
+                if [ "${VLLM_ELAPSED}" -ge "${VLLM_TIMEOUT}" ]; then
+                  echo "  ERROR: vLLM not ready after ${VLLM_TIMEOUT}s"
+                  echo "  Final port scan:"
+                  ss -tlnp 2>/dev/null || true
+                  exit 1
+                fi
+              done
+              echo "  vLLM ready after ${VLLM_ELAPSED}s, registering model in OGX..."
+              curl -sf -X POST "${BASE_URL}/v1/models" \
+                -H "Content-Type: application/json" \
+                -d "{\"model_id\": \"${INFERENCE_MODEL}\", \"provider_id\": \"vllm-inference\", \"provider_model_id\": \"$(params.inference-model)\", \"model_type\": \"llm\"}" \
+                && echo "  Registered" || echo "  Registration failed (may already exist)"
 
               # Discover providers
               PROVIDERS_JSON=$(curl -sf "${BASE_URL}/v1/providers" 2>/dev/null || echo '{"data":[]}')
@@ -339,17 +384,47 @@ spec:
                   if api in api_map:
                       print(f"export {var}={api_map[api]}")
               ')"
-              echo "Discovered INFERENCE_PROVIDER=${INFERENCE_PROVIDER:-}"
-              echo "Discovered FILES_PROVIDER=${FILES_PROVIDER:-}"
-              echo "Discovered VECTOR_IO_PROVIDER=${VECTOR_IO_PROVIDER:-}"
+              echo "INFERENCE_PROVIDER=${INFERENCE_PROVIDER:-}"
+              echo "FILES_PROVIDER=${FILES_PROVIDER:-}"
+              echo "VECTOR_IO_PROVIDER=${VECTOR_IO_PROVIDER:-}"
 
-              # Run tests
-              ./scripts/run-tests-with-providers.sh || true
+              # Run tests (capture exit code, collect artifacts, then propagate)
+              TEST_EXIT=0
+              ./scripts/run-tests-with-providers.sh || TEST_EXIT=$?
 
               # Copy JUnit XML reports to artifacts
               cp -r reports/* "${ARTIFACT_DIR}/" 2>/dev/null || echo "No reports generated"
               echo "=== Artifacts ==="
               ls -la "${ARTIFACT_DIR}/"
+
+              # Emit TEST_OUTPUT for Konflux UI
+              python3 -c "
+              import xml.etree.ElementTree as ET, json, glob, datetime
+              total = failures = errors = skipped = 0
+              for f in glob.glob('reports/*.xml') + glob.glob('${ARTIFACT_DIR}/*.xml'):
+                  try:
+                      for ts in ET.parse(f).iter('testsuite'):
+                          total += int(ts.get('tests', 0))
+                          failures += int(ts.get('failures', 0))
+                          errors += int(ts.get('errors', 0))
+                          skipped += int(ts.get('skipped', 0))
+                  except Exception:
+                      pass
+              successes = total - failures - errors - skipped
+              result = 'SUCCESS' if failures + errors == 0 else 'FAILURE'
+              output = json.dumps({
+                  'result': result,
+                  'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  'failures': failures,
+                  'warnings': 0,
+                  'successes': successes,
+                  'note': f'{successes}/{total} passed, {failures} failed, {errors} errors, {skipped} skipped',
+              })
+              print(f'TEST_OUTPUT: {output}')
+              open('$(results.TEST_OUTPUT.path)', 'w').write(output)
+              " || echo '{"result":"ERROR","failures":0,"warnings":0,"successes":0,"note":"Failed to parse results"}' > "$(results.TEST_OUTPUT.path)"
+
+              exit "${TEST_EXIT}"
 
           - name: git-push-artifacts
             ref:
