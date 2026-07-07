@@ -221,6 +221,7 @@ jobs:
 
                 sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${EFFECTIVE_TAG}"'|g' "$target_file"
                 sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+                sed -i -E 's|\$\$BUILD_MODE\$\$|RHOAI|g' "$target_file"
 
               ########################################
               # Push pipelines
@@ -232,6 +233,7 @@ jobs:
                 sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${EFFECTIVE_TAG}"'|g' "$target_file"
                 sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
                 sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
+                sed -i -E 's|\$\$BUILD_MODE\$\$|RHOAI|g' "$target_file"
 
               ########################################
               # Other pipelines
@@ -273,6 +275,7 @@ jobs:
               sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
               sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
               sed -i -E 's|Dockerfiles/rhoai\.Dockerfile|Dockerfiles/Dockerfile|g' "$target_file"
+              sed -i -E 's|\$\$BUILD_MODE\$\$|ODH|g' "$target_file"
 
             done
           fi
