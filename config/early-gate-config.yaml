@@ -30,3 +30,7 @@ config:
       early-gate-enabled: true
     odh-dashboard:
       early-gate-enabled: true
+    ogx-distribution:
+      early-gate-enabled: true
+      additional-branches:
+        - test-eg
