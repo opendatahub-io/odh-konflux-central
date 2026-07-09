@@ -20,11 +20,17 @@ spec:
       default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
       description: URL of the artifact browser.
     - name: inference-model
-      default: 'Qwen/Qwen3-0.6B'
-      description: Inference model served by vLLM (must match --served-model-name).
+      default: 'Qwen3.6-35B-A3B'
+      description: Inference model name on the MaaS endpoint.
     - name: embedding-model
-      default: 'ibm-granite/granite-embedding-125m-english'
-      description: Embedding model served by vLLM.
+      default: 'Nomic-embed-text-v2-moe'
+      description: Embedding model name on the MaaS endpoint.
+    - name: maas-api-url
+      default: ''
+      description: MaaS API URL (e.g. https://litellm-litemaas.../v1). When set, uses external inference instead of vLLM sidecars.
+    - name: maas-api-key
+      default: ''
+      description: MaaS API key for external inference.
     - name: test-runner-image
       default: 'quay.io/rh-ee-ahladenk/ogx-test-runner:latest'
       description: Pre-built image with test dependencies (curl, uv, Node.js).
@@ -173,69 +179,6 @@ spec:
                 memory: "1Gi"
                 cpu: "1"
 
-          - name: vllm-inference
-            image: quay.io/opendatahub/vllm-cpu:Qwen3-0.6B-granite-embedding-125m-english
-            args:
-              - "--host"
-              - "0.0.0.0"
-              - "--port"
-              - "8000"
-              - "--enable-auto-tool-choice"
-              - "--tool-call-parser"
-              - "hermes"
-              - "--model"
-              - "/root/.cache/Qwen/Qwen3-0.6B"
-              - "--served-model-name"
-              - "$(params.inference-model)"
-              - "--max-model-len"
-              - "8192"
-              - "--gpu-memory-utilization"
-              - "0.10"
-            readinessProbe:
-              httpGet:
-                path: /health
-                port: 8000
-              initialDelaySeconds: 60
-              periodSeconds: 10
-              failureThreshold: 60
-            computeResources:
-              requests:
-                memory: "4Gi"
-                cpu: "2"
-              limits:
-                memory: "8Gi"
-                cpu: "4"
-
-          - name: vllm-embedding
-            image: quay.io/opendatahub/vllm-cpu:Qwen3-0.6B-granite-embedding-125m-english
-            args:
-              - "--host"
-              - "0.0.0.0"
-              - "--port"
-              - "8001"
-              - "--model"
-              - "/root/.cache/ibm-granite/granite-embedding-125m-english"
-              - "--served-model-name"
-              - "$(params.embedding-model)"
-              - "--gpu-memory-utilization"
-              - "0.05"
-              - "--hf-overrides"
-              - '{"is_matryoshka": true}'
-            readinessProbe:
-              httpGet:
-                path: /health
-                port: 8001
-              initialDelaySeconds: 60
-              periodSeconds: 10
-              failureThreshold: 60
-            computeResources:
-              requests:
-                memory: "2Gi"
-                cpu: "1"
-              limits:
-                memory: "4Gi"
-                cpu: "2"
-
           - name: ogx
             image: $(params.component-image)
             env:
@@ -264,29 +207,25 @@ spec:
               - name: TRUSTYAI_LMEVAL_USE_K8S
                 value: "False"
               - name: VLLM_URL
-                value: "http://127.0.0.1:8000/v1"
+                value: "$(params.maas-api-url)"
               - name: VLLM_API_TOKEN
-                value: "dummy"
+                value: "$(params.maas-api-key)"
               - name: VLLM_TLS_VERIFY
-                value: "false"
+                value: "true"
               - name: VLLM_REFRESH_MODELS
                 value: "true"
               - name: VLLM_EMBEDDING_URL
-                value: "http://127.0.0.1:8001/v1"
+                value: "$(params.maas-api-url)"
               - name: VLLM_EMBEDDING_API_TOKEN
-                value: "dummy"
+                value: "$(params.maas-api-key)"
               - name: VLLM_EMBEDDING_TLS_VERIFY
-                value: "false"
+                value: "true"
               - name: VLLM_EMBEDDING_REFRESH_MODELS
                 value: "true"
               - name: REGISTRY_REFRESH_INTERVAL_SECONDS
                 value: "15"
               - name: EMBEDDING_MODEL
                 value: "$(params.embedding-model)"
-              - name: VLLM_REFRESH_MODELS
-                value: "true"
-              - name: REGISTRY_REFRESH_INTERVAL_SECONDS
-                value: "15"
             readinessProbe:
               httpGet:
                 path: /v1/health
@@ -326,9 +265,9 @@ spec:
               - name: ARTIFACT_DIR
                 value: /workspace/artifacts-dir
               - name: INFERENCE_MODEL
-                value: "vllm-inference/$(params.inference-model)"
+                value: "$(params.inference-model)"
               - name: EMBEDDING_MODEL
-                value: "vllm-embedding/$(params.embedding-model)"
+                value: "$(params.embedding-model)"
             script: |
               #!/bin/bash
               set -euo pipefail
@@ -344,31 +283,21 @@ spec:
               echo "INFERENCE_MODEL=${INFERENCE_MODEL}"
               echo "EMBEDDING_MODEL=${EMBEDDING_MODEL}"
 
-              # Wait for vLLM inference (max 5 min), then register model in OGX
-              echo "Waiting for vLLM inference..."
-              VLLM_TIMEOUT=300
-              VLLM_ELAPSED=0
-              while ! curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1; do
-                if [ $((VLLM_ELAPSED % 30)) -eq 0 ]; then
-                  echo "  ${VLLM_ELAPSED}s: checking ports and connectivity..."
-                  ss -tlnp 2>/dev/null | grep -E '8000|8001|8321|5432' || echo "    no matching ports"
-                  echo "  curl verbose:"
-                  curl -v http://127.0.0.1:8000/health 2>&1 | head -8 || true
+              # Wait for inference model to appear in OGX (MaaS discovery)
+              echo "Waiting for inference model in OGX..."
+              for attempt in $(seq 1 60); do
+                MODELS=$(curl -sf "${BASE_URL}/v1/models" 2>/dev/null | python3 -c "
+              import json,sys
+              for m in json.load(sys.stdin).get('data',[]):
+                  print(m['id'])
+              " 2>/dev/null || true)
+                if echo "${MODELS}" | grep -q "${INFERENCE_MODEL}"; then
+                  echo "  Found after ${attempt} attempts"
+                  break
                 fi
+                echo "  attempt ${attempt}: models=[${MODELS//$'\n'/,}]"
                 sleep 5
-                VLLM_ELAPSED=$((VLLM_ELAPSED + 5))
-                if [ "${VLLM_ELAPSED}" -ge "${VLLM_TIMEOUT}" ]; then
-                  echo "  ERROR: vLLM not ready after ${VLLM_TIMEOUT}s"
-                  echo "  Final port scan:"
-                  ss -tlnp 2>/dev/null || true
-                  exit 1
-                fi
               done
-              echo "  vLLM ready after ${VLLM_ELAPSED}s, registering model in OGX..."
-              curl -sf -X POST "${BASE_URL}/v1/models" \
-                -H "Content-Type: application/json" \
-                -d "{\"model_id\": \"${INFERENCE_MODEL}\", \"provider_id\": \"vllm-inference\", \"provider_model_id\": \"$(params.inference-model)\", \"model_type\": \"llm\"}" \
-                && echo "  Registered" || echo "  Registration failed (may already exist)"
 
               # Discover providers
               PROVIDERS_JSON=$(curl -sf "${BASE_URL}/v1/providers" 2>/dev/null || echo '{"data":[]}')
