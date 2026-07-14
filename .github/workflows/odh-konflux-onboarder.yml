@@ -82,6 +82,7 @@ on:
           - trainer-operator
           - trustyai-service
           - rhoai-mcp
+          - odh-ai-fifth-demo
       pr_target_branch:
         description: 'Target branch for the PR (e.g. main)'
         required: true
