@@ -1,0 +1,353 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: resolve-group-configuration
+spec:
+  workspaces:
+    - name: basic-auth
+      optional: true
+  results:
+    - name: group-components
+      description: Resolved components JSON with PR metadata for group testing
+    - name: has-group-config
+      description: true if group config found, false otherwise
+    - name: invalid-repo-warnings
+      description: Warning messages for repos not found in component_repo_map.json
+    - name: format-help-warning
+      description: Helpful message when earlygate is mentioned incorrectly or PR URLs found outside section
+  volumes:
+    - name: workdir
+      emptyDir: {}
+  stepTemplate:
+    volumeMounts:
+      - mountPath: /var/workdir
+        name: workdir
+  steps:
+    - name: resolve-configuration
+      image: quay.io/konflux-ci/konflux-test:stable
+      workingDir: /workspace
+      env:
+        - name: PR_NUMBER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+        - name: REPO_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
+        - name: GITHUB_ORG
+          value: "opendatahub-io"
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+          value: $(workspaces.basic-auth.bound)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+          value: $(workspaces.basic-auth.path)
+      script: |
+        #!/bin/bash
+        set -e
+
+        echo "=== Resolve Group Configuration Task ===" >&2
+        echo "PR_NUMBER=${PR_NUMBER}" >&2
+        echo "REPO_NAME=${REPO_NAME}" >&2
+        echo "GITHUB_ORG=${GITHUB_ORG}" >&2
+
+        # --- Constants ---
+        EARLYGATE_SECTION_PATTERN="early.*gate"  # Matches "earlygate", "early gate", "early-gate", etc.  # Case-insensitive search in ## headings
+        COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+        ALLOWED_ORG="opendatahub-io"  # Only accept PRs from this GitHub org
+
+        # --- Fetch component_repo_map.json (critical dependency) ---
+        echo "Fetching component_repo_map.json..." >&2
+        COMPONENT_MAP=$(curl -sSf "${COMPONENT_MAP_URL}")
+        if [[ -z "${COMPONENT_MAP}" ]]; then
+          echo "ERROR: Failed to fetch component_repo_map.json" >&2
+          exit 1
+        fi
+        echo "Component map loaded successfully" >&2
+
+        # --- Fetch PR description from GitHub API ---
+        echo "Fetching PR description from GitHub..." >&2
+        GITHUB_API_URL="https://api.github.com/repos/${GITHUB_ORG}/${REPO_NAME}/pulls/${PR_NUMBER}"
+
+        # Use authentication if available
+        GITHUB_TOKEN=""
+        if [[ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" == "true" ]]; then
+          echo "Checking for GitHub token in workspace..." >&2
+          if [[ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ]]; then
+            echo "Found .git-credentials file" >&2
+            # Format examples:
+            # https://TOKEN:x-oauth-basic@github.com
+            # https://x-access-token:TOKEN@github.com
+            # https://username:TOKEN@github.com
+            CREDS_LINE=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" | grep github.com | head -1)
+
+            # Try different extraction patterns
+            # Pattern 1: https://TOKEN:x-oauth-basic@github.com
+            GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://\([^:]*\):x-oauth-basic@github\.com.*|\1|p')
+
+            # Pattern 2: https://x-access-token:TOKEN@github.com
+            if [[ -z "${GITHUB_TOKEN}" ]]; then
+              GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://x-access-token:\([^@]*\)@github\.com.*|\1|p')
+            fi
+
+            # Pattern 3: https://username:TOKEN@github.com (any username)
+            if [[ -z "${GITHUB_TOKEN}" ]]; then
+              GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://[^:]*:\([^@]*\)@github\.com.*|\1|p')
+            fi
+          fi
+
+          # Also check for .github-token file (alternative location)
+          if [[ -z "${GITHUB_TOKEN}" && -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.github-token" ]]; then
+            echo "Found .github-token file" >&2
+            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.github-token")
+          fi
+        fi
+
+        if [[ -n "${GITHUB_TOKEN}" ]]; then
+          echo "Using authenticated GitHub API (token length: ${#GITHUB_TOKEN} chars)" >&2
+          # Try with 'token' prefix first (classic format)
+          PR_DATA=$(curl -sS -H "Authorization: token ${GITHUB_TOKEN}" "${GITHUB_API_URL}" 2>&1)
+
+          # If that fails with 401, try with 'Bearer' prefix
+          if echo "${PR_DATA}" | grep -q "Bad credentials\|Requires authentication"; then
+            echo "Classic token auth failed, trying Bearer format..." >&2
+            PR_DATA=$(curl -sS -H "Authorization: Bearer ${GITHUB_TOKEN}" "${GITHUB_API_URL}" 2>&1)
+          fi
+
+          # Check if still failing
+          if echo "${PR_DATA}" | grep -q "Bad credentials\|Requires authentication"; then
+            echo "ERROR: GitHub authentication failed with provided token" >&2
+            echo "Response: ${PR_DATA:0:200}" >&2
+            echo "Falling back to unauthenticated API..." >&2
+            PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>&1)
+          fi
+        else
+          echo "⚠️  WARNING: No GitHub authentication found, using unauthenticated API (rate limited)" >&2
+          PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>&1)
+        fi
+
+        if [[ -z "${PR_DATA}" ]]; then
+          echo "⚠️  WARNING: Failed to fetch PR description from GitHub API" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo -n "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
+          echo -n "" > "$(results.format-help-warning.path)"
+          # Return components for current repo only
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        PR_BODY=$(echo "${PR_DATA}" | jq -r '.body // ""')
+        echo "PR description fetched successfully" >&2
+
+        # Remove Windows line endings (CR) if present
+        PR_BODY=$(echo "${PR_BODY}" | tr -d '\r')
+
+        # --- Search for Early Gate section (## heading containing "earlygate") ---
+        echo "Searching for Early Gate section in PR description..." >&2
+
+        # Check if there's a ## heading containing "earlygate" (case-insensitive)
+        if ! echo "${PR_BODY}" | grep -qi "^##.*${EARLYGATE_SECTION_PATTERN}"; then
+          echo "No Early Gate section found in PR description" >&2
+          echo "Using single-PR mode (repo: ${REPO_NAME}, pr: ${PR_NUMBER})" >&2
+          echo -n "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
+
+          # --- Check for common mistakes and provide helpful guidance ---
+          FORMAT_HELP=""
+
+          # Check 1: "earlygate" mentioned but not in ## heading
+          if echo "${PR_BODY}" | grep -qi "${EARLYGATE_SECTION_PATTERN}"; then
+            echo "Found 'earlygate' mention but not in proper ## heading format" >&2
+            FORMAT_HELP="## ⚠️ Group Testing Format Issue"$'\n\n'"Found \`earlygate\` mentioned in your PR description, but it's not in the correct format for group testing."$'\n\n'"**To enable group testing, use this format:**"$'\n\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"**Requirements:**"$'\n'"- Must be a \`##\` heading containing \"earlygate\""$'\n'"- Only PRs from \`opendatahub-io\` organization"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
+          else
+            # Check 2: GitHub PR URLs found in description
+            if echo "${PR_BODY}" | grep -q "https://github.com/opendatahub-io/[^/]*/pull/[0-9]"; then
+              echo "Found opendatahub-io PR URLs but not marked for group testing" >&2
+              FORMAT_HELP="## ℹ️ Group Testing Available"$'\n\n'"Found GitHub PR URLs in your description. If you want to test these PRs together, use group testing:"$'\n\n'"**Format:**"$'\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
+            fi
+          fi
+
+          echo -n "${FORMAT_HELP}" > "$(results.format-help-warning.path)"
+
+          # Return components for current repo only
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          if [[ -z "${COMPONENTS}" || "${COMPONENTS}" == "null" ]]; then
+            echo "ERROR: No entry found for REPO_NAME=${REPO_NAME} in component_repo_map.json" >&2
+            exit 1
+          fi
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        echo "✓ Early Gate section found" >&2
+        echo -n "true" > "$(results.has-group-config.path)"
+        echo -n "" > "$(results.format-help-warning.path)"  # No format help needed
+
+        # --- Extract PR URLs from Early Gate section ---
+        # Find the section and extract URLs until the next ## heading
+        # Allow optional whitespace and bullets/dashes before URLs
+        PR_URLS=$(echo "${PR_BODY}" | awk -v IGNORECASE=1 "
+          /^##.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
+          found && /^##/ { exit }
+          found && /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/ {
+            match(\$0, /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/)
+            print substr(\$0, RSTART, RLENGTH)
+          }
+        " || true)
+
+        if [[ -z "${PR_URLS}" ]]; then
+          echo "⚠️  WARNING: No PR URLs found in Early Gate section" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo -n "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
+          FORMAT_HELP="## ⚠️ Empty Early Gate Section"$'\n\n'"Found an Early Gate section in your PR description, but no PR URLs were listed."$'\n\n'"**Add PR URLs like this:**"$'\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
+          echo -n "${FORMAT_HELP}" > "$(results.format-help-warning.path)"
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+          exit 0
+        fi
+
+        echo "Found PR URLs:" >&2
+        echo "${PR_URLS}" >&2
+
+        # --- ALWAYS include leader PR's components first ---
+        echo "" >&2
+        echo "=== Resolving Components ===" >&2
+        echo "Step 1: Adding leader PR components (${REPO_NAME} #${PR_NUMBER})..." >&2
+        TEMP_COMPONENTS=$(mktemp)
+        echo "{}" > "${TEMP_COMPONENTS}"
+
+        # Initialize warnings tracking
+        WARNINGS=""
+
+        # Get leader PR components with PR metadata
+        LEADER_COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+        if [[ -n "${LEADER_COMPONENTS}" && "${LEADER_COMPONENTS}" != "null" ]]; then
+          LEADER_COMPONENTS_WITH_PR=$(echo "${LEADER_COMPONENTS}" | jq -c --arg pr "${PR_NUMBER}" '
+            to_entries |
+            map({
+              key: .key,
+              value: {
+                quay_path: .value,
+                pr: $pr
+              }
+            }) |
+            from_entries
+          ')
+          NUM_LEADER=$(echo "${LEADER_COMPONENTS_WITH_PR}" | jq 'length')
+          echo "✓ Added ${NUM_LEADER} components from leader PR #${PR_NUMBER}" >&2
+          echo "${LEADER_COMPONENTS_WITH_PR}" > "${TEMP_COMPONENTS}"
+        else
+          echo "⚠️  WARNING: No components found for leader repo: ${REPO_NAME}" >&2
+          echo "   This is unusual - verify component_repo_map.json has an entry for ${REPO_NAME}" >&2
+        fi
+
+        # --- Parse each collaborator PR URL and add their components ---
+        echo "" >&2
+        echo "Step 2: Adding collaborator PR components..." >&2
+        while IFS= read -r url; do
+          echo "Processing collaborator URL: ${url}" >&2
+
+          # Extract org/repo/pr from URL
+          # Format: https://github.com/{org}/{repo}/pull/{number}
+          if [[ ! "${url}" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)$ ]]; then
+            echo "⚠️  WARNING: Invalid PR URL format: ${url}" >&2
+            echo "   Skipping this entry" >&2
+            continue
+          fi
+
+          ORG="${BASH_REMATCH[1]}"
+          REPO="${BASH_REMATCH[2]}"
+          PR="${BASH_REMATCH[3]}"
+
+          echo "  Org: ${ORG}" >&2
+          echo "  Repo: ${REPO}" >&2
+          echo "  PR: ${PR}" >&2
+
+          # Security check: Only allow PRs from opendatahub-io organization
+          if [[ "${ORG}" != "${ALLOWED_ORG}" ]]; then
+            echo "⚠️  WARNING: PR from unauthorized organization: ${ORG}" >&2
+            echo "   Only PRs from ${ALLOWED_ORG} are allowed" >&2
+            echo "   Skipping this entry" >&2
+            # Track warning for PR comment
+            WARNING_MSG="⚠️ PR from \`${ORG}/${REPO}\` (#${PR}) was skipped - only PRs from \`${ALLOWED_ORG}\` organization are allowed."
+            if [[ -z "${WARNINGS}" ]]; then
+              WARNINGS="${WARNING_MSG}"
+            else
+              WARNINGS="${WARNINGS}"$'\n'"${WARNING_MSG}"
+            fi
+            continue
+          fi
+
+          # Lookup components for this repo in component_repo_map.json
+          REPO_COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO}" '.[$repo]')
+
+          if [[ -z "${REPO_COMPONENTS}" || "${REPO_COMPONENTS}" == "null" ]]; then
+            echo "⚠️  WARNING: No components found for repo: ${REPO}" >&2
+            echo "   Skipping this repo" >&2
+            # Track warning for PR comment
+            WARNING_MSG="⚠️ Repo \`${ORG}/${REPO}\` from PR #${PR} is not configured for early-gate testing and was skipped."
+            if [[ -z "${WARNINGS}" ]]; then
+              WARNINGS="${WARNING_MSG}"
+            else
+              WARNINGS="${WARNINGS}"$'\n'"${WARNING_MSG}"
+            fi
+            continue
+          fi
+
+          echo "  Found components for ${REPO}" >&2
+
+          # Add PR metadata to each component
+          # Transform: {"comp1": "path1", "comp2": "path2"}
+          # To: {"comp1": {"quay_path": "path1", "pr": "123"}, "comp2": {...}}
+          REPO_COMPONENTS_WITH_PR=$(echo "${REPO_COMPONENTS}" | jq -c --arg pr "${PR}" '
+            to_entries |
+            map({
+              key: .key,
+              value: {
+                quay_path: .value,
+                pr: $pr
+              }
+            }) |
+            from_entries
+          ')
+
+          echo "  Components with PR metadata:" >&2
+          echo "  ${REPO_COMPONENTS_WITH_PR}" >&2
+
+          # Merge into accumulated components
+          jq -s '.[0] * .[1]' "${TEMP_COMPONENTS}" <(echo "${REPO_COMPONENTS_WITH_PR}") > "${TEMP_COMPONENTS}.tmp"
+          mv "${TEMP_COMPONENTS}.tmp" "${TEMP_COMPONENTS}"
+
+        done <<< "${PR_URLS}"
+
+        # --- Output final components JSON ---
+        FINAL_COMPONENTS=$(cat "${TEMP_COMPONENTS}")
+
+        if [[ "${FINAL_COMPONENTS}" == "{}" ]]; then
+          echo "⚠️  WARNING: No valid components resolved from group configuration" >&2
+          echo "   Falling back to single-PR mode" >&2
+          echo -n "false" > "$(results.has-group-config.path)"
+          echo -n "" > "$(results.invalid-repo-warnings.path)"
+          echo -n "" > "$(results.format-help-warning.path)"
+          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+        else
+          echo "✓ Group components resolved successfully:" >&2
+          echo "${FINAL_COMPONENTS}" | jq '.' >&2
+          echo -n "${FINAL_COMPONENTS}" > "$(results.group-components.path)"
+
+          # Output warnings if any
+          if [[ -n "${WARNINGS}" ]]; then
+            echo "" >&2
+            echo "⚠️  Invalid repo warnings:" >&2
+            echo "${WARNINGS}" >&2
+          fi
+          echo -n "${WARNINGS}" > "$(results.invalid-repo-warnings.path)"
+        fi
+
+        # Cleanup
+        rm -f "${TEMP_COMPONENTS}"
+
+        echo "=== Resolution complete ===" >&2

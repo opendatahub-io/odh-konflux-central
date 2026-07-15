@@ -47,6 +47,10 @@ spec:
     description: "When true, intermediate PR comments include a note that they will be replaced"
     type: string
     default: "false"
+  - name: repositories
+    description: "Comma-separated list of repository names for group testing (e.g., 'kserve,feast')"
+    type: string
+    default: ""
   results:
   - name: queue-url
     description: Relative Jenkins queue path for the triggered job (e.g. /queue/item/12345)
@@ -89,6 +93,8 @@ spec:
       value: $(params.trigger-workflow-file)
     - name: DELETE_INTERMEDIATE_COMMENTS
       value: $(params.delete-intermediate-comments)
+    - name: REPOSITORIES
+      value: $(params.repositories)
     script: |
       #!/bin/bash
       set -euo pipefail
@@ -103,11 +109,19 @@ spec:
       WORKFLOW_REPO_NAME="${WORKFLOW_REPO##*/}"
 
       REPO_NAME="${REPO}"
+
+      # Use repositories from group config if available, otherwise just the current repo
+      if [[ -n "${REPOSITORIES}" ]]; then
+        REPOS_LIST="${REPOSITORIES}"
+      else
+        REPOS_LIST="${REPO_NAME}"
+      fi
+
       FBC_TAG="odh-pr-${PR_NUMBER}-${REPO_NAME}"
       CORRELATION_ID="eg-$(date +%s)"
 
       echo "Triggering early-gate test pipeline for PR #${PR_NUMBER}"
-      echo "Repo: ${REPO_NAME}, FBC tag: ${FBC_TAG}, Correlation ID: ${CORRELATION_ID}"
+      echo "Leader repo: ${REPO_NAME}, All repos: ${REPOS_LIST}, FBC tag: ${FBC_TAG}, Correlation ID: ${CORRELATION_ID}"
 
       # ---------------------------------------------------------------
       # Helper: GitHub API calls with separate tokens per operation type
@@ -145,7 +159,7 @@ spec:
       gh_workflow_api POST \
         "https://api.github.com/repos/${WORKFLOW_REPO}/actions/workflows/${TRIGGER_WORKFLOW}/dispatches" \
         -d "{\"ref\":\"main\",\"inputs\":{
-          \"repositories\":\"${REPO_NAME}\",
+          \"repositories\":\"${REPOS_LIST}\",
           \"fbc_tag\":\"${FBC_TAG}\",
           \"pr_number\":\"${PR_NUMBER}\",
           \"correlation_id\":\"${CORRELATION_ID}\"
