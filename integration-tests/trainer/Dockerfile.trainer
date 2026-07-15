@@ -11,4 +11,4 @@ RUN dnf install -y \
     && dnf clean all
 
 RUN wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz && \
-    tar xvf openshift-client-linux.tar.gz && chmod +x oc && mv oc /usr/local/bin/
+    tar xvf openshift-client-linux.tar.gz && chmod +x oc kubectl && mv oc kubectl /usr/local/bin/
