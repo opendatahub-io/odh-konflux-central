@@ -18,10 +18,6 @@ spec:
       type: string
       default: odh-stable
       description: Quay tag when PR image is missing
-    - name: CURRENT_PR_NUMBER
-      description: Current PR number (for components without explicit PR metadata)
-      type: string
-      default: ""
     - name: ociStorage
       type: string
       description: OCI repository for storing the SNAPSHOT trusted artifact
@@ -58,8 +54,6 @@ spec:
           value: $(workspaces.basic-auth.bound)
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
           value: $(workspaces.basic-auth.path)
-        - name: CURRENT_PR_NUMBER
-          value: $(params.CURRENT_PR_NUMBER)
         - name: PR_NUMBER
           valueFrom:
             fieldRef:
@@ -105,8 +99,7 @@ spec:
         > "$FALLBACK_WARNINGS_FILE"
         > "$COMPONENT_TABLE_FILE"
 
-        # Use CURRENT_PR_NUMBER if set, otherwise fall back to PR_NUMBER from labels
-        DEFAULT_PR_NUMBER="${CURRENT_PR_NUMBER:-${PR_NUMBER}}"
+        DEFAULT_PR_NUMBER="${PR_NUMBER}"
 
         # Parse JSON and iterate through each component
         while IFS= read -r row; do

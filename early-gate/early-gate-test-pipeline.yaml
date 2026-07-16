@@ -111,9 +111,9 @@ spec:
         value: early-gate/tasks/check-prerequisites.yaml
 
   # --------------------------------------------------------------------------
-  # 2. Extract group repositories — read Early Gate section from PR description
+  # 2. Check group config — read Early Gate section from PR description
   # --------------------------------------------------------------------------
-  - name: extract-group-repos
+  - name: check-group-config
     runAfter:
     - check-prerequisites
     taskRef:
@@ -124,14 +124,14 @@ spec:
       - name: revision
         value: earlygate2
       - name: pathInRepo
-        value: early-gate/tasks/extract-group-repos.yaml
+        value: early-gate/tasks/check-group-config.yaml
 
   # --------------------------------------------------------------------------
   # 3. Check for ongoing jobs — scan PR comments for idempotency
   # --------------------------------------------------------------------------
   - name: check-ongoing-jobs
     runAfter:
-    - extract-group-repos
+    - check-group-config
     taskRef:
       resolver: git
       params:
@@ -199,7 +199,7 @@ spec:
     - name: delete-intermediate-comments
       value: $(params.delete-intermediate-comments)
     - name: repositories
-      value: $(tasks.extract-group-repos.results.repositories)
+      value: $(tasks.check-group-config.results.repositories)
 
   # --------------------------------------------------------------------------
   # 5a. Monitor (fresh) — runs after trigger-test-pipeline for new jobs
