@@ -57,9 +57,7 @@ Both ODH and RHOAI PipelineRuns live in the same `.tekton/` directory. Which one
 5. **`generate-snapshot-for-group-testing.yaml`** — in RHOAI mode, fetch `component_repo_map_rhoai.json`, look for `rhoai-pr` tags, fall back to RHOAI version tag
 6. **`resolve-group-configuration.yaml`** — parse optional `rhoai-version:` from PR description Early Gate section
 
-### RHOAI version handling (TBD — pick one)
-
-**Option A: Bake tag into the RHOAI component map**
+### RHOAI version handling
 
 `component_repo_map_rhoai.json` includes a `fallback-tag` field:
 ```json
@@ -75,15 +73,6 @@ Both ODH and RHOAI PipelineRuns live in the same `.tekton/` directory. Which one
 - One config update per release cycle (change `fallback-tag` when new release starts)
 - No developer action per PR
 - For 2 concurrent releases: default covers the active release, PR description override (`rhoai-version: 3.5`) available as a safety valve for the other
-- Pro: explicit, no ambiguity
-- Con: requires a config update when releases change
-
-**Option B: Auto-detect latest from Quay**
-
-Snapshot generator queries the Quay API for a reference RHOAI component, finds the most recent `rhoai-*` tag automatically.
-- Zero maintenance — no config updates per release
-- Pro: fully automatic
-- Con: ambiguous when two releases overlap (which tag is "latest"?), more API calls, slower
 
 ### Snapshot generation logic
 
