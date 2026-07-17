@@ -16,33 +16,45 @@ No pipeline duplication. The existing `early-gate-component-pipeline.yaml` gets 
 | | ODH (current) | RHOAI (new) |
 |---|---|---|
 | Component Dockerfile | `Dockerfile` | RHOAI Dockerfile |
-| PR image tag | `odh-pr-{rev}` | `rhoai-pr-{rev}` |
+| PR image tag | `odh-pr` | `rhoai-pr` |
 | Base images (non-PR components) | `quay.io/opendatahub/<comp>:odh-stable` | `quay.io/rhoai/<comp>:<rhoai-version>` |
 | Operator / Bundle / FBC build | Same | Same |
 
-### Trigger mechanism — comment-based
+### Trigger mechanism
 
-The mode is explicitly chosen by the PR comment. No branch name logic — works identically on any branch, any repo.
+Two options — manual (comment-based) or automatic (Konflux component). Both can coexist.
+
+**Manual trigger (comment-based):**
 
 | Action | ODH | RHOAI |
 |---|---|---|
 | Component build | Auto on PR (existing) | `/build-rhoai` comment |
 | EarlyGate | `/early-gate` comment | `/early-gate-rhoai` comment |
 
-Both ODH and RHOAI PipelineRuns live in the same `.tekton/` directory. ODH component builds auto-trigger on PR events as today. RHOAI component builds only run when explicitly requested via `/build-rhoai`.
+Works on any branch, any repo. No branch name logic.
 
-If auto-triggering is needed for specific RHOAI branches later, that is handled at the Konflux component configuration level (register a separate component pointing to the branch) — the PipelineRun YAML itself stays the same using `$$TARGET_BRANCH$$`.
+**Auto trigger (Konflux component-based):**
+
+Register a separate Konflux component for RHOAI (e.g., `odh-dashboard-rhoai-ci`) pointing to the RHOAI branch. The PipelineRun YAML uses `$$TARGET_BRANCH$$` — no hardcoded branch names.
+
+The `multi-arch-container-build.yaml` pipeline gets an `earlygate-mode` param. The `trigger-early-gate-build` task in the `finally` block posts the right comment based on the mode:
+- `earlygate-mode=odh` --> posts `/early-gate-build`
+- `earlygate-mode=rhoai` --> posts `/early-gate-rhoai`
+
+Auto chain: PR to RHOAI branch --> RHOAI PipelineRun auto-triggers --> builds with RHOAI Dockerfile --> finally block posts `/early-gate-rhoai` --> RHOAI EarlyGate runs.
+
+Both ODH and RHOAI PipelineRuns live in the same `.tekton/` directory. Which one fires is determined by the Konflux component's target branch — not by anything in the YAML.
 
 ### New files
 
 1. **`config/component_repo_map_rhoai.json`** — maps component names to RHOAI quay paths (manually maintained, separate from auto-generated ODH map)
 2. **`early-gate/early-gate-ci-build-rhoai.yaml`** — PipelineRun triggered by `/early-gate-rhoai` comment, passes `earlygate-mode: rhoai`
-3. **Per-component RHOAI PipelineRun** (e.g., `odh-dashboard-pull-request-rhoai.yaml`) — uses RHOAI Dockerfile, tags with `rhoai-pr-{rev}`, triggered by `/build-rhoai` comment
+3. **Per-component RHOAI PipelineRun** (e.g., `odh-dashboard-pull-request-rhoai.yaml`) — uses RHOAI Dockerfile, tags with `rhoai-pr`, triggered by `/build-rhoai` comment
 
 ### Modified files
 
 4. **`early-gate-component-pipeline.yaml`** — add `earlygate-mode` and `rhoai-version` params, wire to snapshot task
-5. **`generate-snapshot-for-group-testing.yaml`** — in RHOAI mode, fetch `component_repo_map_rhoai.json`, look for `rhoai-pr-{PR}` tags, fall back to RHOAI version tag
+5. **`generate-snapshot-for-group-testing.yaml`** — in RHOAI mode, fetch `component_repo_map_rhoai.json`, look for `rhoai-pr` tags, fall back to RHOAI version tag
 6. **`resolve-group-configuration.yaml`** — parse optional `rhoai-version:` from PR description Early Gate section
 
 ### RHOAI version handling (TBD — pick one)
@@ -78,17 +90,39 @@ Snapshot generator queries the Quay API for a reference RHOAI component, finds t
 ```
 For each component:
   if component has a PR build:
-    ODH  --> quay.io/opendatahub/<comp>:odh-pr-{PR}
-    RHOAI --> quay.io/opendatahub/<comp>:rhoai-pr-{PR}
+    ODH  --> quay.io/opendatahub/<comp>:odh-pr
+    RHOAI --> quay.io/opendatahub/<comp>:rhoai-pr
   else:
     ODH  --> quay.io/opendatahub/<comp>:odh-stable
     RHOAI --> quay.io/rhoai/<comp>:<rhoai-version>   (from component_repo_map_rhoai.json)
 ```
 
+### Onboarding
+
+Extend the existing onboarder workflow (`.github/workflows/odh-early-gate-onboarder.yml`) with a `mode` input:
+
+```yaml
+mode:
+  description: 'EarlyGate mode to onboard'
+  type: choice
+  options: [odh, rhoai, both]
+  default: odh
+```
+
+Based on mode, the onboarder copies the appropriate `.tekton/` template files to the component repo:
+
+| Mode | Files copied to component `.tekton/` | Config updated |
+|---|---|---|
+| `odh` | `early-gate-ci-build.yaml`, `early-gate-ci-test.yaml` (current behavior) | `early-gate-config.yaml` |
+| `rhoai` | `early-gate-ci-build-rhoai.yaml`, `early-gate-ci-test.yaml`, RHOAI component PipelineRun | `early-gate-config.yaml` + `component_repo_map_rhoai.json` |
+| `both` | All of the above | Both configs |
+
+No extra inputs needed for Dockerfile or quay path — those are already set in the component's PipelineRun files under `pipelineruns/<component>/` in odh-konflux-central.
+
 ### Rollout
 
 **Phase 1:** Dashboard only — create RHOAI PipelineRun + map entry, modify snapshot generator
-**Phase 2:** Onboard remaining components — populate RHOAI map, create RHOAI PipelineRuns per component
+**Phase 2:** Onboard remaining components via onboarder with `mode: rhoai`
 
 ### Alternative considered
 
