@@ -1,3 +1,12 @@
+> **Status: SUPERSEDED**
+>
+> This monolithic RFD has been split into three standalone design documents:
+> - [Ops Buddy Design](../ops-buddy/design.md) — RHAI DevTestOps AI Assistant (implemented)
+> - [Ops Advisor Design](../ops-advisor/design.md) — AI-powered DevTestOps request handling (implemented)
+> - [Build Buddy Design](../build-buddy/design.md) — Autonomous build failure triage agent (proposed)
+>
+> Do not update this document. All future changes should go to the relevant design doc above.
+
 # Ops Buddy: A DevTestOps Helper Bot
 
 ## Objectives

@@ -2,7 +2,7 @@
 
 Step-by-step instructions for building the Ops Advisor Slack Workflow in `#rhoai-devtestops-requests`.
 
-For the full design, see [design.md](design.md). For the parent RFD, see [Ops Buddy](../rfds/Ops%20Buddy.md) (Component 3).
+For the full design, see [design.md](design.md).
 
 ---
 
