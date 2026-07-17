@@ -2,7 +2,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  name: odh-pr-test-trainer-operator
+  name: odh-pr-test-trainer-operator-upgrade
   annotations:
     pipelinesascode.tekton.dev/on-event: "[pull_request]"
     pipelinesascode.tekton.dev/on-target-branch: "[main]"
@@ -11,8 +11,9 @@ spec:
     pipeline: 1h
   pipelineSpec:
     description: |
-      An integration test which provisions an ephemeral Hypershift cluster, deploys the
-      trainer-operator module controller from a Konflux snapshot and runs the OCP e2e tests.
+      An upgrade integration test which provisions an ephemeral Hypershift cluster, deploys the
+      trainer-operator module controller from main (Lake), runs pre-upgrade tests, upgrades to the
+      Konflux snapshot image (Stream), and runs post-upgrade validations.
     params:
       - description: Snapshot of the application
         name: SNAPSHOT
@@ -182,7 +183,7 @@ spec:
                   value: "$(tasks.provision-cluster.results.clusterName)"
                 - name: credentials
                   value: credentials
-            - name: deploy-and-e2e
+            - name: deploy-and-upgrade
               image: quay.io/rhoai/rhoai-task-toolset:trainer
               onError: continue
               computeResources:
@@ -222,10 +223,6 @@ spec:
                 echo "OPERATOR_IMAGE: ${OPERATOR_IMAGE}"
                 echo "GIT_COMMIT: ${GIT_COMMIT}"
                 echo "GIT_URL: ${GIT_URL}"
-
-                git clone "${GIT_URL}" src_code
-                cd src_code
-                git checkout "${GIT_COMMIT}"
 
                 echo "Installing cert-manager (required by Kubeflow Trainer webhook)..."
                 oc apply -f - <<EOF
@@ -328,16 +325,41 @@ spec:
                 oc wait --for=condition=established crd/jobsets.jobset.x-k8s.io --timeout=300s
                 oc wait --for=condition=Available jobsetoperator/cluster --timeout=300s
 
-                echo "Deploying trainer-operator module controller..."
-                make deploy IMG="${OPERATOR_IMAGE}"
-
-                echo "Waiting for trainer-operator deployment to be available..."
+                # --- Phase 1: Deploy Lake version (main branch) ---
+                echo "=== PHASE 1: Deploying trainer-operator from main (Lake version) ==="
+                git clone "${GIT_URL}" --branch main --depth 1 lake_src
+                cd lake_src
+                make deploy
+                echo "Waiting for trainer-operator Lake deployment to be available..."
                 oc wait --for=condition=available deployment/trainer-operator-controller-manager \
                   -n trainer-operator-system --timeout=300s
+                cd /workspace/source
 
-                echo "Running OCP e2e tests..."
+                # --- Phase 2: Pre-upgrade tests ---
+                echo "=== PHASE 2: Running pre-upgrade tests ==="
+                git clone https://github.com/opendatahub-io/distributed-workloads.git --depth 1 dw_src
+                cd dw_src
                 mkdir -p "${ARTIFACT_DIR}"
-                make test-e2e-ocp
+                TEST_TIER=Pre-Upgrade go test -v -timeout 10m \
+                  ./tests/trainer/
+                cd /workspace/source
+
+                # --- Phase 3: Upgrade to Stream version (Snapshot image) ---
+                echo "=== PHASE 3: Upgrading trainer-operator to Stream version ==="
+                git clone "${GIT_URL}" stream_src
+                cd stream_src
+                git checkout "${GIT_COMMIT}"
+                make deploy IMG="${OPERATOR_IMAGE}"
+                echo "Waiting for trainer-operator upgrade rollout..."
+                oc rollout status deployment/trainer-operator-controller-manager \
+                  -n trainer-operator-system --timeout=300s
+                cd /workspace/source
+
+                # --- Phase 4: Post-upgrade tests ---
+                echo "=== PHASE 4: Running post-upgrade tests ==="
+                cd dw_src
+                TEST_TIER=Post-Upgrade go test -v -timeout 10m \
+                  ./tests/trainer/
 
                 echo "success" > "$STATUS_FILE"
             - name: must-gather
@@ -389,10 +411,10 @@ spec:
               script: |
                 STATUS_FILE="/test-status/deploy-and-e2e-status"
                 if ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
-                  echo "Failing pipeline because deploy-and-e2e step failed"
+                  echo "Failing pipeline because deploy-and-upgrade step failed"
                   exit 1
                 fi
-                echo "deploy-and-e2e step succeeded"
+                echo "deploy-and-upgrade step succeeded"
 
     finally:
     - name: push-ci-artifacts-and-update-pr
