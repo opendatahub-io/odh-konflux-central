@@ -1,0 +1,8 @@
+{
+  "fallback-tag": "rhoai-3.5",
+  "components": {
+    "odh-dashboard": {
+      "odh-dashboard-ci": "rhoai/odh-dashboard-rhel9"
+    }
+  }
+}

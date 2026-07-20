@@ -126,6 +126,12 @@ spec:
     default: "v4.20"
     description: Target OpenShift version for the catalog
 
+  # --- RHOAI mode ---
+  - name: earlygate-mode
+    type: string
+    default: "odh"
+    description: "EarlyGate mode: odh or rhoai"
+
   # --- Utils ---
   - name: utils-repo-url
     type: string
@@ -225,6 +231,9 @@ spec:
   - name: resolve-group-configuration
     runAfter:
     - init
+    params:
+    - name: EARLYGATE_MODE
+      value: $(params.earlygate-mode)
     workspaces:
     - name: basic-auth
       workspace: git-auth
@@ -234,7 +243,7 @@ spec:
       - name: url
         value: https://github.com/opendatahub-io/odh-konflux-central.git
       - name: revision
-        value: earlygate2
+        value: eg-dockerfile
       - name: pathInRepo
         value: early-gate/tasks/resolve-group-configuration.yaml
 
@@ -244,6 +253,8 @@ spec:
     params:
     - name: COMPONENTS
       value: $(tasks.resolve-group-configuration.results.group-components)
+    - name: EARLYGATE_MODE
+      value: $(params.earlygate-mode)
     - name: ociStorage
       value: $(params.operator-output-image).snapshot
     - name: ociArtifactExpiresAfter
@@ -257,7 +268,7 @@ spec:
       - name: url
         value: https://github.com/opendatahub-io/odh-konflux-central.git
       - name: revision
-        value: earlygate2
+        value: eg-dockerfile
       - name: pathInRepo
         value: early-gate/tasks/generate-snapshot-for-group-testing.yaml
 

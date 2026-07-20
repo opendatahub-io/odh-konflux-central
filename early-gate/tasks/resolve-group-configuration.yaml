@@ -6,6 +6,11 @@ spec:
   workspaces:
     - name: basic-auth
       optional: true
+  params:
+    - name: EARLYGATE_MODE
+      type: string
+      default: "odh"
+      description: "EarlyGate mode: odh or rhoai"
   results:
     - name: group-components
       description: Resolved components JSON with PR metadata for group testing
@@ -35,6 +40,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
+        - name: EARLYGATE_MODE
+          value: $(params.EARLYGATE_MODE)
         - name: GITHUB_ORG
           value: "opendatahub-io"
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
@@ -49,10 +56,12 @@ spec:
         echo "PR_NUMBER=${PR_NUMBER}" >&2
         echo "REPO_NAME=${REPO_NAME}" >&2
         echo "GITHUB_ORG=${GITHUB_ORG}" >&2
+        echo "EARLYGATE_MODE=${EARLYGATE_MODE}" >&2
 
         # --- Constants ---
         EARLYGATE_SECTION_PATTERN="early.*gate"  # Matches "earlygate", "early gate", "early-gate", etc.  # Case-insensitive search in ## headings
         COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+        RHOAI_COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map_rhoai.json"
         ALLOWED_ORG="opendatahub-io"  # Only accept PRs from this GitHub org
 
         # --- Fetch component_repo_map.json (critical dependency) ---
@@ -63,6 +72,37 @@ spec:
           exit 1
         fi
         echo "Component map loaded successfully" >&2
+
+        # --- In RHOAI mode, fetch RHOAI component map and overlay quay paths ---
+        RHOAI_COMPONENTS_MAP=""
+        if [[ "${EARLYGATE_MODE}" == "rhoai" ]]; then
+          echo "RHOAI mode: fetching component_repo_map_rhoai.json..." >&2
+          RHOAI_MAP_RAW=$(curl -sSf "${RHOAI_COMPONENT_MAP_URL}")
+          if [[ -z "${RHOAI_MAP_RAW}" ]]; then
+            echo "ERROR: Failed to fetch component_repo_map_rhoai.json" >&2
+            exit 1
+          fi
+          RHOAI_COMPONENTS_MAP=$(echo "${RHOAI_MAP_RAW}" | jq -c '.components')
+          echo "RHOAI component map loaded" >&2
+
+          # Override ODH component map entries with RHOAI quay paths where available
+          COMPONENT_MAP=$(echo "${COMPONENT_MAP}" | jq -c --argjson rhoai "${RHOAI_COMPONENTS_MAP}" '
+            to_entries | map(
+              .key as $repo |
+              .value as $comps |
+              if ($rhoai[$repo] // null) != null then
+                {key: $repo, value: ($comps | to_entries | map(
+                  if ($rhoai[$repo][.key] // null) != null then
+                    {key: .key, value: $rhoai[$repo][.key]}
+                  else .
+                  end
+                ) | from_entries)}
+              else .
+              end
+            ) | from_entries
+          ')
+          echo "Component map updated with RHOAI quay paths" >&2
+        fi
 
         # --- Fetch PR description from GitHub API ---
         echo "Fetching PR description from GitHub..." >&2

@@ -14,6 +14,10 @@ spec:
                 {"comp1": {"quay_path": "path1", "pr": "123"}, "comp2": {...}}
         If empty, fetched from component_repo_map.json using REPO_NAME.
       default: ""
+    - name: EARLYGATE_MODE
+      type: string
+      default: "odh"
+      description: "EarlyGate mode: odh or rhoai"
     - name: fallback-tag
       type: string
       default: odh-stable
@@ -48,6 +52,8 @@ spec:
       env:
         - name: COMPONENTS
           value: $(params.COMPONENTS)
+        - name: EARLYGATE_MODE
+          value: $(params.EARLYGATE_MODE)
         - name: FALLBACK_TAG
           value: $(params.fallback-tag)
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
@@ -66,6 +72,24 @@ spec:
         #!/bin/bash
         set -e
         cat /etc/*release
+
+        echo "=== EarlyGate Mode: ${EARLYGATE_MODE} ===" >&2
+
+        # --- RHOAI mode: fetch RHOAI component map and override fallback tag ---
+        RHOAI_COMPONENT_MAP=""
+        if [[ "${EARLYGATE_MODE}" == "rhoai" ]]; then
+          echo "RHOAI mode: fetching component_repo_map_rhoai.json..." >&2
+          RHOAI_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map_rhoai.json"
+          RHOAI_MAP_RAW=$(curl -sSf "${RHOAI_MAP_URL}")
+          if [[ -z "${RHOAI_MAP_RAW}" ]]; then
+            echo "ERROR: Failed to fetch component_repo_map_rhoai.json" >&2
+            exit 1
+          fi
+          RHOAI_FALLBACK_TAG=$(echo "${RHOAI_MAP_RAW}" | jq -r '.["fallback-tag"]')
+          RHOAI_COMPONENT_MAP=$(echo "${RHOAI_MAP_RAW}" | jq -c '.components')
+          echo "RHOAI fallback tag: ${RHOAI_FALLBACK_TAG}" >&2
+          echo "RHOAI component map loaded" >&2
+        fi
 
         # --- Fetch COMPONENTS from component_repo_map.json if not provided ---
         if [[ -z "${COMPONENTS}" ]]; then
@@ -134,15 +158,33 @@ spec:
               echo "⚠️  WARNING: Component '${component}' does not have PR image for tag ${TAG}" >&2
               echo "   Quay query returned: 404 Not Found" >&2
               echo "   Reason: PR build may still be in progress" >&2
-              echo "   Action: Falling back to ${FALLBACK_TAG} tag" >&2
+
+              # In RHOAI mode, fall back to RHOAI quay repo and tag
+              if [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${RHOAI_COMPONENT_MAP}" ]]; then
+                # Look up RHOAI quay path for this component across all repos
+                RHOAI_PATH=$(echo "${RHOAI_COMPONENT_MAP}" | jq -r --arg comp "${component}" '
+                  to_entries[] | .value[$comp] // empty
+                ' | head -1)
+                if [[ -n "${RHOAI_PATH}" ]]; then
+                  echo "   Action: Falling back to RHOAI image quay.io/${RHOAI_PATH}:${RHOAI_FALLBACK_TAG}" >&2
+                  repo_path="${RHOAI_PATH}"
+                  TAG="${RHOAI_FALLBACK_TAG}"
+                else
+                  echo "   Action: No RHOAI mapping for ${component}, falling back to ${FALLBACK_TAG} tag" >&2
+                  TAG=${FALLBACK_TAG}
+                fi
+              else
+                echo "   Action: Falling back to ${FALLBACK_TAG} tag" >&2
+                TAG=${FALLBACK_TAG}
+              fi
+
               echo "   Impact: Group test will use stable image instead of PR code" >&2
 
               # Track this fallback for PR comment
               if [[ "$value_type" == "object" ]]; then
-                echo "- Component \`${component}\` from PR #${component_pr}: using \`${FALLBACK_TAG}\` (PR build not ready)" >> "$FALLBACK_WARNINGS_FILE"
+                echo "- Component \`${component}\` from PR #${component_pr}: using \`${TAG}\` (PR build not ready)" >> "$FALLBACK_WARNINGS_FILE"
               fi
 
-              TAG=${FALLBACK_TAG}
               IMAGE_STATUS="fallback"
             fi
                 

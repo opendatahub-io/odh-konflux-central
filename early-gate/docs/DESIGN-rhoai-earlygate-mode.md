@@ -75,7 +75,7 @@ Default fallback tag is `rhoai-x.y` based on the RHOAI version in ODH nightlies 
 
 ```json
 {
-  "fallback-tag": "rhoai-3.4",
+  "fallback-tag": "rhoai-3.5",
   "components": {
     "odh-dashboard": {
       "odh-dashboard-ci": "rhoai/odh-dashboard-rhel9"
