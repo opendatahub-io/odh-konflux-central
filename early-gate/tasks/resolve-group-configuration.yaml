@@ -61,7 +61,7 @@ spec:
         # --- Constants ---
         EARLYGATE_SECTION_PATTERN="early.*gate"  # Matches "earlygate", "early gate", "early-gate", etc.  # Case-insensitive search in ## headings
         COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
-        RHOAI_COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map_rhoai.json"
+        RHOAI_COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/eg-dockerfile/config/component_repo_map_rhoai.json"
         ALLOWED_ORG="opendatahub-io"  # Only accept PRs from this GitHub org
 
         # --- Fetch component_repo_map.json (critical dependency) ---

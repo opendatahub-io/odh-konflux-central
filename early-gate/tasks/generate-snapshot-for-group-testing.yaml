@@ -79,7 +79,7 @@ spec:
         RHOAI_COMPONENT_MAP=""
         if [[ "${EARLYGATE_MODE}" == "rhoai" ]]; then
           echo "RHOAI mode: fetching component_repo_map_rhoai.json..." >&2
-          RHOAI_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map_rhoai.json"
+          RHOAI_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/eg-dockerfile/config/component_repo_map_rhoai.json"
           RHOAI_MAP_RAW=$(curl -sSf "${RHOAI_MAP_URL}")
           if [[ -z "${RHOAI_MAP_RAW}" ]]; then
             echo "ERROR: Failed to fetch component_repo_map_rhoai.json" >&2
