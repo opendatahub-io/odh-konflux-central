@@ -320,8 +320,6 @@ This 2-tier approach ensures retrieval performance stays constant regardless of 
 - **Portable export:** All files (map + all detail files) are exported as a single archive for distribution to CI pipeline jobs
 - **Concurrent writes:** If multiple jobs ingest simultaneously, write coordination ensures each job gets exclusive access to the active detail file
 
-**Recommendation:** Start with the existing single-file architecture. Migrate to the 2-tier architecture when the KB exceeds a size threshold (e.g., 10,000 records or 500MB). The 2-tier design is a performance and scalability optimization, not a functional requirement — the retrieval logic remains the same.
-
 ---
 
 ## HITL Feedback Loop
