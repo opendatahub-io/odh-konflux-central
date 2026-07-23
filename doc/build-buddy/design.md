@@ -286,7 +286,7 @@ Pipeline Pilot currently uses a single SQLite file with sqlite-vec for all vecto
 
 **Tier 2 — Pipeline-details files** (multiple files):
 - Each file stores full failure-success pair records: preprocessed error logs, fix commit diffs, enriched AI-generated summaries
-- Capped at ~5,000 records per file to avoid any single file becoming a bottleneck
+- Capped at ~1,000 records per file to avoid any single file becoming a bottleneck
 - Files are named with numeric suffixes for easy ordering; the latest file is always the active ingestion target
 - Only files identified by the Tier-1 search are loaded during retrieval — most queries touch 1-2 detail files, not all of them
 
@@ -295,7 +295,7 @@ Pipeline Pilot currently uses a single SQLite file with sqlite-vec for all vecto
 When a new build failure is ingested (either from live analysis or HITL feedback):
 
 1. **Ingest full details** into the latest pipeline-details file (logs, diffs, enriched knowledge, category, component, version)
-2. **Check capacity** — if the latest file exceeds ~5,000 records, create a new pipeline-details file with the next numeric suffix
+2. **Check capacity** — if the latest file exceeds ~1,000 records, create a new pipeline-details file with the next numeric suffix
 3. **Extract failure summary** — produce a 1-2 line key summary of the failure/error from the logs
 4. **Store summary embedding** in the pipeline-map file, with metadata pointing to the pipeline-details file used in step 1
 
