@@ -10,6 +10,8 @@
 
 Build Buddy is an autonomous agent that detects Konflux build failures, classifies them as intermittent or real, reruns intermittent failures, and suggests or implements fixes for real issues — all with mandatory human-in-the-loop (HITL) safeguards. No fix is ever applied without human approval.
 
+**Current scope: push build pipelines only.** Pull-request pipelines are excluded — Build Buddy monitors post-merge (push) builds where failures indicate issues in the main branch that need immediate attention.
+
 It operates in two modes controlled by a global setting:
 - **Suggestion mode** (default) — analyzes failures, reruns intermittent failures, and posts recommended fixes to Jira/Slack for human review
 - **Implementation mode** — raises PRs with proposed fixes, but merge remains HITL-only
@@ -140,7 +142,7 @@ State tracked via Jira labels: `unprocessed`, `in-analysis`, `rerun-triggered`, 
 
 Replaces the existing `send-slack-notification` task in the `finally` block of all 5 pipeline templates. This is a replacement, not an addition — Tekton `finally` tasks run in parallel, so Slack notification and Jira creation must happen in a single task to capture `thread_ts` for Jira.
 
-The task is gated on pipeline failure, push-type builds, and an `enable-build-buddy` parameter.
+The task is gated on pipeline failure, **push-type builds only** (pull-request pipelines are excluded), and an `enable-build-buddy` parameter.
 
 **What it does:**
 1. Sends Slack notification via Slack API (not webhook — webhooks don't return `thread_ts`)
