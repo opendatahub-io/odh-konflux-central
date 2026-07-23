@@ -11,7 +11,7 @@
 Build Buddy is an autonomous agent that detects Konflux build failures, classifies them as intermittent or real, reruns intermittent failures, and suggests or implements fixes for real issues — all with mandatory human-in-the-loop (HITL) safeguards. No fix is ever applied without human approval.
 
 It operates in two modes controlled by a global setting:
-- **Suggestion mode** (default) — analyzes failures and posts recommended fixes to Jira/Slack for human review
+- **Suggestion mode** (default) — analyzes failures, reruns intermittent failures, and posts recommended fixes to Jira/Slack for human review
 - **Implementation mode** — raises PRs with proposed fixes, but merge remains HITL-only
 
 Build Buddy uses [Pipeline Pilot](../../PipelinePilot_Overview.pptx.pdf) as its primary fix-engine (historical pattern matching with fix diffs from a vector knowledge base) and the [Ops Buddy](../ops-buddy/design.md) MCP server (`chai_rhai_ops_buddy`) for validation and broad DevTestOps context. The agentic pipeline runs on GitLab CI with openshell, using claude-code as the per-job orchestrator.
@@ -54,7 +54,7 @@ Configurable settings, updatable before any pipeline trigger:
 |---------|--------|---------|---------|
 | `fix-engine` | `pipeline-pilot`, `ops-buddy` | `pipeline-pilot` | Primary engine for fix lookup; fallback used if primary returns no result |
 | `validation-engine` | `ops-buddy`, `claude-code` | `ops-buddy` | Engine that validates correctness and cross-component impact of proposed fixes |
-| `MODE` | `suggestion`, `implementation` | `suggestion` | `suggestion`: update Jira/Slack with recommended fix only. `implementation`: raise actual PRs. Both modes require HITL before any merge. |
+| `MODE` | `suggestion`, `implementation` | `suggestion` | `suggestion`: update Jira/Slack with recommended fix only. `implementation`: raise actual PRs. Both modes require HITL before any merge. Reruns for transient issues happen in both modes. |
 
 ### Engine Roles
 
@@ -276,12 +276,51 @@ Pipeline Pilot is the primary fix-engine. It maintains a knowledge base of histo
 
 ### Multi-Level RAG Architecture (Proposed Enhancement)
 
-Pipeline Pilot currently uses a single SQLite file with sqlite-vec for all vector collections. As the knowledge base grows across 100+ components, a 2-tier architecture is proposed for scalability:
+Pipeline Pilot currently uses a single SQLite file with sqlite-vec for all vector collections. As the knowledge base grows across 100+ components with daily failures across multiple architectures (x86, s390x, ppc64le, arm64), a 2-tier file architecture is proposed to address scalability, performance during both ingestion and retrieval, and portability of the knowledge base.
 
-- **Tier 1 — Pipeline-map file** (single file): Contains summary embeddings with pointers to detail files. Enables fast initial similarity search with P1-P4 metadata for priority filtering.
-- **Tier 2 — Pipeline-details files** (multiple files, capped at ~5,000 records each): Full failure-success pair records loaded only when identified by Tier-1 search.
+**Tier 1 — Pipeline-map file** (single file):
+- Stores a 1-2 line failure summary embedding for every ingested failure
+- Each entry includes metadata: pointer to the pipeline-details file containing the full record, component name, version, failure category, and timestamp
+- Includes P1-P4 priority metadata (component, version) so that priority filtering can happen at this tier before loading any detail files
+- Purpose: fast initial similarity search to narrow down WHICH detail files contain relevant historical data
 
-**Recommendation:** Start with the existing single-file architecture. Migrate to 2-tier when the KB exceeds a size threshold (e.g., 10,000 records). The 2-tier architecture is a performance optimization, not a functional requirement.
+**Tier 2 — Pipeline-details files** (multiple files):
+- Each file stores full failure-success pair records: preprocessed error logs, fix commit diffs, enriched AI-generated summaries
+- Capped at ~5,000 records per file to avoid any single file becoming a bottleneck
+- Files are named with numeric suffixes for easy ordering; the latest file is always the active ingestion target
+- Only files identified by the Tier-1 search are loaded during retrieval — most queries touch 1-2 detail files, not all of them
+
+#### Data Ingestion Flow
+
+When a new build failure is ingested (either from live analysis or HITL feedback):
+
+1. **Ingest full details** into the latest pipeline-details file (logs, diffs, enriched knowledge, category, component, version)
+2. **Check capacity** — if the latest file exceeds ~5,000 records, create a new pipeline-details file with the next numeric suffix
+3. **Extract failure summary** — produce a 1-2 line key summary of the failure/error from the logs
+4. **Store summary embedding** in the pipeline-map file, with metadata pointing to the pipeline-details file used in step 1
+
+Write order matters for consistency: details are written FIRST, then the map entry. A detail record without a map entry is harmless (unreachable but safe); a map entry pointing to a missing detail record would be problematic.
+
+#### Data Retrieval Flow
+
+When Build Buddy needs to find similar historical failures for a new failure:
+
+1. **Extract failure summary** from the current failure logs (1-2 line key error)
+2. **Similarity search on pipeline-map** — fast search over summary embeddings to find the most similar historical failures, filtered by P1-P4 priority (same component+version first, broadening to global)
+3. **Identify target detail files** — from the search results, determine which pipeline-details files contain the relevant full records (typically 1-2 files)
+4. **Load only those detail files** for full RAG retrieval — extract error context, fix diffs, and enriched knowledge
+5. **Return context to AI** for root cause analysis and fix suggestion with confidence score
+
+This 2-tier approach ensures retrieval performance stays constant regardless of total KB size — the map search is always fast (small summary embeddings), and only the relevant detail files are loaded.
+
+#### Design Considerations
+
+- **Cross-file consistency:** Write details first, then map. This ordering ensures no dangling map pointers
+- **Pipeline-map growth:** The map file grows linearly (one entry per failure). Periodic compaction merges old entries pointing to the same detail file into aggregate summaries
+- **Portable export:** All files (map + all detail files) are exported as a single archive for distribution to CI pipeline jobs
+- **Concurrent writes:** If multiple jobs ingest simultaneously, write coordination ensures each job gets exclusive access to the active detail file
+
+**Recommendation:** Start with the existing single-file architecture. Migrate to the 2-tier architecture when the KB exceeds a size threshold (e.g., 10,000 records or 500MB). The 2-tier design is a performance and scalability optimization, not a functional requirement — the retrieval logic remains the same.
 
 ---
 
@@ -360,21 +399,6 @@ When impact is detected, the Jira/Slack update notes: "This fix modifies `{resou
 
 ---
 
-## Dry-Run Validation
-
-Before proposing a fix, Build Buddy performs lightweight validation where feasible:
-
-| Fix Type | Validation |
-|----------|-----------|
-| Dockerfile base image update | Verify the new image tag exists in the target registry |
-| Dependency version update | Check version exists in package registry |
-| Tekton task bundle update | Verify new bundle digest exists in the task catalog |
-| Lockfile regeneration | Marked as "requires build verification" |
-
-If dry-run validation fails, the fix is discarded and the next-best candidate is tried. If nothing passes, the issue is escalated.
-
----
-
 ## Observability
 
 | Metric | Source |
@@ -440,11 +464,11 @@ End-of-cycle summary and weekly digest posted to build notification channels.
 Simplest deployment to validate the design with real data:
 
 - Enable `report-build-failure` on ODH nightly build pipelines only (subset of components)
-- `suggestion` mode only — no PRs, no automatic reruns
+- `suggestion` mode only — no PRs; reruns enabled for transient issues
 - Pipeline Pilot KB pre-seeded with historical ODH build failures
-- Validation engine: claude-code only (avoids Ops Buddy MCP dependency for initial deployment)
+- Validation engine: Ops Buddy MCP (straightforward to deploy as MCP server)
 - Single-file KB architecture (defer multi-level RAG to post-MVP)
-- Success criteria: ≥60% of suggestions rated "helpful" by human reviewers
+- Success criteria: ≥60% of suggestions rated "helpful" by human reviewers; reruns resolve ≥50% of transient failures
 
 ---
 
