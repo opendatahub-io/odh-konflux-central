@@ -243,6 +243,16 @@ spec:
             # Get the latest (first) tag's manifest digest
             manifest_digest=$(echo "$response" | jq -r '.tags[0].manifest_digest // empty')
 
+            # Fallback: if Quay API returned nothing, try skopeo inspect (works for private repos after skopeo login)
+            if [[ -z "$manifest_digest" ]]; then
+              echo "Quay API returned no digest, trying skopeo inspect..." >&2
+              skopeo_output=$(skopeo inspect --raw "docker://${full_repo}:${TAG}" 2>/dev/null) || true
+              if [[ -n "$skopeo_output" ]]; then
+                manifest_digest=$(echo "$skopeo_output" | sha256sum | awk '{print "sha256:" $1}')
+                echo "Got digest via skopeo: $manifest_digest" >&2
+              fi
+            fi
+
             if [ -z "$manifest_digest" ]; then
                 echo "Warning: No digest found for $component with tag $TAG" >&2
                 full_image_uri="${full_repo}:${TAG}"
@@ -252,46 +262,69 @@ spec:
                 echo "Found digest: $manifest_digest" >&2
                 full_image_uri="${full_repo}@${manifest_digest}"
 
-                # Query Quay API to get the manifest details and extract labels
+                # Try Quay API for manifest details and labels
                 manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${manifest_digest}"
                 echo "Querying manifest: $manifest_api_url" >&2
 
                 manifest_response=$(curl -s ${QUAY_AUTH_HEADER:+-H "$QUAY_AUTH_HEADER"} "$manifest_api_url")
-                echo "manifest_response=${manifest_response}" >&2
 
-                # Check if this is a manifest list (multi-arch image)
-                is_manifest_list=$(echo "$manifest_response" | jq -r '.is_manifest_list // false')
-                echo "Is manifest list: $is_manifest_list" >&2
+                # Check if API returned valid data
+                has_manifest_data=$(echo "$manifest_response" | jq -r '.manifest_data // empty' 2>/dev/null)
 
-                if [ "$is_manifest_list" = "true" ]; then
-                    echo "Multi-arch image detected, extracting first manifest digest" >&2
-
-                    # Get the digest of the first manifest in the list
-                    first_manifest_digest=$(echo "$manifest_response" | jq -r '.manifest_data' | jq -r '.manifests[0].digest // empty')
-
-                    if [ -z "$first_manifest_digest" ]; then
-                        echo "Warning: No manifest found in manifest list" >&2
-                        git_url=""
-                        git_commit=""
+                if [[ -z "$has_manifest_data" ]]; then
+                    # Quay API didn't return manifest data — use skopeo inspect for labels
+                    echo "Quay API returned no manifest data, using skopeo inspect for labels..." >&2
+                    skopeo_inspect=$(skopeo inspect "docker://${full_repo}:${TAG}" 2>/dev/null) || true
+                    if [[ -n "$skopeo_inspect" ]]; then
+                      git_url=$(echo "$skopeo_inspect" | jq -r '.Labels["git.url"] // empty')
+                      git_commit=$(echo "$skopeo_inspect" | jq -r '.Labels["git.commit"] // empty')
+                      # Get the actual digest from skopeo
+                      actual_digest=$(echo "$skopeo_inspect" | jq -r '.Digest // empty')
+                      if [[ -n "$actual_digest" ]]; then
+                        manifest_digest="$actual_digest"
+                        full_image_uri="${full_repo}@${manifest_digest}"
+                      fi
                     else
-                        echo "First manifest digest: $first_manifest_digest" >&2
-
-                        # Query API again with the specific manifest digest
-                        specific_manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${first_manifest_digest}/labels"
-                        echo "Querying specific manifest: $specific_manifest_api_url" >&2
-
-                        specific_manifest_response=$(curl -s ${QUAY_AUTH_HEADER:+-H "$QUAY_AUTH_HEADER"} "$specific_manifest_api_url")
-                        echo "specific_manifest_response=${specific_manifest_response}"
-                        # Extract git.url and git.commit labels from the specific manifest
-                        git_url=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.url") | .value// empty')
-                        git_commit=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.commit") | .value// empty')
+                      git_url=""
+                      git_commit=""
                     fi
                 else
-                    echo "Single-arch image, extracting labels directly" >&2
+                    echo "manifest_response=${manifest_response}" >&2
 
-                    # Extract git.url and git.commit labels from current manifest
-                    git_url=$(echo "$manifest_response" | jq -r '.config.config.Labels["git.url"] // empty')
-                    git_commit=$(echo "$manifest_response" | jq -r '.config.config.Labels["git.commit"] // empty')
+                    # Check if this is a manifest list (multi-arch image)
+                    is_manifest_list=$(echo "$manifest_response" | jq -r '.is_manifest_list // false')
+                    echo "Is manifest list: $is_manifest_list" >&2
+
+                    if [ "$is_manifest_list" = "true" ]; then
+                        echo "Multi-arch image detected, extracting first manifest digest" >&2
+
+                        # Get the digest of the first manifest in the list
+                        first_manifest_digest=$(echo "$manifest_response" | jq -r '.manifest_data' | jq -r '.manifests[0].digest // empty')
+
+                        if [ -z "$first_manifest_digest" ]; then
+                            echo "Warning: No manifest found in manifest list" >&2
+                            git_url=""
+                            git_commit=""
+                        else
+                            echo "First manifest digest: $first_manifest_digest" >&2
+
+                            # Query API again with the specific manifest digest
+                            specific_manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${first_manifest_digest}/labels"
+                            echo "Querying specific manifest: $specific_manifest_api_url" >&2
+
+                            specific_manifest_response=$(curl -s ${QUAY_AUTH_HEADER:+-H "$QUAY_AUTH_HEADER"} "$specific_manifest_api_url")
+                            echo "specific_manifest_response=${specific_manifest_response}"
+                            # Extract git.url and git.commit labels from the specific manifest
+                            git_url=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.url") | .value// empty')
+                            git_commit=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.commit") | .value// empty')
+                        fi
+                    else
+                        echo "Single-arch image, extracting labels directly" >&2
+
+                        # Extract git.url and git.commit labels from current manifest
+                        git_url=$(echo "$manifest_response" | jq -r '.config.config.Labels["git.url"] // empty')
+                        git_commit=$(echo "$manifest_response" | jq -r '.config.config.Labels["git.commit"] // empty')
+                    fi
                 fi
 
                 echo "Git URL: $git_url" >&2
