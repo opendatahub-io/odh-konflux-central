@@ -1,0 +1,58 @@
+name: Generate RHOAI Component Repo Map
+
+on:
+  workflow_dispatch:
+    inputs:
+      rhoai-branch:
+        description: 'RHOAI-Build-Config branch (e.g., rhoai-3.5)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  generate-map:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout OKC repository
+      uses: actions/checkout@v4
+      with:
+        path: OKC
+
+    - name: Checkout RHOAI-Build-Config
+      uses: actions/checkout@v4
+      with:
+        repository: red-hat-data-services/RHOAI-Build-Config
+        ref: ${{ inputs.rhoai-branch }}
+        path: RHOAI-Build-Config
+        sparse-checkout: bundle
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: pip install pyyaml
+
+    - name: Generate RHOAI component map
+      working-directory: OKC
+      run: |
+        python utils/generate_rhoai_component_map.py \
+          --rhoai-bundle ../RHOAI-Build-Config/bundle/bundle-patch.yaml \
+          --odh-map config/component_repo_map.json \
+          --rhoai-branch "${{ inputs.rhoai-branch }}"
+
+    - name: Commit and push changes
+      working-directory: OKC
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add config/component_repo_map_rhoai.json
+        if git diff --cached --quiet; then
+          echo "No changes to component_repo_map_rhoai.json"
+          exit 0
+        fi
+        git commit -m "chore: regenerate component_repo_map_rhoai.json for ${{ inputs.rhoai-branch }}"
+        git push
