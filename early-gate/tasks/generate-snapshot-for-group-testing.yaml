@@ -68,12 +68,44 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
+        - name: OPENDATAHUB_QUAY_RO_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: early-gate-secrets
+              key: OPENDATAHUB_QUAY_RO_USERNAME
+              optional: true
+        - name: OPENDATAHUB_QUAY_RO_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: early-gate-secrets
+              key: OPENDATAHUB_QUAY_RO_TOKEN
+              optional: true
+        - name: OPENDATAHUB_QUAY_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: early-gate-secrets
+              key: OPENDATAHUB_QUAY_API_TOKEN
+              optional: true
       script: |
         #!/bin/bash
         set -e
         cat /etc/*release
 
         echo "=== EarlyGate Mode: ${EARLYGATE_MODE} ===" >&2
+
+        # --- Quay authentication for RHOAI private repos ---
+        if [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${OPENDATAHUB_QUAY_RO_USERNAME}" && -n "${OPENDATAHUB_QUAY_RO_TOKEN}" ]]; then
+          echo "Logging in to quay.io/rhoai with read-only credentials..." >&2
+          skopeo login -u "${OPENDATAHUB_QUAY_RO_USERNAME}" -p "${OPENDATAHUB_QUAY_RO_TOKEN}" quay.io/rhoai 2>&1 >&2 || \
+            echo "WARNING: skopeo login to quay.io/rhoai failed" >&2
+        fi
+
+        # Build Quay API auth header for private repo access
+        QUAY_AUTH_HEADER=""
+        if [[ -n "${OPENDATAHUB_QUAY_API_TOKEN}" ]]; then
+          QUAY_AUTH_HEADER="Authorization: Bearer ${OPENDATAHUB_QUAY_API_TOKEN}"
+          echo "Quay API token configured for authenticated requests" >&2
+        fi
 
         # --- RHOAI mode: fetch RHOAI component map and override fallback tag ---
         RHOAI_COMPONENT_MAP=""
@@ -206,7 +238,7 @@ spec:
             echo "Querying: $api_url" >&2
 
             # Make API request and extract the manifest digest
-            response=$(curl -s "$api_url")
+            response=$(curl -s ${QUAY_AUTH_HEADER:+-H "$QUAY_AUTH_HEADER"} "$api_url")
 
             # Get the latest (first) tag's manifest digest
             manifest_digest=$(echo "$response" | jq -r '.tags[0].manifest_digest // empty')
@@ -224,7 +256,7 @@ spec:
                 manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${manifest_digest}"
                 echo "Querying manifest: $manifest_api_url" >&2
 
-                manifest_response=$(curl -s "$manifest_api_url")
+                manifest_response=$(curl -s ${QUAY_AUTH_HEADER:+-H "$QUAY_AUTH_HEADER"} "$manifest_api_url")
                 echo "manifest_response=${manifest_response}" >&2
 
                 # Check if this is a manifest list (multi-arch image)
@@ -248,7 +280,7 @@ spec:
                         specific_manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${first_manifest_digest}/labels"
                         echo "Querying specific manifest: $specific_manifest_api_url" >&2
 
-                        specific_manifest_response=$(curl -s "$specific_manifest_api_url")
+                        specific_manifest_response=$(curl -s ${QUAY_AUTH_HEADER:+-H "$QUAY_AUTH_HEADER"} "$specific_manifest_api_url")
                         echo "specific_manifest_response=${specific_manifest_response}"
                         # Extract git.url and git.commit labels from the specific manifest
                         git_url=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.url") | .value// empty')
