@@ -187,11 +187,13 @@ spec:
         temp_file=$(mktemp)
         echo "{}" > "$temp_file"
 
-        # Track fallback warnings and component table (use temp files to avoid subshell issues)
+        # Track fallback warnings, component table, and resolution summary
         FALLBACK_WARNINGS_FILE=$(mktemp)
         COMPONENT_TABLE_FILE=$(mktemp)
+        RESOLUTION_SUMMARY_FILE=$(mktemp)
         > "$FALLBACK_WARNINGS_FILE"
         > "$COMPONENT_TABLE_FILE"
+        > "$RESOLUTION_SUMMARY_FILE"
 
         DEFAULT_PR_NUMBER="${PR_NUMBER}"
 
@@ -219,36 +221,48 @@ spec:
 
             echo "repo_path=${repo_path}"
 
-            # Check if PR-specific image exists
+            # Three-tier image resolution:
+            #   1. odh-pr-{PR} tag on current quay path (PR image)
+            #   2. rhoai-x.y tag on RHOAI quay path (RHOAI release) [RHOAI mode only]
+            #   3. odh-stable tag on ODH quay path (safety net)
             IMAGE_STATUS=""
+            odh_repo_path="${repo_path}"  # Save original ODH path for tier-3 fallback
+
+            # Tier 1: PR image
             if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
-              echo "✓ Found image with tag ${TAG}"
+              echo "✓ [Tier 1] Found PR image with tag ${TAG}"
               IMAGE_STATUS="ready"
             else
               echo "⚠️  WARNING: Component '${component}' does not have PR image for tag ${TAG}" >&2
-              echo "   Quay query returned: 404 Not Found" >&2
-              echo "   Reason: PR build may still be in progress" >&2
 
-              # In RHOAI mode, fall back to RHOAI quay repo and tag
+              IMAGE_FOUND=false
+
+              # Tier 2: RHOAI release image (RHOAI mode only)
               if [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${RHOAI_COMPONENT_MAP}" ]]; then
-                # Look up RHOAI quay path for this component across all repos
                 RHOAI_PATH=$(echo "${RHOAI_COMPONENT_MAP}" | jq -r --arg comp "${component}" '
                   to_entries[] | .value[$comp] // empty
                 ' | head -1)
                 if [[ -n "${RHOAI_PATH}" ]]; then
-                  echo "   Action: Falling back to RHOAI image quay.io/${RHOAI_PATH}:${RHOAI_FALLBACK_TAG}" >&2
-                  repo_path="${RHOAI_PATH}"
-                  TAG="${RHOAI_FALLBACK_TAG}"
-                else
-                  echo "   Action: No RHOAI mapping for ${component}, falling back to ${FALLBACK_TAG} tag" >&2
-                  TAG=${FALLBACK_TAG}
+                  echo "   [Tier 2] Trying RHOAI image quay.io/${RHOAI_PATH}:${RHOAI_FALLBACK_TAG}..." >&2
+                  if skopeo inspect "docker://quay.io/${RHOAI_PATH}:${RHOAI_FALLBACK_TAG}" &>/dev/null; then
+                    echo "   ✓ [Tier 2] Found RHOAI release image" >&2
+                    repo_path="${RHOAI_PATH}"
+                    TAG="${RHOAI_FALLBACK_TAG}"
+                    IMAGE_FOUND=true
+                  else
+                    echo "   ✗ [Tier 2] RHOAI image not found" >&2
+                  fi
                 fi
-              else
-                echo "   Action: Falling back to ${FALLBACK_TAG} tag" >&2
-                TAG=${FALLBACK_TAG}
               fi
 
-              echo "   Impact: Group test will use stable image instead of PR code" >&2
+              # Tier 3: ODH stable (safety net)
+              if [[ "${IMAGE_FOUND}" == "false" ]]; then
+                echo "   [Tier 3] Falling back to odh-stable on quay.io/${odh_repo_path}" >&2
+                repo_path="${odh_repo_path}"
+                TAG="${FALLBACK_TAG}"
+              fi
+
+              echo "   Using: quay.io/${repo_path}:${TAG}" >&2
 
               # Track this fallback for PR comment
               if [[ "$value_type" == "object" ]]; then
@@ -369,6 +383,13 @@ spec:
                 echo "Git Commit: $git_commit" >&2
             fi
 
+            # Track resolution for summary
+            DIGEST_STATUS="NOT-FOUND"
+            if [[ -n "$manifest_digest" ]]; then
+              DIGEST_STATUS="FOUND"
+            fi
+            echo "${component}|quay.io/${repo_path}|${TAG}|${DIGEST_STATUS}|${IMAGE_STATUS}" >> "$RESOLUTION_SUMMARY_FILE"
+
             # Add to output JSON with image URI, git.url, and git.commit
             jq --arg key "$component" \
                --arg image "$full_image_uri" \
@@ -390,6 +411,24 @@ spec:
             echo "" >&2
         done < <(echo "$json_string" | jq -r 'to_entries[] | @base64')
 
+        # Print component resolution summary
+        echo "" >&2
+        echo "=============================================" >&2
+        echo "  Component Resolution Summary" >&2
+        echo "=============================================" >&2
+        printf "%-45s %-50s %-15s %-10s %-10s\n" "COMPONENT" "QUAY REPO" "TAG" "DIGEST" "SOURCE" >&2
+        echo "-------------------------------------------------------------------------------------------------------------" >&2
+        while IFS='|' read -r comp quay tag digest_status source_status; do
+          printf "%-45s %-50s %-15s %-10s %-10s\n" "$comp" "$quay" "$tag" "$digest_status" "$source_status" >&2
+        done < "$RESOLUTION_SUMMARY_FILE"
+        echo "=============================================" >&2
+        TOTAL=$(wc -l < "$RESOLUTION_SUMMARY_FILE")
+        FOUND=$(grep -c "|FOUND|" "$RESOLUTION_SUMMARY_FILE" || true)
+        NOT_FOUND=$(grep -c "|NOT-FOUND|" "$RESOLUTION_SUMMARY_FILE" || true)
+        echo "Total: ${TOTAL} | Found: ${FOUND} | Not Found: ${NOT_FOUND}" >&2
+        echo "=============================================" >&2
+        echo "" >&2
+
         # Print final output JSON
         echo "Output JSON:" >&2
         cat "$temp_file" | jq '.'
@@ -410,7 +449,7 @@ spec:
         cat "$COMPONENT_TABLE_FILE" > "$(results.component-table.path)"
 
         # Cleanup
-        rm -f "$temp_file" "$FALLBACK_WARNINGS_FILE" "$COMPONENT_TABLE_FILE"
+        rm -f "$temp_file" "$FALLBACK_WARNINGS_FILE" "$COMPONENT_TABLE_FILE" "$RESOLUTION_SUMMARY_FILE"
 
     - name: create-trusted-artifact
       image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
