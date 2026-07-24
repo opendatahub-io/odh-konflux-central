@@ -41,10 +41,17 @@ spec:
   volumes:
   - name: workdir
     emptyDir: {}
+  - name: rhoai-quay-auth
+    secret:
+      secretName: odh-registry-secret
+      optional: true
   stepTemplate:
     volumeMounts:
     - mountPath: /var/workdir
       name: workdir
+    - mountPath: /etc/rhoai-quay-auth
+      name: rhoai-quay-auth
+      readOnly: true
   steps:
     - name: generate-snapshot
       image: quay.io/konflux-ci/konflux-test:stable
@@ -94,7 +101,10 @@ spec:
         echo "=== EarlyGate Mode: ${EARLYGATE_MODE} ===" >&2
 
         # --- Quay authentication for RHOAI private repos ---
-        if [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${OPENDATAHUB_QUAY_RO_USERNAME}" && -n "${OPENDATAHUB_QUAY_RO_TOKEN}" ]]; then
+        if [[ -f /etc/rhoai-quay-auth/.dockerconfigjson ]]; then
+          export REGISTRY_AUTH_FILE=/etc/rhoai-quay-auth/.dockerconfigjson
+          echo "RHOAI Quay auth configured from odh-registry-secret" >&2
+        elif [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${OPENDATAHUB_QUAY_RO_USERNAME}" && -n "${OPENDATAHUB_QUAY_RO_TOKEN}" ]]; then
           echo "Logging in to quay.io/rhoai with read-only credentials..." >&2
           skopeo login -u "${OPENDATAHUB_QUAY_RO_USERNAME}" -p "${OPENDATAHUB_QUAY_RO_TOKEN}" quay.io/rhoai 2>&1 >&2 || \
             echo "WARNING: skopeo login to quay.io/rhoai failed" >&2
