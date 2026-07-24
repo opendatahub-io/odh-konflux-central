@@ -101,14 +101,42 @@ spec:
         echo "=== EarlyGate Mode: ${EARLYGATE_MODE} ===" >&2
 
         # --- Quay authentication for RHOAI private repos ---
+        # Priority: 1) mounted odh-registry-secret, 2) Tekton-injected SA secret, 3) explicit skopeo login
+        # Note: skopeo login writes to containers/auth.json which overrides docker/config.json,
+        # so we only use it as a last resort to avoid clobbering Tekton-injected credentials.
+        RHOAI_AUTH_CONFIGURED=false
         if [[ -f /etc/rhoai-quay-auth/.dockerconfigjson ]]; then
           export REGISTRY_AUTH_FILE=/etc/rhoai-quay-auth/.dockerconfigjson
-          echo "RHOAI Quay auth configured from odh-registry-secret" >&2
-        elif [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${OPENDATAHUB_QUAY_RO_USERNAME}" && -n "${OPENDATAHUB_QUAY_RO_TOKEN}" ]]; then
-          echo "Logging in to quay.io/rhoai with read-only credentials..." >&2
+          echo "RHOAI Quay auth configured from mounted odh-registry-secret (.dockerconfigjson)" >&2
+          RHOAI_AUTH_CONFIGURED=true
+        elif [[ -f /etc/rhoai-quay-auth/.dockercfg ]]; then
+          export REGISTRY_AUTH_FILE=/etc/rhoai-quay-auth/.dockercfg
+          echo "RHOAI Quay auth configured from mounted odh-registry-secret (.dockercfg)" >&2
+          RHOAI_AUTH_CONFIGURED=true
+        fi
+
+        # Check Tekton-injected credentials from SA-linked secret
+        if [[ "${RHOAI_AUTH_CONFIGURED}" == "false" ]]; then
+          for auth_file in "${HOME}/.docker/config.json" "/tekton/creds/.docker/config.json"; do
+            if [[ -f "${auth_file}" ]] && grep -q "quay.io/rhoai" "${auth_file}" 2>/dev/null; then
+              export REGISTRY_AUTH_FILE="${auth_file}"
+              echo "RHOAI Quay auth configured from Tekton-injected credentials (${auth_file})" >&2
+              RHOAI_AUTH_CONFIGURED=true
+              break
+            fi
+          done
+        fi
+
+        # Last resort: explicit skopeo login (may override Tekton creds, use only if nothing else works)
+        if [[ "${RHOAI_AUTH_CONFIGURED}" == "false" && "${EARLYGATE_MODE}" == "rhoai" && -n "${OPENDATAHUB_QUAY_RO_USERNAME}" && -n "${OPENDATAHUB_QUAY_RO_TOKEN}" ]]; then
+          echo "No mounted/injected RHOAI auth found, falling back to skopeo login..." >&2
           skopeo login -u "${OPENDATAHUB_QUAY_RO_USERNAME}" -p "${OPENDATAHUB_QUAY_RO_TOKEN}" quay.io/rhoai 2>&1 >&2 || \
             echo "WARNING: skopeo login to quay.io/rhoai failed" >&2
         fi
+
+        # Debug: show auth file being used
+        echo "REGISTRY_AUTH_FILE=${REGISTRY_AUTH_FILE:-<default>}" >&2
+        ls -la /etc/rhoai-quay-auth/ 2>/dev/null || echo "No mounted rhoai-quay-auth volume" >&2
 
         # Build Quay API auth header for private repo access
         QUAY_AUTH_HEADER=""
