@@ -179,6 +179,29 @@ apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
   labels:
+    test.appstudio.openshift.io/optional: "true"
+  name: trainer-operator-upgrade-its-manual
+  namespace: open-data-hub-tenant
+spec:
+  application: opendatahub-builds
+  contexts:
+    - description: execute the upgrade integration test when component odh-trainer-operator-ci updates
+      name: component_odh-trainer-operator-ci
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/trainer-operator/upgrade-testing-pipeline.yaml
+    resolver: git
+    resourceKind: pipelinerun
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
     test.appstudio.openshift.io/optional: "false"
   name: kuberay-ci-its-manual
   namespace: open-data-hub-tenant
