@@ -184,14 +184,15 @@ spec:
           echo "Fetched COMPONENTS for ${REPO_NAME}: ${COMPONENTS}" >&2
         fi
 
+        # Write pre-expansion COMPONENTS to result (Tekton results have 4096 byte limit)
+        echo -n "${COMPONENTS}" > "$(results.group-components.path)"
+
         # --- RHOAI mode: expand COMPONENTS to include ALL components from the full map ---
         if [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${ODH_COMPONENT_MAP}" ]]; then
           echo "RHOAI mode: expanding COMPONENTS to include all components from full map..." >&2
-          # Flatten ODH map: all repos -> all components with their quay paths
           ALL_COMPONENTS=$(echo "${ODH_COMPONENT_MAP}" | jq -c '
             to_entries | map(.value | to_entries[]) | from_entries
           ')
-          # Overlay RHOAI quay paths where available
           if [[ -n "${RHOAI_COMPONENT_MAP}" ]]; then
             ALL_COMPONENTS=$(echo "${ALL_COMPONENTS}" | jq -c --argjson rhoai "${RHOAI_COMPONENT_MAP}" '
               . as $base |
@@ -199,7 +200,6 @@ spec:
               $base * $rhoai_flat
             ')
           fi
-          # Merge: keep existing COMPONENTS entries (they have PR metadata), add the rest as plain paths
           COMPONENTS=$(echo "${COMPONENTS}" | jq -c --argjson all "${ALL_COMPONENTS}" '
             . as $existing |
             ($all | to_entries | map(select(.key as $k | $existing | has($k) | not)) | from_entries) + $existing
@@ -207,8 +207,6 @@ spec:
           COMPONENT_COUNT=$(echo "${COMPONENTS}" | jq 'length')
           echo "Expanded to ${COMPONENT_COUNT} total components" >&2
         fi
-
-        echo -n "${COMPONENTS}" > "$(results.group-components.path)"
 
         json_string="$COMPONENTS"
         echo ${COMPONENTS}
