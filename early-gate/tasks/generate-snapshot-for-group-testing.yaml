@@ -284,13 +284,14 @@ spec:
                 ' | head -1)
                 if [[ -n "${RHOAI_PATH}" ]]; then
                   echo "   [Tier 2] Trying RHOAI image quay.io/${RHOAI_PATH}:${RHOAI_FALLBACK_TAG}..." >&2
-                  if skopeo inspect "docker://quay.io/${RHOAI_PATH}:${RHOAI_FALLBACK_TAG}" &>/dev/null; then
+                  TIER2_ERR=$(skopeo inspect "docker://quay.io/${RHOAI_PATH}:${RHOAI_FALLBACK_TAG}" 2>&1 >/dev/null) && TIER2_OK=true || TIER2_OK=false
+                  if [[ "${TIER2_OK}" == "true" ]]; then
                     echo "   ✓ [Tier 2] Found RHOAI release image" >&2
                     repo_path="${RHOAI_PATH}"
                     TAG="${RHOAI_FALLBACK_TAG}"
                     IMAGE_FOUND=true
                   else
-                    echo "   ✗ [Tier 2] RHOAI image not found" >&2
+                    echo "   ✗ [Tier 2] RHOAI image not found: ${TIER2_ERR}" >&2
                   fi
                 fi
               fi
