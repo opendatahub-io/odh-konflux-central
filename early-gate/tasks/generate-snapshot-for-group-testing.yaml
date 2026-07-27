@@ -161,21 +161,51 @@ spec:
           echo "RHOAI component map loaded" >&2
         fi
 
+        # --- Fetch ODH component map ---
+        COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+        ODH_COMPONENT_MAP=""
+        if [[ "${EARLYGATE_MODE}" == "rhoai" || -z "${COMPONENTS}" ]]; then
+          echo "Fetching component_repo_map.json..." >&2
+          ODH_COMPONENT_MAP=$(curl -sSf "${COMPONENT_MAP_URL}")
+        fi
+
         # --- Fetch COMPONENTS from component_repo_map.json if not provided ---
         if [[ -z "${COMPONENTS}" ]]; then
           if [[ -z "${REPO_NAME}" ]]; then
             echo "ERROR: Both COMPONENTS and REPO_NAME are empty. Provide at least one." >&2
             exit 1
           fi
-          echo "COMPONENTS not provided, fetching from component_repo_map.json for REPO_NAME=${REPO_NAME}" >&2
-          COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
-          COMPONENT_MAP=$(curl -sSf "${COMPONENT_MAP_URL}")
-          COMPONENTS=$(echo "${COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
+          echo "COMPONENTS not provided, fetching for REPO_NAME=${REPO_NAME}" >&2
+          COMPONENTS=$(echo "${ODH_COMPONENT_MAP}" | jq -c --arg repo "${REPO_NAME}" '.[$repo]')
           if [[ -z "${COMPONENTS}" || "${COMPONENTS}" == "null" ]]; then
             echo "ERROR: No entry found for REPO_NAME=${REPO_NAME} in component_repo_map.json" >&2
             exit 1
           fi
           echo "Fetched COMPONENTS for ${REPO_NAME}: ${COMPONENTS}" >&2
+        fi
+
+        # --- RHOAI mode: expand COMPONENTS to include ALL components from the full map ---
+        if [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${ODH_COMPONENT_MAP}" ]]; then
+          echo "RHOAI mode: expanding COMPONENTS to include all components from full map..." >&2
+          # Flatten ODH map: all repos -> all components with their quay paths
+          ALL_COMPONENTS=$(echo "${ODH_COMPONENT_MAP}" | jq -c '
+            to_entries | map(.value | to_entries[]) | from_entries
+          ')
+          # Overlay RHOAI quay paths where available
+          if [[ -n "${RHOAI_COMPONENT_MAP}" ]]; then
+            ALL_COMPONENTS=$(echo "${ALL_COMPONENTS}" | jq -c --argjson rhoai "${RHOAI_COMPONENT_MAP}" '
+              . as $base |
+              ($rhoai | to_entries | map(.value | to_entries[]) | from_entries) as $rhoai_flat |
+              $base * $rhoai_flat
+            ')
+          fi
+          # Merge: keep existing COMPONENTS entries (they have PR metadata), add the rest as plain paths
+          COMPONENTS=$(echo "${COMPONENTS}" | jq -c --argjson all "${ALL_COMPONENTS}" '
+            . as $existing |
+            ($all | to_entries | map(select(.key as $k | $existing | has($k) | not)) | from_entries) + $existing
+          ')
+          COMPONENT_COUNT=$(echo "${COMPONENTS}" | jq 'length')
+          echo "Expanded to ${COMPONENT_COUNT} total components" >&2
         fi
 
         echo -n "${COMPONENTS}" > "$(results.group-components.path)"
@@ -226,7 +256,17 @@ spec:
             #   2. rhoai-x.y tag on RHOAI quay path (RHOAI release) [RHOAI mode only]
             #   3. odh-stable tag on ODH quay path (safety net)
             IMAGE_STATUS=""
-            odh_repo_path="${repo_path}"  # Save original ODH path for tier-3 fallback
+
+            # Look up original ODH quay path for tier-3 fallback
+            odh_repo_path="${repo_path}"
+            if [[ "${EARLYGATE_MODE}" == "rhoai" && -n "${ODH_COMPONENT_MAP}" ]]; then
+              ODH_PATH=$(echo "${ODH_COMPONENT_MAP}" | jq -r --arg comp "${component}" '
+                to_entries[] | .value[$comp] // empty
+              ' | head -1)
+              if [[ -n "${ODH_PATH}" ]]; then
+                odh_repo_path="${ODH_PATH}"
+              fi
+            fi
 
             # Tier 1: PR image
             if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
@@ -255,7 +295,7 @@ spec:
                 fi
               fi
 
-              # Tier 3: ODH stable (safety net)
+              # Tier 3: ODH stable on original ODH quay path (safety net)
               if [[ "${IMAGE_FOUND}" == "false" ]]; then
                 echo "   [Tier 3] Falling back to odh-stable on quay.io/${odh_repo_path}" >&2
                 repo_path="${odh_repo_path}"
