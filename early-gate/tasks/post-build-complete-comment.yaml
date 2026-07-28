@@ -24,11 +24,15 @@ spec:
     type: string
     default: "false"
   - name: component-table
-    description: Component summary table (TSV format) from group testing
+    description: "true if component table data exists in the snapshot artifact, empty otherwise"
     type: string
     default: ""
   - name: fallback-warning
-    description: Warning message from generate-snapshot (empty if no fallbacks)
+    description: "true if fallback warnings exist in the snapshot artifact, empty otherwise"
+    type: string
+    default: ""
+  - name: SNAPSHOT_ARTIFACT
+    description: OCI trusted artifact URI containing snapshot data (component-table.tsv, fallback-warning.txt)
     type: string
     default: ""
   - name: invalid-repo-warnings
@@ -50,7 +54,19 @@ spec:
   results:
   - name: fbc-image
     description: Fully qualified FBC image reference with digest
+  volumes:
+  - name: workdir
+    emptyDir: {}
+  stepTemplate:
+    volumeMounts:
+    - mountPath: /var/workdir
+      name: workdir
   steps:
+  - name: use-trusted-artifact
+    image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+    args:
+    - use
+    - $(params.SNAPSHOT_ARTIFACT)=/var/workdir/snapshot
   - name: post-comment
     image: quay.io/konflux-ci/konflux-test:stable
     env:
@@ -79,9 +95,9 @@ spec:
       value: $(params.unique-tag)
     - name: HAS_GROUP_CONFIG
       value: $(params.has-group-config)
-    - name: COMPONENT_TABLE
+    - name: HAS_COMPONENT_TABLE
       value: $(params.component-table)
-    - name: FALLBACK_WARNING
+    - name: HAS_FALLBACK_WARNING
       value: $(params.fallback-warning)
     - name: INVALID_REPO_WARNINGS
       value: $(params.invalid-repo-warnings)
@@ -99,14 +115,21 @@ spec:
       echo "FBC_IMAGE: ${FBC_IMAGE}"
       printf '%s' "${FBC_IMAGE}" > "$(results.fbc-image.path)"
 
-      # --- Debug: Show parameters ---
+      # Read component table and fallback warnings from trusted artifact files
+      COMPONENT_TABLE=""
+      if [[ "${HAS_COMPONENT_TABLE}" == "true" && -f /var/workdir/snapshot/component-table.tsv ]]; then
+        COMPONENT_TABLE=$(cat /var/workdir/snapshot/component-table.tsv)
+      fi
+      FALLBACK_WARNING=""
+      if [[ "${HAS_FALLBACK_WARNING}" == "true" && -f /var/workdir/snapshot/fallback-warning.txt ]]; then
+        FALLBACK_WARNING=$(cat /var/workdir/snapshot/fallback-warning.txt)
+      fi
+
       echo "=== Post Build Complete Comment Parameters ===" >&2
       echo "HAS_GROUP_CONFIG='${HAS_GROUP_CONFIG}'" >&2
       echo "COMPONENT_TABLE length: ${#COMPONENT_TABLE}" >&2
-      echo "COMPONENT_TABLE (first 200 chars): ${COMPONENT_TABLE:0:200}" >&2
-      echo "FALLBACK_WARNING: ${FALLBACK_WARNING}" >&2
+      echo "FALLBACK_WARNING length: ${#FALLBACK_WARNING}" >&2
       echo "INVALID_REPO_WARNINGS: ${INVALID_REPO_WARNINGS}" >&2
-      echo "FORMAT_HELP_WARNING length: ${#FORMAT_HELP_WARNING}" >&2
 
       # --- Build the FBC build complete section (always included) ---
       BUILD_SECTION=$(printf ':white_check_mark: **Early Gate Build - Complete**\n\n| Field | Value |\n|-------|-------|\n| **Status** | :white_check_mark: SUCCESS |\n| **FBC Image** | %s |' \

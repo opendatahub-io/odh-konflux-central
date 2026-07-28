@@ -1044,6 +1044,8 @@ spec:
       value: $(tasks.generate-snapshot.results.component-table)
     - name: fallback-warning
       value: $(tasks.generate-snapshot.results.fallback-warning)
+    - name: SNAPSHOT_ARTIFACT
+      value: $(tasks.generate-snapshot.results.SNAPSHOT_ARTIFACT)
     - name: invalid-repo-warnings
       value: $(tasks.resolve-group-configuration.results.invalid-repo-warnings)
     - name: format-help-warning
@@ -1054,7 +1056,7 @@ spec:
       - name: url
         value: https://github.com/opendatahub-io/odh-konflux-central.git
       - name: revision
-        value: earlygate2
+        value: eg-dockerfile
       - name: pathInRepo
         value: early-gate/tasks/post-build-complete-comment.yaml
 

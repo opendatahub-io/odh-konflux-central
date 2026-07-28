@@ -29,27 +29,105 @@ Two separate PLRs per component, each targeting a different branch:
 
 Both use the same `odh-pr` image tag. The Konflux component is reused — no need to register separate RHOAI components.
 
-### Early-gate trigger (TBD — depends on PaC capability)
+### Early-gate trigger — Decision: Separate PLRs with `-rhoai` suffix
 
-**Option A: Single EG PipelineRun with mode in comment (preferred)**
+Three approaches were evaluated for passing the EarlyGate mode:
 
-If PaC supports passing arguments in the comment trigger:
+**Option A: `key=value` native override in comment (REJECTED)**
+
 ```
-/early-gate mode:RHOAI
+/early-gate mode=rhoai
 ```
-A single `early-gate-ci-build.yaml` handles both modes. The pipeline extracts `mode:RHOAI` from the triggering comment or PR description and passes it as the `earlygate-mode` param.
 
-**Option B: Separate EG PipelineRuns (fallback)**
+PaC supports overriding custom parameters via `key=value` pairs in comments, but this
+feature is explicitly marked **Technology Preview** in the PaC docs:
 
-If PaC cannot parse comment arguments:
-- `/early-gate` --> `early-gate-ci-build.yaml` (ODH mode)
-- `/early-gate-rhoai` --> `early-gate-ci-build-rhoai.yaml` (RHOAI mode)
+> "Passing parameters to GitOps commands as arguments is a Technology Preview feature only.
+> Technology Preview features are not currently supported and might not be functionally
+> complete. We do not recommend using them in production."
 
-Both point to the same `early-gate-component-pipeline.yaml` with different `earlygate-mode` param.
+Requires defining `mode` as a custom param in the Repository CR. Not production-ready.
 
-### Auto-trigger
+**Option B: `{{ trigger_comment }}` parsing (VIABLE but unnecessary complexity)**
 
-No auto-trigger for RHOAI EarlyGate builds for now. Manual comment only.
+```
+/early-gate mode:rhoai
+```
+
+The `{{ trigger_comment }}` template variable is **stable** (since OpenShift Pipelines 1.15).
+A single PLR could match both formats:
+
+```yaml
+pipelinesascode.tekton.dev/on-comment: "^/early-gate(\\s+mode:(odh|rhoai))?$"
+params:
+- name: trigger-comment
+  value: '{{ trigger_comment }}'
+```
+
+Then parse the mode in an init task. Works, but adds a parsing step and result
+propagation through the pipeline for no real user benefit over separate commands.
+
+**Option C: Separate PLRs with `-rhoai` suffix (CHOSEN)**
+
+```
+/early-gate       --> early-gate-ci-build.yaml      (ODH mode)
+/early-gate-rhoai --> early-gate-ci-build-rhoai.yaml (RHOAI mode)
+```
+
+Both point to the same `early-gate-component-pipeline.yaml` with different
+`earlygate-mode` param values. One extra file, zero parsing logic, zero risk.
+
+| Approach | Stability | Complexity | Comment format |
+|----------|-----------|------------|---------------|
+| `key=value` native override | Technology Preview | Low | `/early-gate mode=rhoai` |
+| `{{ trigger_comment }}` parsing | Stable | Medium | `/early-gate mode:rhoai` |
+| **Separate PLRs (chosen)** | **Stable** | **Low** | `/early-gate-rhoai` |
+
+References:
+- [PaC GitOps Commands](https://pipelinesascode.com/docs/guide/gitops_commands/)
+- [PaC Custom Parameters](https://pipelinesascode.com/docs/guide/customparams/)
+- [PaC Comment & Label Matching](https://pipelinesascode.com/docs/guides/event-matching/comment-and-label/)
+
+### Test trigger — no RHOAI variant needed
+
+The test pipeline (`/early-gate-test`) does not need an RHOAI variant. The build
+pipeline's output images (operator, bundle, FBC catalog) always go to
+`quay.io/opendatahub/` regardless of mode — the RHOAI mode only affects which
+component images go *inside* the operator via the snapshot.
+
+The test pipeline needs the `earlygate-mode` to pass to Jenkins (for namespace and
+pull secret configuration on the test cluster), which can be detected from the build
+pipeline's artifacts or PR metadata.
+
+### Label-based triggering — document as option, don't enable by default
+
+PaC supports triggering builds via PR labels using `on-label`:
+
+```yaml
+pipelinesascode.tekton.dev/on-label: "[early-gate]"
+pipelinesascode.tekton.dev/on-event: "[pull_request]"
+```
+
+This is already used downstream for PR builds. However, for EarlyGate it has a
+significant drawback: **every push to the PR re-triggers the build while the label
+is present**. Even with `cancel-in-progress: true`, this wastes build cycles.
+
+Developers can skip individual pushes with `[skip tkn]` in the commit message, but
+relying on this is fragile.
+
+Since teams specifically want **on-demand triggering only**, label-based triggering
+should be documented as an optional capability but **not enabled by default**:
+
+- Teams that want "build on every push" can add the `early-gate` label
+- Teams that want on-demand use `/early-gate` comments (default, recommended)
+- Both can coexist — the PLRs can have both `on-comment` and `on-label` annotations
+
+### Auto-trigger of RHOAI EarlyGate
+
+No auto-trigger for RHOAI EarlyGate builds for now. Manual `/early-gate-rhoai`
+comment only. The `trigger-early-gate-test` task (which auto-posts `/early-gate-test`
+after all checks pass) remains disabled for RHOAI via the `enable-early-gate-testing`
+param defaulting to `"false"`.
 
 ## Implementation
 
@@ -60,7 +138,7 @@ No pipeline duplication. The existing `early-gate-component-pipeline.yaml` gets 
 ### New files
 
 1. **`config/component_repo_map_rhoai.json`** — maps component names to downstream RHOAI quay paths (manually maintained, separate from auto-generated ODH map)
-2. **EG PipelineRun for RHOAI** — either single PLR (Option A) or separate `early-gate-ci-build-rhoai.yaml` (Option B)
+2. **EG PipelineRun for RHOAI** — `early-gate-ci-build-rhoai.yaml` (separate PLR, triggered by `/early-gate-rhoai`)
 3. **Per-component RHOAI PLR** (e.g., `odh-dashboard-pull-request-rhoai.yaml`) — uses RHOAI Dockerfile, targets release branch
 
 ### Modified files

@@ -34,9 +34,9 @@ spec:
     name: SNAPSHOT_ARTIFACT
   - description: Resolved COMPONENTS JSON used to generate the snapshot
     name: group-components
-  - description: Warning message if any components fell back to stable (empty if all PRs found)
+  - description: "true if any components fell back to stable, empty otherwise"
     name: fallback-warning
-  - description: Component summary table for PR comment (TSV format - PR component tag status digest)
+  - description: "true if component table data exists, empty otherwise"
     name: component-table
   volumes:
   - name: workdir
@@ -477,15 +477,20 @@ spec:
         cp "$temp_file" /var/workdir/snapshot/snapshot.json
         echo "Snapshot written to /var/workdir/snapshot/snapshot.json" >&2
 
-        # Output fallback warnings
+        # Write fallback warnings and component table to trusted artifact (avoid 4096 byte result limit)
         if [[ -s "$FALLBACK_WARNINGS_FILE" ]]; then
-          cat "$FALLBACK_WARNINGS_FILE" > "$(results.fallback-warning.path)"
+          cp "$FALLBACK_WARNINGS_FILE" /var/workdir/snapshot/fallback-warning.txt
+          echo -n "true" > "$(results.fallback-warning.path)"
         else
-          echo "" > "$(results.fallback-warning.path)"
+          echo -n "" > "$(results.fallback-warning.path)"
         fi
 
-        # Output component table
-        cat "$COMPONENT_TABLE_FILE" > "$(results.component-table.path)"
+        if [[ -s "$COMPONENT_TABLE_FILE" ]]; then
+          cp "$COMPONENT_TABLE_FILE" /var/workdir/snapshot/component-table.tsv
+          echo -n "true" > "$(results.component-table.path)"
+        else
+          echo -n "" > "$(results.component-table.path)"
+        fi
 
         # Cleanup
         rm -f "$temp_file" "$FALLBACK_WARNINGS_FILE" "$COMPONENT_TABLE_FILE" "$RESOLUTION_SUMMARY_FILE"
