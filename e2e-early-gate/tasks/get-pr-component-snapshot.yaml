@@ -1,0 +1,149 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: get-pr-component-snapshot
+  annotations:
+    description: |
+      Queries Konflux for the current PR's component build and generates
+      a SNAPSHOT in the format expected by generate-snapshot-for-group-testing.
+      Works for any component/repository without hardcoding.
+
+      This task:
+      1. Finds the Konflux component matching the git repository
+      2. Queries for the most recent successful build for the PR commit
+      3. Extracts IMAGE_URL and IMAGE_DIGEST from the build results
+      4. Generates a SNAPSHOT JSON with image digest + git metadata
+
+      The resulting SNAPSHOT can be passed to early-gate-e2e-pipeline as group-components.
+spec:
+  params:
+  - name: git-url
+    type: string
+    description: Git repository URL (from PaC {{ repo_url }})
+  - name: git-revision
+    type: string
+    description: Git commit SHA (from PaC {{ revision }})
+  - name: namespace
+    type: string
+    description: Namespace to search for component builds
+    default: "open-data-hub-tenant"
+  results:
+  - name: SNAPSHOT
+    description: |
+      Konflux SNAPSHOT JSON containing the PR component build.
+      Format: { "component-name": { "image": "...", "git.url": "...", "git.commit": "..." } }
+  steps:
+  - name: query-component-build
+    image: quay.io/konflux-ci/appstudio-utils:ab6b0b8e40e440158e7288c73aff1cf83a2cc8a9
+    env:
+    - name: GIT_URL
+      value: $(params.git-url)
+    - name: GIT_REVISION
+      value: $(params.git-revision)
+    - name: NAMESPACE
+      value: $(params.namespace)
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+
+      echo "=========================================="
+      echo "Querying Konflux for component build"
+      echo "=========================================="
+      echo "  Git URL: ${GIT_URL}"
+      echo "  Git Revision: ${GIT_REVISION}"
+      echo "  Namespace: ${NAMESPACE}"
+      echo ""
+
+      # Find the component that matches this git repo
+      echo "Step 1: Finding component for git repository..."
+      COMPONENT_NAME=$(kubectl get components -n ${NAMESPACE} \
+        -o json | jq -r --arg git_url "${GIT_URL}" \
+        '.items[] | select(.spec.source.git.url == $git_url) | .metadata.name' | head -1)
+
+      if [ -z "$COMPONENT_NAME" ]; then
+        echo "ERROR: Could not find component for git URL: ${GIT_URL}"
+        echo ""
+        echo "Available components in namespace ${NAMESPACE}:"
+        kubectl get components -n ${NAMESPACE} -o json | \
+          jq -r '.items[] | "\(.metadata.name) -> \(.spec.source.git.url)"'
+        exit 1
+      fi
+
+      echo "✓ Found component: ${COMPONENT_NAME}"
+      echo ""
+
+      # Find the most recent successful PipelineRun for this component and commit
+      echo "Step 2: Searching for successful component builds for commit ${GIT_REVISION}..."
+
+      PIPELINERUN=$(kubectl get pipelineruns -n ${NAMESPACE} \
+        -l "appstudio.openshift.io/component=${COMPONENT_NAME},pipelinesascode.tekton.dev/sha=${GIT_REVISION}" \
+        -o json | jq -r '.items | sort_by(.metadata.creationTimestamp) | reverse |
+        .[] | select(.status.conditions[]? | select(.type=="Succeeded" and .status=="True")) |
+        .metadata.name' | head -1)
+
+      if [ -z "$PIPELINERUN" ]; then
+        echo "ERROR: No successful component build found for ${COMPONENT_NAME} @ ${GIT_REVISION}"
+        echo ""
+        echo "Recent builds for component ${COMPONENT_NAME}:"
+        kubectl get pipelineruns -n ${NAMESPACE} \
+          -l "appstudio.openshift.io/component=${COMPONENT_NAME}" \
+          --sort-by=.metadata.creationTimestamp -o wide | tail -10
+        echo ""
+        echo "Hint: The PR's component build pipeline must complete successfully before running early-gate tests."
+        exit 1
+      fi
+
+      echo "✓ Found successful build: ${PIPELINERUN}"
+      echo ""
+
+      # Extract IMAGE_URL and IMAGE_DIGEST from PipelineRun results
+      echo "Step 3: Extracting image information from build results..."
+      PIPELINERUN_JSON=$(kubectl get pipelinerun ${PIPELINERUN} -n ${NAMESPACE} -o json)
+
+      IMAGE_URL=$(echo "$PIPELINERUN_JSON" | jq -r '.status.results[] | select(.name=="IMAGE_URL") | .value')
+      IMAGE_DIGEST=$(echo "$PIPELINERUN_JSON" | jq -r '.status.results[] | select(.name=="IMAGE_DIGEST") | .value')
+
+      if [ -z "$IMAGE_URL" ] || [ -z "$IMAGE_DIGEST" ]; then
+        echo "ERROR: Could not extract IMAGE_URL or IMAGE_DIGEST from PipelineRun"
+        echo ""
+        echo "PipelineRun results:"
+        echo "$PIPELINERUN_JSON" | jq '.status.results'
+        exit 1
+      fi
+
+      # Construct full image reference (registry/repo@digest)
+      # IMAGE_URL format: quay.io/org/repo:tag
+      # We want: quay.io/org/repo@sha256:...
+      IMAGE_BASE="${IMAGE_URL%:*}"
+      COMPONENT_IMAGE="${IMAGE_BASE}@${IMAGE_DIGEST}"
+
+      echo "✓ Component image: ${COMPONENT_IMAGE}"
+      echo ""
+
+      # Generate SNAPSHOT in Konflux format
+      echo "Step 4: Generating SNAPSHOT JSON..."
+      SNAPSHOT=$(jq -n \
+        --arg comp_name "${COMPONENT_NAME}" \
+        --arg image "${COMPONENT_IMAGE}" \
+        --arg git_url "${GIT_URL}" \
+        --arg git_commit "${GIT_REVISION}" \
+        '{
+          ($comp_name): {
+            "image": $image,
+            "git.url": $git_url,
+            "git.commit": $git_commit
+          }
+        }')
+
+      echo "✓ Generated SNAPSHOT:"
+      echo "$SNAPSHOT" | jq .
+      echo ""
+
+      # Write to result
+      echo "Step 5: Writing SNAPSHOT to task result..."
+      echo -n "$SNAPSHOT" | tee $(results.SNAPSHOT.path)
+
+      echo ""
+      echo "=========================================="
+      echo "✓ Successfully generated component SNAPSHOT"
+      echo "=========================================="
