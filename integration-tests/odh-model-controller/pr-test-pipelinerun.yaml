@@ -300,7 +300,7 @@ spec:
                   echo "LLMD_ROUTING_SIDECAR_IMAGE=${LLMD_ROUTING_SIDECAR_IMAGE}"
                   echo "KUBE_RBAC_PROXY_IMAGE=${KUBE_RBAC_PROXY_IMAGE}"
 
-                  make e2e-raw-ocp E2E_PARALLELISM=2 RUNNING_LOCAL=false
+                  ./test/scripts/openshift-ci/run-e2e-tests.sh raw 2 raw
                 popd
             - name: must-gather
               onError: continue
@@ -535,7 +535,7 @@ spec:
                   echo "LLMD_ROUTING_SIDECAR_IMAGE=${LLMD_ROUTING_SIDECAR_IMAGE}"
                   echo "KUBE_RBAC_PROXY_IMAGE=${KUBE_RBAC_PROXY_IMAGE}"
 
-                  make e2e-llmisvc-ocp RUNNING_LOCAL=false
+                  ./test/scripts/openshift-ci/run-e2e-tests.sh "llminferenceservice and (cluster_cpu and cluster_single_node) and not autoscaling and not tracing" 2 "llm-d"
                 popd
             - name: must-gather
               onError: continue
