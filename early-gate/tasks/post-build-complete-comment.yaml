@@ -19,6 +19,26 @@ spec:
   - name: unique-tag
     description: Unique tag to use in the FBC image reference
     type: string
+  - name: has-group-config
+    description: Whether this is a group testing run (true/false)
+    type: string
+    default: "false"
+  - name: component-table
+    description: Component summary table (TSV format) from group testing
+    type: string
+    default: ""
+  - name: fallback-warning
+    description: Warning message from generate-snapshot (empty if no fallbacks)
+    type: string
+    default: ""
+  - name: invalid-repo-warnings
+    description: Warning messages for repos not found in component_repo_map.json
+    type: string
+    default: ""
+  - name: format-help-warning
+    description: Helpful message when earlygate format is incorrect
+    type: string
+    default: ""
   - name: pr-token-secret-name
     description: Name of the Kubernetes secret containing the GitHub token for PR comment operations
     type: string
@@ -57,6 +77,16 @@ spec:
       value: $(params.catalog-image-digest)
     - name: UNIQUE_TAG
       value: $(params.unique-tag)
+    - name: HAS_GROUP_CONFIG
+      value: $(params.has-group-config)
+    - name: COMPONENT_TABLE
+      value: $(params.component-table)
+    - name: FALLBACK_WARNING
+      value: $(params.fallback-warning)
+    - name: INVALID_REPO_WARNINGS
+      value: $(params.invalid-repo-warnings)
+    - name: FORMAT_HELP_WARNING
+      value: $(params.format-help-warning)
     script: |
       #!/bin/bash
       set -euo pipefail
@@ -69,15 +99,102 @@ spec:
       echo "FBC_IMAGE: ${FBC_IMAGE}"
       printf '%s' "${FBC_IMAGE}" > "$(results.fbc-image.path)"
 
-      COMMENT_BODY=$(printf '<!-- early-gate-build-complete -->\n:white_check_mark: **Early Gate Build - Complete**\n\n| Field | Value |\n|-------|-------|\n| **Status** | :white_check_mark: SUCCESS |\n| **FBC Image** | %s |' \
+      # --- Debug: Show parameters ---
+      echo "=== Post Build Complete Comment Parameters ===" >&2
+      echo "HAS_GROUP_CONFIG='${HAS_GROUP_CONFIG}'" >&2
+      echo "COMPONENT_TABLE length: ${#COMPONENT_TABLE}" >&2
+      echo "COMPONENT_TABLE (first 200 chars): ${COMPONENT_TABLE:0:200}" >&2
+      echo "FALLBACK_WARNING: ${FALLBACK_WARNING}" >&2
+      echo "INVALID_REPO_WARNINGS: ${INVALID_REPO_WARNINGS}" >&2
+      echo "FORMAT_HELP_WARNING length: ${#FORMAT_HELP_WARNING}" >&2
+
+      # --- Build the FBC build complete section (always included) ---
+      BUILD_SECTION=$(printf ':white_check_mark: **Early Gate Build - Complete**\n\n| Field | Value |\n|-------|-------|\n| **Status** | :white_check_mark: SUCCESS |\n| **FBC Image** | %s |' \
         "${FBC_IMAGE}")
 
+      # --- Build the group testing section (if applicable) ---
+      GROUP_TESTING_SECTION=""
+
+      # Check for format help warning (posted even when not group testing)
+      TRIMMED_FORMAT_HELP=$(echo "${FORMAT_HELP_WARNING}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+      if [[ "${HAS_GROUP_CONFIG}" == "true" && -n "${COMPONENT_TABLE}" ]]; then
+        # --- Group Testing Summary ---
+        echo "Including group testing summary" >&2
+
+        # Check if there are fallbacks
+        HAS_FALLBACKS="false"
+        TRIMMED_WARNING=$(echo "${FALLBACK_WARNING}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [[ -n "${TRIMMED_WARNING}" ]]; then
+          HAS_FALLBACKS="true"
+        fi
+
+        # Build component table
+        COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
+        COMPONENT_MAP=$(curl -sSf "${COMPONENT_MAP_URL}" 2>/dev/null || echo "{}")
+
+        declare -A PR_TO_REPO
+
+        while IFS='|' read -r pr comp tag status digest; do
+          if [[ -z "$pr" ]]; then continue; fi
+          REPO_FOUND=$(echo "${COMPONENT_MAP}" | jq -r --arg comp "${comp}" 'to_entries[] | select(.value | has($comp)) | .key' | head -1)
+          if [[ -n "$REPO_FOUND" ]]; then
+            PR_TO_REPO[$pr]="$REPO_FOUND"
+          fi
+        done <<< "${COMPONENT_TABLE}"
+
+        TABLE_HEADER="| PR | Component | Tag | Status | Digest |\n|---|---|---|---|---|\n"
+        TABLE_ROWS=""
+
+        while IFS='|' read -r pr comp tag status digest; do
+          if [[ -z "$pr" ]]; then continue; fi
+
+          REPO_FOUND="${PR_TO_REPO[$pr]}"
+          if [[ -n "$REPO_FOUND" ]]; then
+            PR_LINK="[#${pr}](https://github.com/opendatahub-io/${REPO_FOUND}/pull/${pr})"
+          else
+            PR_LINK="#${pr}"
+          fi
+
+          if [[ "$status" == "ready" ]]; then
+            STATUS_TEXT="PR build ready"
+          else
+            STATUS_TEXT="Using stable"
+          fi
+
+          TABLE_ROWS="${TABLE_ROWS}| ${PR_LINK} | ${comp} | ${tag} | ${STATUS_TEXT} | ${digest} |\n"
+        done <<< "${COMPONENT_TABLE}"
+
+        # Build warnings
+        WARNING_NOTE=""
+        if [[ "$HAS_FALLBACKS" == "true" ]]; then
+          WARNING_NOTE="\n\n⚠️ Some components fell back to stable images because PR builds have not completed yet. Re-trigger with /retest after all builds finish.\n"
+        fi
+
+        INVALID_REPO_NOTE=""
+        TRIMMED_INVALID_WARNINGS=$(echo "${INVALID_REPO_WARNINGS}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [[ -n "${TRIMMED_INVALID_WARNINGS}" ]]; then
+          INVALID_REPO_NOTE="\n\n### Configuration Warnings\n\n${INVALID_REPO_WARNINGS}\n"
+        fi
+
+        GROUP_TESTING_SECTION="\n\n---\n\n**Group Testing Summary**\n\nTesting multiple PRs together:\n\n${TABLE_HEADER}${TABLE_ROWS}${WARNING_NOTE}${INVALID_REPO_NOTE}"
+
+      elif [[ -n "${TRIMMED_FORMAT_HELP}" ]]; then
+        # --- Format Help Warning ---
+        echo "Including format help warning" >&2
+        GROUP_TESTING_SECTION="\n\n---\n\n${FORMAT_HELP_WARNING}"
+      fi
+
+      # --- Combine sections ---
+      COMMENT_BODY="<!-- early-gate-build-complete -->\n${BUILD_SECTION}${GROUP_TESTING_SECTION}\n\n---\nPosted by Early-Gate"
+
+      # --- Post comment ---
       curl -sSf \
         -X POST \
         -H "Authorization: Bearer ${PR_GITHUB_TOKEN}" \
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments" \
-        -d "{\"body\":$(echo "${COMMENT_BODY}" | jq -Rs .)}" \
+        -d "{\"body\":$(echo -e "${COMMENT_BODY}" | jq -Rs .)}" \
         2>/dev/null || echo "WARNING: Failed to post PR comment (non-fatal)"
 
-      echo "Posted build-complete comment on PR #${PR_NUMBER}"
+      echo "Posted consolidated build + group testing comment on PR #${PR_NUMBER}"
