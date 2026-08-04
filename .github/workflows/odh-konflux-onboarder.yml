@@ -105,6 +105,17 @@ on:
         required: false
         type: string
 
+      path_context:
+        description: >
+          Build context path relative to the repo root (e.g. "src/myservice/").
+          Replaces the $$PATH_CONTEXT$$ placeholder in pipeline templates.
+          Use this when all templates for the component share the same context path.
+          For components where each template has a different context path, set the
+          path directly in the template file instead of using this input.
+          Defaults to "." (repo root).
+        required: false
+        type: string
+
 jobs:
   update-tekton-pipelines-and-create-pr:
     runs-on: ubuntu-latest
@@ -143,6 +154,14 @@ jobs:
           fi
 
           echo "BUILD_BRANCH=$BUILD_BRANCH" >> $GITHUB_ENV
+
+      - name: Resolve path context
+        run: |
+          if [ -n "${{ inputs.path_context }}" ]; then
+            echo "PATH_CONTEXT=${{ inputs.path_context }}" >> $GITHUB_ENV
+          else
+            echo "PATH_CONTEXT=." >> $GITHUB_ENV
+          fi
 
       - name: Validate and set tag
         run: |
@@ -221,6 +240,7 @@ jobs:
 
                 sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${EFFECTIVE_TAG}"'|g' "$target_file"
                 sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+                sed -i -E 's|\$\$PATH_CONTEXT\$\$|'"${PATH_CONTEXT}"'|g' "$target_file"
                 # CI-only: Replace BUILD_MODE placeholder with RHOAI
                 sed -i -E 's|\$\$BUILD_MODE\$\$|RHOAI|g' "$target_file"
 
@@ -233,6 +253,7 @@ jobs:
 
                 sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${EFFECTIVE_TAG}"'|g' "$target_file"
                 sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+                sed -i -E 's|\$\$PATH_CONTEXT\$\$|'"${PATH_CONTEXT}"'|g' "$target_file"
                 sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
                 # CI-only: Replace BUILD_MODE placeholder with RHOAI
                 sed -i -E 's|\$\$BUILD_MODE\$\$|RHOAI|g' "$target_file"
@@ -275,6 +296,7 @@ jobs:
               sed -i -E 's|(name: .*)-on-push|\1-on-release-push|' "$target_file"
               sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${VERSION}"'|g' "$target_file"
               sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+              sed -i -E 's|\$\$PATH_CONTEXT\$\$|'"${PATH_CONTEXT}"'|g' "$target_file"
               sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
               sed -i -E 's|Dockerfiles/rhoai\.Dockerfile|Dockerfiles/Dockerfile|g' "$target_file"
               # Release-only: Remove BUILD_MODE parameter entirely
@@ -308,6 +330,7 @@ jobs:
                 # Apply standard substitutions
                 sed -i -E 's|\$\$OUTPUT_IMAGE_TAG\$\$|'"${VERSION}"'|g' "$target_file"
                 sed -i -E 's|\$\$TARGET_BRANCH\$\$|'"${TARGET_BRANCH}"'|g' "$target_file"
+                sed -i -E 's|\$\$PATH_CONTEXT\$\$|'"${PATH_CONTEXT}"'|g' "$target_file"
                 sed -i -E 's|\$\$BUILD_TYPE\$\$|'"${{ inputs.build_type }}"'|g' "$target_file"
                 sed -i -E 's|\$\$VERSION\$\$|'"${VERSION_VALUE}"'|g' "$target_file"
 
