@@ -314,7 +314,91 @@ merge:
     ]
 ```
 
-## 7. Onboarding a Repository to Early Gate
+## 7. Group Testing (Multi-PR)
+
+Group testing allows you to test multiple PRs from different repositories together in a single early gate run. This validates cross-component changes as a cohesive set before any of them are merged.
+
+### How It Works
+
+One PR acts as the **leader** — it contains the group testing configuration in its description and receives the test results. Other PRs in the group are **collaborators**.
+
+When the leader PR's early gate build pipeline runs, it:
+1. Reads the group testing configuration from the leader PR description
+2. Fetches PR-specific images for each collaborator from Quay
+3. Builds a combined snapshot with all PR images (falling back to stable images for any components whose PR build hasn't completed yet)
+4. Runs smoke tests against the combined set
+5. Posts a group testing summary and test results on the leader PR
+
+### Configuring Group Testing
+
+Add an `## Early Gate Testing` section to your **leader PR description** listing collaborator PR URLs:
+
+```markdown
+## Early Gate Testing
+https://github.com/opendatahub-io/feast/pull/456
+https://github.com/opendatahub-io/notebook-controller/pull/789
+```
+
+**Rules:**
+- The heading must contain "early gate" (case-insensitive) — e.g., `## Early Gate Testing`, `## earlygate`, `## Early-Gate Config`
+- List one collaborator PR URL per line under the heading
+- The leader PR is automatically included — don't list it
+- Only `opendatahub-io` organization PRs are supported
+- The config block ends at the next `##` heading
+- Formatting is flexible — bullets, dashes, and whitespace are all accepted
+
+### Example
+
+**In kserve PR #123 description:**
+
+```markdown
+## Summary
+This PR updates the KServe API to support OAuth2 authentication.
+
+## Early Gate Testing
+https://github.com/opendatahub-io/feast/pull/456
+
+## Test Plan
+- [ ] Unit tests pass
+- [ ] Integration tests with Feast
+```
+
+This tests kserve PR #123 images together with feast PR #456 images. All other components use their latest stable versions.
+
+### Group Testing PR Comment
+
+When a group test runs, the bot posts a summary comment on the leader PR showing which components are included and whether PR images or stable fallbacks were used:
+
+> **Group Testing Summary**
+>
+> Testing multiple PRs together:
+>
+> | PR | Component | Tag | Status | Digest |
+> |---|---|---|---|---|
+> | [#123](https://github.com/opendatahub-io/kserve/pull/123) | kserve-controller | odh-pr-123 | PR build ready | sha256:abc... |
+> | [#456](https://github.com/opendatahub-io/feast/pull/456) | feast-operator | odh-pr-456 | PR build ready | sha256:def... |
+
+If any collaborator's PR build hasn't completed, the pipeline falls back to the stable image for that component and the comment includes a warning to re-trigger after builds finish.
+
+### Best Practices
+
+- Add the config to the **leader PR** only — don't add it to multiple PRs in the group
+- Add cross-references in collaborator PRs (e.g., "Part of group: kserve#123")
+- Ensure all PR builds have completed before triggering the group test
+- Remove the config section when done or when the PR closes
+
+### Group Testing Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Config not detected | Ensure the heading contains "early gate" (case-insensitive) and URLs are on separate lines in the PR **description** (not a comment) |
+| Invalid repo warning | The collaborator repo is not onboarded for early gate — the pipeline continues with valid repos only |
+| PR image not found | Collaborator PR builds may not have completed — pipeline falls back to stable images and logs a warning. Re-trigger with `/retest` after builds finish |
+| Format help comment posted | The pipeline detected text that looks like a group testing config but couldn't parse it — check the format guidance in the comment |
+
+---
+
+## 8. Onboarding a Repository to Early Gate
 
 To enable early gate on a new repository, use the **ODH Early Gate Onboarder** workflow in the `odh-konflux-central` repository.
 
@@ -379,7 +463,7 @@ Teams who want to enable early gate on their repository should add their request
 
 ---
 
-## 8. Pros and Cons
+## 9. Pros and Cons
 
 ### Pros
 
@@ -395,18 +479,16 @@ Teams who want to enable early gate on their repository should add their request
 
 ---
 
-## 9. Limitations
+## 10. Limitations
 
 - **ODH repos only** — early gate currently supports only ODH repository builds. RHDS and RHOAI builds are not supported yet.
 - **Single architecture only** — early gate currently supports x86 architecture only.
-- **Repo-scoped testing** — each early gate run builds & tests a single PR from a single repository. Testing multiple PRs from various repositories together (group testing) is planned for a future phase.
+- **Group testing is leader-only** — group testing configuration must be added to a single leader PR. There is no way to automatically sync group configs across multiple PRs.
 - **Only configured branches supported** — early gate build & test are by default enabled only for main/master branch, and can be requested to cover any additional branches required for a repo. Need to limit the infra to only few branches to contain the cloud cost.
 
 ---
 
-## 10. Future Plans
-
-- **Early Gate Group Tests** — currently, each early gate run build & tests a single PR from a single repository. Group testing will enable testing multiple PRs from different repositories together in a single early gate run, validating cross-component changes as a cohesive set before any of them are merged.
+## 11. Future Plans
 
 - **Konflux Integration Test Scenarios (ITS)** — the current early gate test execution relies on Jenkins for smoke test orchestration. A future iteration will migrate test execution to Konflux Integration Test Scenarios (ITS), bringing the entire early gate pipeline — build and test — fully within the Konflux platform.
 
@@ -416,7 +498,7 @@ Teams who want to enable early gate on their repository should add their request
 
 ---
 
-## 11. FAQ
+## 12. FAQ
 
 ### What is early gate and why should I care?
 
@@ -436,7 +518,7 @@ No. Early gate tests are required for all onboarded repositories. They run autom
 
 ### Does early gate work for all repositories?
 
-Early gate currently supports ODH repositories only (not RHDS/RHOAI builds yet). Your repository must be onboarded first — see [Section 7: Onboarding a Repository to Early Gate](#7-onboarding-a-repository-to-early-gate) for details. During the initial rollout, the DevTestOps team handles onboarding.
+Early gate currently supports ODH repositories only (not RHDS/RHOAI builds yet). Your repository must be onboarded first — see [Section 8: Onboarding a Repository to Early Gate](#8-onboarding-a-repository-to-early-gate) for details. During the initial rollout, the DevTestOps team handles onboarding.
 
 ### How much does early gate cost to run?
 
@@ -444,7 +526,7 @@ Each early gate run provisions a dedicated ROSA HCP cluster on AWS, which incurs
 
 ### Can I test multiple PRs together?
 
-Not yet. Currently, each early gate run tests a single PR from a single repository. Group testing (testing multiple PRs from different repos together) is planned for a future phase — see [Section 10: Future Plans](#10-future-plans).
+Yes! Use **group testing** to test PRs from multiple repositories together in a single early gate run. Add an `## Early Gate Testing` section to one PR's description (the "leader") listing the other PR URLs. See [Section 7: Group Testing](#7-group-testing-multi-pr) for details.
 
 ### Where can I find more technical details?
 
@@ -452,6 +534,7 @@ For detailed technical documentation about the early gate pipelines:
 
 - **[Early Gate Build Pipeline Design](early-gate-build-pipeline-design.md)** — architecture, implementation details, and build flow for the early gate build pipeline (stage 2)
 - **[Early Gate Test Pipeline Design](early-gate-test-pipeline-design.md)** — architecture, implementation details, and test orchestration for the early gate test pipeline (stage 3)
+- **[Group Testing Design](DESIGN-group-testing-pr-attachment.md)** — design and architecture for multi-PR group testing
 
 ### How do I enable must-gather diagnostics for my tests?
 

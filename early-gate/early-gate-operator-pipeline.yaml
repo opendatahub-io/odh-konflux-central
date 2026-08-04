@@ -9,10 +9,8 @@ spec:
     a single Tekton pipeline for quick feature-branch validation before pushing to stable.
   params:
   # --- Group snapshot ---
-  - name: group-components
-    type: string
-    description: List of components in the group (JSON)
-    default: ""
+  # NOTE: group-components is now auto-resolved from PR description via resolve-group-configuration task
+  # To enable group testing, add ## Early Gate Testing section to PR description (see docs/early-gate-user-guide.md)
 
   # --- General ---
   - description: Source Repository URL

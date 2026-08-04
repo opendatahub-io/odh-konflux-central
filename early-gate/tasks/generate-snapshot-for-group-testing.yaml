@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: trigger-group-testing
+  name: generate-snapshot-for-group-testing
 spec:
   workspaces:
     - name: basic-auth
