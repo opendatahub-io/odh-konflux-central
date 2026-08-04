@@ -1,4 +1,4 @@
-# 🎯 Early-Gate Group Testing Design
+# Early Gate Group Testing Design
 **PR-Attached Configuration for Multi-Component Integration Testing**
 
 ---
@@ -7,13 +7,12 @@
 
 1. [Problem Statement](#1-problem-statement)
 2. [Architecture Overview](#2-architecture-overview)
-3. [Configuration Schema](#3-configuration-schema)
+3. [Configuration Format](#3-configuration-format)
 4. [Workflow](#4-workflow)
 5. [Image Availability & Snapshot Resolution](#5-image-availability--snapshot-resolution)
 6. [Examples & Use Cases](#6-examples--use-cases)
 7. [Error Handling](#7-error-handling)
-8. [Deployment Strategy](#8-deployment-strategy)
-9. [Appendix: Quick Reference](#9-appendix-quick-reference)
+8. [Appendix: Quick Reference](#8-appendix-quick-reference)
 
 ---
 
@@ -25,13 +24,13 @@
 |---|---|---|
 | **R1** | Test multiple related PRs together as a cohesive unit | PRs may be in different repositories |
 | **R2** | Self-service model without approval gates | Teams manage groups independently |
-| **R3** | Configuration visible to PR reviewers | Must be in PR description/comments |
+| **R3** | Configuration visible to PR reviewers | Must be in PR description |
 | **R4** | Automatic lifecycle management | Config removed when PR closes/merges |
 | **R5** | Backward compatible with single-PR testing | Zero impact on existing workflows |
 
 ### Solution Approach
 
-**PR-Attached Configuration**: Teams attach a YAML configuration block directly to the leader PR's description. The early-gate pipeline detects this configuration, resolves the specified PR URLs to component images, and builds a combined snapshot for testing.
+**PR-Attached Configuration**: Teams add a markdown heading with PR URLs directly in the leader PR's description. The early-gate pipeline detects this configuration, resolves the specified PR URLs to component images, and builds a combined snapshot for testing.
 
 ```mermaid
 graph LR
@@ -45,11 +44,11 @@ graph LR
 
 ### Key Benefits
 
-- ✅ No central maintenance burden
-- ✅ Configuration co-located with code
-- ✅ Reviewers see which PRs are grouped
-- ✅ Automatic cleanup on PR lifecycle end
-- ✅ Graceful fallback to single-PR mode
+- No central maintenance burden
+- Configuration co-located with code
+- Reviewers see which PRs are grouped
+- Automatic cleanup on PR lifecycle end
+- Graceful fallback to single-PR mode
 
 ---
 
@@ -60,7 +59,7 @@ graph LR
 ```mermaid
 flowchart TB
     subgraph L1["Layer 1: Configuration Storage"]
-        PR[GitHub PR Description<br/>YAML config block]
+        PR[GitHub PR Description<br/>Heading + PR URLs]
     end
     
     subgraph L2["Layer 2: Pipeline Resolution"]
@@ -93,8 +92,8 @@ sequenceDiagram
     participant Quay as Quay Registry
     
     Pipeline->>GitHub: Fetch PR description
-    GitHub-->>Pipeline: YAML config
-    Pipeline->>Pipeline: Parse PR URLs
+    GitHub-->>Pipeline: PR body text
+    Pipeline->>Pipeline: Find heading, extract PR URLs
     Pipeline->>Map: Lookup repos → components
     Map-->>Pipeline: Component list
     
@@ -107,7 +106,7 @@ sequenceDiagram
             Quay-->>Pipeline: 404 Not Found
             Pipeline->>Quay: Fallback: Query odh-stable
             Quay-->>Pipeline: SHA digest (stable)
-            Pipeline->>Pipeline: Add to snapshot (⚠️ using stable)
+            Pipeline->>Pipeline: Add to snapshot (using stable)
         end
     end
     
@@ -125,59 +124,43 @@ sequenceDiagram
 
 ---
 
-## 3. Configuration Schema
+## 3. Configuration Format
 
-### YAML Format
+### Heading-Based Detection
 
-Configuration is embedded in PR descriptions as a YAML code block:
+The pipeline searches for any markdown heading containing "earlygate" (case-insensitive), with PR URLs listed on separate lines underneath:
 
-````yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/kserve/pull/123
-  - https://github.com/opendatahub-io/feast/pull/456
-````
-
-### Schema Specification
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `# early-gate-group-config` | Comment marker | ✅ Yes | Pipeline detection identifier |
-| `repos` | Array of strings | ✅ Yes | GitHub PR URLs (min 1 entry) |
-
-### URL Format
-
-```
-https://github.com/{org}/{repo}/pull/{number}
-                └───┬───┘ └─┬──┘      └──┬──┘
-                  org    repo         pr_num
+```markdown
+## Early Gate Testing
+https://github.com/opendatahub-io/kserve/pull/123
+https://github.com/opendatahub-io/feast/pull/456
 ```
 
-**Validation:**
-- Must start with `https://github.com/`
-- PR number must be numeric
-- Organization typically `opendatahub-io`
+### Detection Rules
 
-### PR Description Template
+| Rule | Detail |
+|------|--------|
+| **Heading** | Any markdown heading (`#`, `##`, `###`, etc.) containing "earlygate" (case-insensitive) |
+| **Matching examples** | `## Early Gate Testing`, `# EarlyGateTesting`, `## earlygate`, `### Early-Gate Config` |
+| **PR URLs** | One GitHub PR URL per line under the heading |
+| **URL format** | `https://github.com/{org}/{repo}/pull/{number}` |
+| **Section end** | The config block ends at the next markdown heading |
+| **Flexible formatting** | Bullets, dashes, and whitespace before URLs are accepted |
+| **Leader PR** | Automatically included — don't list it in the config |
 
-````markdown
+### PR Description Example
+
+```markdown
 ## Summary
 This PR updates the KServe API to support OAuth2 authentication.
 
-## Group Testing
-This PR is tested together with related changes:
-
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/kserve/pull/123
-  - https://github.com/opendatahub-io/feast/pull/456
-```
+## Early Gate Testing
+https://github.com/opendatahub-io/feast/pull/456
 
 ## Test Plan
 - [ ] Unit tests pass
 - [ ] Integration tests with Feast
-````
+```
 
 ---
 
@@ -187,7 +170,7 @@ repos:
 
 ```mermaid
 flowchart LR
-    A[Create PRs] --> B[Add YAML to<br/>leader PR]
+    A[Create PRs] --> B[Add heading +<br/>URLs to leader PR]
     B --> C[Add cross-refs<br/>to other PRs]
     C --> D[Push triggers<br/>pipeline]
     D --> E[Review results]
@@ -198,8 +181,8 @@ flowchart LR
 ```
 
 **Steps:**
-1. Create configuration YAML locally (reference only)
-2. Paste into leader PR description
+1. Create PRs in the relevant repositories
+2. Add `## Early Gate Testing` heading with collaborator PR URLs to the leader PR description
 3. Optionally add cross-references in collaborator PRs
 4. Pipeline runs automatically on push
 
@@ -208,11 +191,10 @@ flowchart LR
 ```mermaid
 flowchart TD
     A[Push to leader PR] --> B{Fetch PR description}
-    B -->|GitHub API| C{Search for marker}
-    C -->|Found| D[Parse YAML]
+    B -->|GitHub API| C{Search for heading}
+    C -->|Found| D[Extract PR URLs]
     C -->|Not found| Z[Single-PR mode]
-    D --> E[Extract PR URLs]
-    E --> F[Parse org/repo/pr]
+    D --> F[Parse org/repo/pr]
     F --> G[Lookup components]
     G --> H[Query Quay images]
     H --> I[Build snapshot]
@@ -230,16 +212,16 @@ flowchart TD
 |------|--------|-----------|
 | 1 | Extract PR metadata from PipelinesAsCode labels | `REPO_NAME`, `PR_NUMBER` |
 | 2 | Fetch PR description via GitHub API | PR body text |
-| 3 | Search for `# early-gate-group-config` marker | Config block or null |
-| 4 | Parse YAML, extract PR URLs | List of URLs |
+| 3 | Search for heading containing "earlygate" | Config section or null |
+| 4 | Extract PR URLs from section | List of URLs |
 | 5 | Parse each URL → extract org/repo/pr | Structured metadata |
 | 6 | Download `component_repo_map.json` | Component mappings |
 | 7 | Lookup components for each repo | Component list per repo |
-| 8 | Merge components with PR numbers | `group-components` JSON |
+| 8 | Merge leader + collaborator components with PR numbers | `group-components` JSON |
 | 9 | Query Quay for each component's PR image | Image digests |
 | 10 | Build `snapshot.json` with all images | Snapshot artifact |
 | 11 | Run early-gate tests with snapshot | Test results |
-| 12 | Post results to leader PR | PR check status |
+| 12 | Post results to leader PR | PR comment |
 
 ---
 
@@ -263,8 +245,6 @@ quay.io/<org>/<component>:odh-pr-{number}
 
 ### Image Availability Check Logic
 
-For each component in the group configuration, the pipeline performs the following checks:
-
 ```mermaid
 flowchart TD
     A[Component: kserve-agent-ci<br/>PR: 123] --> B{Query Quay for<br/>odh-pr-123 tag}
@@ -274,7 +254,7 @@ flowchart TD
     D -->|Found| F[Use stable image<br/>sha256:stable789...]
     D -->|Not Found| G[ERROR: Critical failure]
     E --> H[Add to snapshot.json]
-    F --> I[⚠️ Add to snapshot.json<br/>Log warning]
+    F --> I[Add to snapshot.json<br/>Log warning]
     
     style B fill:#fff4e6
     style E fill:#e8f5e9
@@ -286,10 +266,10 @@ flowchart TD
 
 | Scenario | Image Tag Query | Result | Action |
 |----------|----------------|--------|--------|
-| **PR build complete** | `odh-pr-123` exists | ✅ Found | Use PR image (immutable SHA digest) |
-| **PR build in progress** | `odh-pr-123` not found | ⚠️ Not ready | Fallback to `odh-stable` + log warning |
-| **Stable fallback available** | `odh-stable` exists | ✅ Found | Use stable image + warning in test logs |
-| **Both missing** | Neither tag exists | ❌ Critical | Pipeline fails (component not testable) |
+| **PR build complete** | `odh-pr-123` exists | Found | Use PR image (immutable SHA digest) |
+| **PR build in progress** | `odh-pr-123` not found | Not ready | Fallback to `odh-stable` + log warning |
+| **Stable fallback available** | `odh-stable` exists | Found | Use stable image + warning in PR comment |
+| **Both missing** | Neither tag exists | Critical | Pipeline fails (component not testable) |
 
 ### Immutable Image References
 
@@ -344,22 +324,17 @@ Example snapshot with multiple PR images:
 
 ### Build Timing Considerations
 
-**Common scenarios:**
-
 | Scenario | Behavior |
 |----------|----------|
-| All PR builds complete before group test triggers | ✅ Optimal - all PRs tested with their latest code |
-| Some PR builds still in progress | ⚠️ Those components use `odh-stable`, test proceeds with partial group |
-| Leader PR build triggers immediately after push | ⚠️ Collaborator PR images may not be ready - fallback to stable |
+| All PR builds complete before group test triggers | Optimal - all PRs tested with their latest code |
+| Some PR builds still in progress | Those components use `odh-stable`, test proceeds with partial group |
+| Leader PR build triggers immediately after push | Collaborator PR images may not be ready - fallback to stable |
 
-**Best practice:** Teams should ensure all PR builds in the group have completed before triggering the leader PR's group test. This can be achieved by:
-- Waiting for PR check status to show green builds
-- Re-triggering the leader PR pipeline after collaborator builds complete
-- Using `/test` comment to manually trigger pipeline
+**Best practice:** Teams should ensure all PR builds in the group have completed before triggering the leader PR's group test. Re-trigger with `/retest` after all collaborator builds finish.
 
 ### Warning Messages
 
-When fallback occurs, the pipeline logs warnings:
+When fallback occurs, the pipeline logs warnings and includes them in the PR comment:
 
 ```
 ⚠️  WARNING: Component 'feast-operator-ci' does not have PR image for tag odh-pr-456
@@ -369,11 +344,6 @@ When fallback occurs, the pipeline logs warnings:
    Impact: Group test will use stable image instead of PR #456 code
 ```
 
-These warnings appear in:
-- Pipeline task logs
-- Test result summaries
-- PR check status details
-
 ---
 
 ## 6. Examples & Use Cases
@@ -382,20 +352,15 @@ These warnings appear in:
 
 **Scenario:** KServe API changes require Feast adapter updates.
 
-**Configuration:**
-````markdown
-## Group Testing
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/kserve/pull/123
-  - https://github.com/opendatahub-io/feast/pull/456
+**Leader PR (kserve #123) description:**
+```markdown
+## Early Gate Testing
+https://github.com/opendatahub-io/feast/pull/456
 ```
-````
 
 **Pipeline behavior:**
 1. Push to kserve #123 triggers pipeline
-2. Detects group config → resolves both repos
+2. Detects Early Gate Testing heading → resolves both repos
 3. Builds snapshot with images from PR #123 + #456
 4. Runs integration tests
 5. Reports to kserve #123
@@ -406,20 +371,15 @@ repos:
 
 **Scenario:** Authentication refactor across 3 services.
 
-**Configuration:**
-````markdown
-## Group Testing
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/opendatahub-operator/pull/111
-  - https://github.com/opendatahub-io/kubeflow/pull/222
-  - https://github.com/opendatahub-io/notebook-controller/pull/333
+**Leader PR (operator #111) description:**
+```markdown
+## Early Gate Testing
+https://github.com/opendatahub-io/kubeflow/pull/222
+https://github.com/opendatahub-io/notebook-controller/pull/333
 ```
-````
 
 **Pipeline behavior:**
-- Resolves components from all 3 repos
+- Resolves components from all 3 repos (leader + 2 collaborators)
 - Builds snapshot with 3 PR images
 - Runs end-to-end auth flow tests
 - Reports to operator #111
@@ -430,17 +390,17 @@ repos:
 
 **Scenario:** Standard PR without grouping.
 
-**PR description:** (No YAML config block)
+**PR description:** (No Early Gate Testing heading)
 
 **Pipeline behavior:**
-1. Searches for config marker → not found
-2. **Falls back to single-PR mode**
+1. Searches for heading → not found
+2. Falls back to single-PR mode
 3. Resolves components for current repo only
 4. Business as usual
 
 ---
 
-## 6. Error Handling
+## 7. Error Handling
 
 ### Graceful Degradation Principle
 
@@ -450,36 +410,24 @@ repos:
 
 | Error | Detection | Fallback Action | Status |
 |-------|-----------|-----------------|--------|
-| No config marker | Marker absent in PR body | Single-PR mode | ✅ Continue |
-| Invalid YAML | Parse error | Single-PR mode | ✅ Continue |
-| Invalid PR URL | Regex mismatch | Skip entry, process others | ✅ Continue |
-| Non-existent PR | GitHub API 404 | Skip entry, process others | ✅ Continue |
-| Repo not in map | Lookup returns null | Skip repo, merge others | ✅ Continue |
-| GitHub API error | Fetch failure | Single-PR mode | ✅ Continue |
-| **component_repo_map.json missing** | **Download fails** | **Cannot proceed** | ❌ **Fail** |
-| Quay image missing | Image query error | Use `odh-stable` tag | ✅ Continue |
+| No config heading | Heading absent in PR body | Single-PR mode | Continue |
+| Invalid PR URL | Regex mismatch | Skip entry, process others | Continue |
+| Non-ODH organization | URL org check | Skip entry, log warning | Continue |
+| Repo not in component map | Lookup returns null | Skip repo, log warning | Continue |
+| GitHub API error | Fetch failure | Single-PR mode | Continue |
+| **component_repo_map.json missing** | **Download fails** | **Cannot proceed** | **Fail** |
+| Quay image missing | Image query 404 | Use `odh-stable` tag | Continue |
+| Empty Early Gate section | Heading found but no URLs | Single-PR mode + format help | Continue |
 
-### Logging Standards
+### Format Help Warnings
 
-**Warnings (non-critical):**
-```
-⚠️  WARNING: <Description>
-   <Details>
-   Action: Falling back to single-PR mode
-```
+The pipeline posts helpful PR comments when it detects common configuration mistakes:
 
-**Errors (critical):**
-```
-ERROR: <Description>
-  <Details>
-  Cannot continue - pipeline failed
-```
-
-**Info:**
-```
-No group configuration found for this PR
-Using single-PR mode (repo: kserve, pr: 123)
-```
+| Scenario | Comment Posted |
+|----------|---------------|
+| "earlygate" mentioned but not in a heading | Format issue warning with correct format example |
+| GitHub PR URLs found but no Early Gate heading | Info suggesting group testing is available |
+| Early Gate heading found but no URLs listed | Empty section warning with format example |
 
 ### Partial Success Handling
 
@@ -493,114 +441,42 @@ Pipeline fails only if:
 
 ---
 
-## 7. Deployment Strategy
-
-### Deployment Phases
-
-```mermaid
-flowchart LR
-    P1[Phase 1<br/>Deploy task] --> P2[Phase 2<br/>Team opt-in]
-    P2 --> P3[Phase 3<br/>Stable state]
-    
-    style P1 fill:#fff4e6
-    style P2 fill:#e1f5ff
-    style P3 fill:#e8f5e9
-```
-
-**Phase 1: Deploy updated task**
-- Update `resolve-group-configuration.yaml`
-- Maintains backward compatibility
-- Zero impact on existing PRs
-
-**Phase 2: Team opt-in**
-- Teams add configs to PRs as needed
-- No coordination required
-- Independent adoption
-
-**Phase 3: Stable state**
-- Single-PR and group modes coexist
-- Teams choose based on needs
-- No breaking changes
-
-### Backward Compatibility
-
-**Single-PR mode (default):**
-- PRs without config work exactly as before
-- Pipeline searches for marker → not found → single-PR mode
-- No behavioral change
-
-**Existing task compatibility:**
-- `generate-snapshot-for-group-testing.yaml` unchanged
-- Already supports per-component PR numbers
-- Handles both object and string formats
-
-### Implementation Scope
-
-**Modified:**
-- ✅ `early-gate/tasks/resolve-group-configuration.yaml`
-
-**Unchanged:**
-- ✅ `early-gate/tasks/generate-snapshot-for-group-testing.yaml`
-- ✅ All pipeline YAML files
-- ✅ `config/component_repo_map.json`
-
----
-
 ## 8. Appendix: Quick Reference
 
-### Quick Start Template
+### Quick Start
 
-````markdown
-## Group Testing
-```yaml
-# early-gate-group-config
-repos:
-  - https://github.com/opendatahub-io/<repo1>/pull/<pr1>
-  - https://github.com/opendatahub-io/<repo2>/pull/<pr2>
-```
-````
+Add this to your leader PR description:
 
-### Configuration Rules
-
-1. ✅ Marker: `# early-gate-group-config` (required)
-2. ✅ Field: `repos` (array, ≥1 entry)
-3. ✅ URLs: Valid GitHub PR format
-4. ✅ Syntax: Valid YAML
-
-### URL Pattern
-
-```
-https://github.com/opendatahub-io/kserve/pull/123
-                    └────┬────┘ └──┬──┘      └┬┘
-                      org      repo        pr
+```markdown
+## Early Gate Testing
+https://github.com/opendatahub-io/REPO/pull/NUMBER
 ```
 
 ### Pipeline Flow Summary
 
 ```
-┌─────────────────────────────────────────────┐
-│ 1. Fetch PR description (GitHub API)       │
-│ 2. Extract YAML block                      │
-│ 3. Parse repos → URLs                      │
-│ 4. Extract org/repo/pr from URLs           │
-│ 5. Lookup components (map)                 │
-│ 6. Merge components with PR metadata       │
-│ 7. Query Quay for images                   │
-│ 8. Build snapshot.json                     │
-│ 9. Run tests                               │
-│ 10. Report results                         │
-└─────────────────────────────────────────────┘
+1. Fetch PR description (GitHub API)
+2. Find heading containing "earlygate"
+3. Extract PR URLs from section
+4. Parse org/repo/pr from URLs
+5. Lookup components (component_repo_map.json)
+6. Merge leader + collaborator components with PR metadata
+7. Query Quay for PR images (fallback to odh-stable)
+8. Build snapshot.json
+9. Run tests
+10. Post results to leader PR
 ```
 
-### Next Steps
+### Key Files
 
-- [ ] Design review and approval
-- [ ] Implement `resolve-group-configuration.yaml` updates
-- [ ] Test with sample PRs
-- [ ] Document in CONTRIBUTING.md
-- [ ] Announce to ODH teams
+| File | Purpose |
+|------|---------|
+| `early-gate/tasks/resolve-group-configuration.yaml` | Reads PR description, resolves group config |
+| `early-gate/tasks/check-group-config.yaml` | Extracts repo list for test pipeline |
+| `early-gate/tasks/generate-snapshot-for-group-testing.yaml` | Queries Quay, builds snapshot |
+| `early-gate/tasks/post-build-complete-comment.yaml` | Posts build + group testing summary to PR |
+| `config/component_repo_map.json` | Maps repo names to Quay component paths |
 
 ---
 
-**Document prepared by:** MohammadiIram  
-**Last updated:** 2026-06-04
+**Document prepared by:** MohammadiIram

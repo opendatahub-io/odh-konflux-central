@@ -534,7 +534,7 @@ For detailed technical documentation about the early gate pipelines:
 
 - **[Early Gate Build Pipeline Design](early-gate-build-pipeline-design.md)** — architecture, implementation details, and build flow for the early gate build pipeline (stage 2)
 - **[Early Gate Test Pipeline Design](early-gate-test-pipeline-design.md)** — architecture, implementation details, and test orchestration for the early gate test pipeline (stage 3)
-- **[Group Testing Design](DESIGN-group-testing-pr-attachment.md)** — design and architecture for multi-PR group testing
+- **[Group Testing Design](early-gate-group-testing-design.md)** — design and architecture for multi-PR group testing
 
 ### How do I enable must-gather diagnostics for my tests?
 
