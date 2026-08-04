@@ -340,11 +340,11 @@ https://github.com/opendatahub-io/notebook-controller/pull/789
 ```
 
 **Rules:**
-- The heading must contain "early gate" (case-insensitive) — e.g., `## Early Gate Testing`, `## earlygate`, `## Early-Gate Config`
+- Use any markdown heading (`#`, `##`, `###`, etc.) containing "earlygate" (case-insensitive) — e.g., `## Early Gate Testing`, `# EarlyGateTesting`, `## earlygate`, `### Early-Gate Config`
 - List one collaborator PR URL per line under the heading
 - The leader PR is automatically included — don't list it
 - Only `opendatahub-io` organization PRs are supported
-- The config block ends at the next `##` heading
+- The config block ends at the next markdown heading
 - Formatting is flexible — bullets, dashes, and whitespace are all accepted
 
 ### Example
@@ -391,7 +391,7 @@ If any collaborator's PR build hasn't completed, the pipeline falls back to the 
 
 | Issue | Solution |
 |-------|----------|
-| Config not detected | Ensure the heading contains "early gate" (case-insensitive) and URLs are on separate lines in the PR **description** (not a comment) |
+| Config not detected | Ensure you have a markdown heading (`#` or `##`) containing "earlygate" (case-insensitive) and URLs are on separate lines in the PR **description** (not a comment) |
 | Invalid repo warning | The collaborator repo is not onboarded for early gate — the pipeline continues with valid repos only |
 | PR image not found | Collaborator PR builds may not have completed — pipeline falls back to stable images and logs a warning. Re-trigger with `/retest` after builds finish |
 | Format help comment posted | The pipeline detected text that looks like a group testing config but couldn't parse it — check the format guidance in the comment |

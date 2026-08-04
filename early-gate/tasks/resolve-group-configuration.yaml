@@ -146,8 +146,8 @@ spec:
         # --- Search for Early Gate section (## heading containing "earlygate") ---
         echo "Searching for Early Gate section in PR description..." >&2
 
-        # Check if there's a ## heading containing "earlygate" (case-insensitive)
-        if ! echo "${PR_BODY}" | grep -qi "^##.*${EARLYGATE_SECTION_PATTERN}"; then
+        # Check if there's a markdown heading containing "earlygate" (case-insensitive)
+        if ! echo "${PR_BODY}" | grep -qi "^#.*${EARLYGATE_SECTION_PATTERN}"; then
           echo "No Early Gate section found in PR description" >&2
           echo "Using single-PR mode (repo: ${REPO_NAME}, pr: ${PR_NUMBER})" >&2
           echo -n "false" > "$(results.has-group-config.path)"
@@ -156,10 +156,10 @@ spec:
           # --- Check for common mistakes and provide helpful guidance ---
           FORMAT_HELP=""
 
-          # Check 1: "earlygate" mentioned but not in ## heading
+          # Check 1: "earlygate" mentioned but not in a heading
           if echo "${PR_BODY}" | grep -qi "${EARLYGATE_SECTION_PATTERN}"; then
-            echo "Found 'earlygate' mention but not in proper ## heading format" >&2
-            FORMAT_HELP="## ⚠️ Group Testing Format Issue"$'\n\n'"Found \`earlygate\` mentioned in your PR description, but it's not in the correct format for group testing."$'\n\n'"**To enable group testing, use this format:**"$'\n\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"**Requirements:**"$'\n'"- Must be a \`##\` heading containing \"earlygate\""$'\n'"- Only PRs from \`opendatahub-io\` organization"$'\n\n'"See [Group Testing](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/early-gate-user-guide.md#7-group-testing-multi-pr) in the user guide for details."
+            echo "Found 'earlygate' mention but not in a markdown heading" >&2
+            FORMAT_HELP="## ⚠️ Group Testing Format Issue"$'\n\n'"Found \`earlygate\` mentioned in your PR description, but it's not in the correct format for group testing."$'\n\n'"**To enable group testing, use this format:**"$'\n\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"**Requirements:**"$'\n'"- Must be a markdown heading (# or ##) containing \"earlygate\""$'\n'"- Only PRs from \`opendatahub-io\` organization"$'\n\n'"See [Group Testing](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/early-gate-user-guide.md#7-group-testing-multi-pr) in the user guide for details."
           else
             # Check 2: GitHub PR URLs found in description
             if echo "${PR_BODY}" | grep -q "https://github.com/opendatahub-io/[^/]*/pull/[0-9]"; then
@@ -188,8 +188,8 @@ spec:
         # Find the section and extract URLs until the next ## heading
         # Allow optional whitespace and bullets/dashes before URLs
         PR_URLS=$(echo "${PR_BODY}" | awk -v IGNORECASE=1 "
-          /^##.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
-          found && /^##/ { exit }
+          /^#+.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
+          found && /^#+/ { exit }
           found && /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/ {
             match(\$0, /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/)
             print substr(\$0, RSTART, RLENGTH)
