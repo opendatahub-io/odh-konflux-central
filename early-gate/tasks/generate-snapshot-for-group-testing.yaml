@@ -250,7 +250,7 @@ spec:
             echo "repo_path=${repo_path}"
 
             # Three-tier image resolution:
-            #   1. odh-pr-{PR} tag on current quay path (PR image)
+            #   1. odh-pr-{PR} tag on ODH quay path (PR builds always push to opendatahub/)
             #   2. rhoai-x.y tag on RHOAI quay path (RHOAI release) [RHOAI mode only]
             #   3. odh-stable tag on ODH quay path (safety net)
             IMAGE_STATUS=""
@@ -266,9 +266,11 @@ spec:
               fi
             fi
 
-            # Tier 1: PR image
-            if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
-              echo "✓ [Tier 1] Found PR image with tag ${TAG}"
+            # Tier 1: PR image (always check ODH path — PR builds push to quay.io/opendatahub/)
+            tier1_path="${odh_repo_path}"
+            if skopeo inspect "docker://quay.io/${tier1_path}:${TAG}" &>/dev/null; then
+              echo "✓ [Tier 1] Found PR image with tag ${TAG} on quay.io/${tier1_path}"
+              repo_path="${tier1_path}"
               IMAGE_STATUS="ready"
             else
               echo "⚠️  WARNING: Component '${component}' does not have PR image for tag ${TAG}" >&2

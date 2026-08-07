@@ -59,7 +59,7 @@ spec:
         echo "EARLYGATE_MODE=${EARLYGATE_MODE}" >&2
 
         # --- Constants ---
-        EARLYGATE_SECTION_PATTERN="early.*gate"  # Matches "earlygate", "early gate", "early-gate", etc.  # Case-insensitive search in ## headings
+        EARLYGATE_SECTION_PATTERN="early.*gate"  # Matches "earlygate", "early gate", "early-gate", etc.  # Case-insensitive search in any # heading
         COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/main/config/component_repo_map.json"
         RHOAI_COMPONENT_MAP_URL="https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/eg-dockerfile/config/component_repo_map_rhoai.json"
         ALLOWED_ORG="opendatahub-io"  # Only accept PRs from this GitHub org
@@ -183,11 +183,11 @@ spec:
         # Remove Windows line endings (CR) if present
         PR_BODY=$(echo "${PR_BODY}" | tr -d '\r')
 
-        # --- Search for Early Gate section (## heading containing "earlygate") ---
+        # --- Search for Early Gate section (any # heading containing "earlygate") ---
         echo "Searching for Early Gate section in PR description..." >&2
 
-        # Check if there's a ## heading containing "earlygate" (case-insensitive)
-        if ! echo "${PR_BODY}" | grep -qi "^##.*${EARLYGATE_SECTION_PATTERN}"; then
+        # Check if there's a heading (any level: #, ##, ###, etc.) containing "earlygate" (case-insensitive)
+        if ! echo "${PR_BODY}" | grep -qi "^\s*#\+\s*.*${EARLYGATE_SECTION_PATTERN}"; then
           echo "No Early Gate section found in PR description" >&2
           echo "Using single-PR mode (repo: ${REPO_NAME}, pr: ${PR_NUMBER})" >&2
           echo -n "false" > "$(results.has-group-config.path)"
@@ -199,7 +199,7 @@ spec:
           # Check 1: "earlygate" mentioned but not in ## heading
           if echo "${PR_BODY}" | grep -qi "${EARLYGATE_SECTION_PATTERN}"; then
             echo "Found 'earlygate' mention but not in proper ## heading format" >&2
-            FORMAT_HELP="## ⚠️ Group Testing Format Issue"$'\n\n'"Found \`earlygate\` mentioned in your PR description, but it's not in the correct format for group testing."$'\n\n'"**To enable group testing, use this format:**"$'\n\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"**Requirements:**"$'\n'"- Must be a \`##\` heading containing \"earlygate\""$'\n'"- Only PRs from \`opendatahub-io\` organization"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
+            FORMAT_HELP="## ⚠️ Group Testing Format Issue"$'\n\n'"Found \`earlygate\` mentioned in your PR description, but it's not in the correct format for group testing."$'\n\n'"**To enable group testing, use this format:**"$'\n\n'"\`\`\`markdown"$'\n'"## Early Gate Testing"$'\n'"https://github.com/opendatahub-io/REPO/pull/NUMBER"$'\n'"\`\`\`"$'\n\n'"**Requirements:**"$'\n'"- Must be a markdown heading (\`#\`, \`##\`, etc.) containing \"earlygate\""$'\n'"- Only PRs from \`opendatahub-io\` organization"$'\n\n'"See [Group Testing Template](https://github.com/opendatahub-io/odh-konflux-central/blob/main/early-gate/docs/GROUP-TESTING-TEMPLATE.md) for details."
           else
             # Check 2: GitHub PR URLs found in description
             if echo "${PR_BODY}" | grep -q "https://github.com/opendatahub-io/[^/]*/pull/[0-9]"; then
@@ -228,8 +228,8 @@ spec:
         # Find the section and extract URLs until the next ## heading
         # Allow optional whitespace and bullets/dashes before URLs
         PR_URLS=$(echo "${PR_BODY}" | awk -v IGNORECASE=1 "
-          /^##.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
-          found && /^##/ { exit }
+          /^[[:space:]]*#+[[:space:]]*.*${EARLYGATE_SECTION_PATTERN}/ { found=1; next }
+          found && /^[[:space:]]*#+[[:space:]]/ { exit }
           found && /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/ {
             match(\$0, /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/[0-9]+/)
             print substr(\$0, RSTART, RLENGTH)
