@@ -34,3 +34,5 @@ config:
         - eg-test
     opendatahub-operator:
       early-gate-enabled: true
+    kubeflow:
+      early-gate-enabled: true
