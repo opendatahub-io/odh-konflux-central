@@ -6,6 +6,10 @@ spec:
   description: |
     Extracts repository names from Early Gate Testing section in PR description
     for passing to Jenkins trigger workflow
+  workspaces:
+    - name: basic-auth
+      description: Workspace containing .git-credentials for authenticated GitHub API calls
+      optional: true
   results:
     - name: repositories
       description: Comma-separated list of repository names (leader + collaborators)
@@ -25,6 +29,10 @@ spec:
               fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
         - name: GITHUB_ORG
           value: "opendatahub-io"
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+          value: $(workspaces.basic-auth.bound)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+          value: $(workspaces.basic-auth.path)
       script: |
         #!/bin/bash
         set -e
@@ -40,12 +48,63 @@ spec:
         echo "Fetching PR description from GitHub..." >&2
         GITHUB_API_URL="https://api.github.com/repos/${GITHUB_ORG}/${REPO_NAME}/pulls/${PR_NUMBER}"
 
-        # Unauthenticated call (rate limited but sufficient for most cases)
-        if ! PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>/tmp/curl_err); then
-          echo "ERROR: Failed to fetch PR description from GitHub API" >&2
-          echo "  URL: ${GITHUB_API_URL}" >&2
-          echo "  curl error: $(cat /tmp/curl_err)" >&2
-          exit 1
+        # Extract GitHub token from workspace if available
+        GITHUB_TOKEN=""
+        if [[ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" == "true" ]]; then
+          echo "Checking for GitHub token in workspace..." >&2
+          if [[ -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" ]]; then
+            echo "Found .git-credentials file" >&2
+            # Format examples:
+            # https://TOKEN:x-oauth-basic@github.com
+            # https://x-access-token:TOKEN@github.com
+            # https://username:TOKEN@github.com
+            CREDS_LINE=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" | grep github.com | head -1)
+
+            # Pattern 1: https://TOKEN:x-oauth-basic@github.com
+            GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://\([^:]*\):x-oauth-basic@github\.com.*|\1|p')
+
+            # Pattern 2: https://x-access-token:TOKEN@github.com
+            if [[ -z "${GITHUB_TOKEN}" ]]; then
+              GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://x-access-token:\([^@]*\)@github\.com.*|\1|p')
+            fi
+
+            # Pattern 3: https://username:TOKEN@github.com (any username)
+            if [[ -z "${GITHUB_TOKEN}" ]]; then
+              GITHUB_TOKEN=$(echo "${CREDS_LINE}" | sed -n 's|https://[^:]*:\([^@]*\)@github\.com.*|\1|p')
+            fi
+          fi
+
+          # Also check for .github-token file (alternative location)
+          if [[ -z "${GITHUB_TOKEN}" && -f "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.github-token" ]]; then
+            echo "Found .github-token file" >&2
+            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.github-token")
+          fi
+        fi
+
+        # Make the API call
+        if [[ -n "${GITHUB_TOKEN}" ]]; then
+          echo "Using authenticated GitHub API (token length: ${#GITHUB_TOKEN} chars)" >&2
+          # Try with 'token' prefix first (classic format)
+          if ! PR_DATA=$(curl -sSf -H "Authorization: token ${GITHUB_TOKEN}" "${GITHUB_API_URL}" 2>/tmp/curl_err); then
+            echo "Classic token auth failed, trying Bearer format..." >&2
+            if ! PR_DATA=$(curl -sSf -H "Authorization: Bearer ${GITHUB_TOKEN}" "${GITHUB_API_URL}" 2>/tmp/curl_err); then
+              echo "WARNING: Authenticated requests failed, falling back to unauthenticated API..." >&2
+              if ! PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>/tmp/curl_err); then
+                echo "ERROR: Failed to fetch PR description from GitHub API" >&2
+                echo "  URL: ${GITHUB_API_URL}" >&2
+                echo "  curl error: $(cat /tmp/curl_err)" >&2
+                exit 1
+              fi
+            fi
+          fi
+        else
+          echo "WARNING: No GitHub token available — using unauthenticated API (rate limited)" >&2
+          if ! PR_DATA=$(curl -sSf "${GITHUB_API_URL}" 2>/tmp/curl_err); then
+            echo "ERROR: Failed to fetch PR description from GitHub API" >&2
+            echo "  URL: ${GITHUB_API_URL}" >&2
+            echo "  curl error: $(cat /tmp/curl_err)" >&2
+            exit 1
+          fi
         fi
 
         if [[ -z "${PR_DATA}" ]]; then
