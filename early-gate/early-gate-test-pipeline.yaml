@@ -116,9 +116,6 @@ spec:
   - name: check-group-config
     runAfter:
     - check-prerequisites
-    workspaces:
-    - name: basic-auth
-      workspace: git-auth
     taskRef:
       resolver: git
       params:
@@ -307,7 +304,3 @@ spec:
       value: $(params.jenkins-url-secret-name)
     - name: jenkins-url-secret-key
       value: $(params.jenkins-url-secret-key)
-
-  workspaces:
-  - name: git-auth
-    optional: true
