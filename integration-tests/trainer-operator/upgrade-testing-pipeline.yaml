@@ -371,6 +371,14 @@ spec:
                 oc wait --for=condition=available deployment/trainer-operator-controller-manager \
                   -n trainer-operator-system --timeout=300s
 
+                echo "Waiting 30s for reconciliation to start..."
+                sleep 30
+
+                echo "Waiting for Trainer deployments to have exactly 1 ready replica..."
+                oc wait --for=jsonpath='{.status.readyReplicas}'=1 \
+                  deployment -l platform.opendatahub.io/part-of=trainer \
+                  -n opendatahub --timeout=300s
+
                 echo ""
                 echo "============================================="
                 echo "  Phase 4: Post-upgrade validation"
