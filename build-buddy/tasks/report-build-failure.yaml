@@ -1,0 +1,319 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: report-build-failure
+  labels:
+    app.kubernetes.io/part-of: build-buddy
+spec:
+  description: |
+    Sends a Slack notification for pipeline failures via Slack API (capturing thread_ts),
+    then optionally creates or updates a Jira issue for Build Buddy processing.
+    Replaces the webhook-based send-slack-notification task.
+  params:
+    - name: slack-message
+      type: string
+      description: Pre-formatted Slack failure message from rhoai-init
+    - name: pipeline-run-name
+      type: string
+      description: Name of the PipelineRun
+    - name: component-name
+      type: string
+      default: ""
+      description: Konflux component name (auto-detected from label if not provided)
+    - name: git-url
+      type: string
+      description: Source repository URL
+    - name: revision
+      type: string
+      description: Git revision (commit SHA)
+    - name: output-image
+      type: string
+      description: Fully qualified output image reference
+    - name: pipeline-template
+      type: string
+      description: Pipeline template name
+    - name: enable-build-buddy
+      type: string
+      default: "false"
+      description: When true, creates/updates Jira issue. Slack notification always sent.
+    - name: jira-project-key
+      type: string
+      default: "RHOAIENG"
+      description: Jira project key for issue creation
+  results:
+    - name: slack-thread-ts
+      description: Slack thread timestamp (empty if Slack API failed)
+    - name: slack-channel-id
+      description: Slack channel ID where notification was posted
+    - name: jira-issue-key
+      description: Jira issue key (empty if build-buddy disabled or Jira failed)
+    - name: jira-action
+      description: created or updated (empty if no Jira action taken)
+  steps:
+    - name: report-failure
+      image: quay.io/rhoai-devops/slack-notifier:latest
+      env:
+        - name: SLACK_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: rhoai-devops-bot-slack-token
+              key: SLACK_TOKEN
+        - name: SLACK_CHANNEL
+          valueFrom:
+            configMapKeyRef:
+              name: build-buddy-config
+              key: slack-notification-channel
+        - name: JIRA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: build-buddy-jira-token
+              key: JIRA_TOKEN
+              optional: true
+        - name: JIRA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: build-buddy-config
+              key: jira-url
+              optional: true
+        - name: JIRA_USER
+          valueFrom:
+            secretKeyRef:
+              name: build-buddy-jira-token
+              key: JIRA_USER
+              optional: true
+        - name: JIRA_EPIC_KEY
+          valueFrom:
+            configMapKeyRef:
+              name: build-buddy-config
+              key: jira-epic-key
+              optional: true
+        - name: SLACK_MESSAGE
+          value: $(params.slack-message)
+        - name: PIPELINE_RUN_NAME
+          value: $(params.pipeline-run-name)
+        - name: COMPONENT_NAME
+          value: $(params.component-name)
+        - name: GIT_URL
+          value: $(params.git-url)
+        - name: REVISION
+          value: $(params.revision)
+        - name: OUTPUT_IMAGE
+          value: $(params.output-image)
+        - name: PIPELINE_TEMPLATE
+          value: $(params.pipeline-template)
+        - name: ENABLE_BUILD_BUDDY
+          value: $(params.enable-build-buddy)
+        - name: JIRA_PROJECT_KEY
+          value: $(params.jira-project-key)
+        - name: BUILD_URL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/log-url']
+        - name: COMMIT_URL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha-url']
+        - name: PIPELINE_RUN_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: COMPONENT_LABEL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['appstudio.openshift.io/component']
+      script: |
+        #!/bin/bash
+        set -eo pipefail
+
+        RESULTS_DIR="$(results.slack-thread-ts.path)"
+        RESULTS_DIR="${RESULTS_DIR%/*}"
+
+        if [ -z "${COMPONENT_NAME}" ] && [ -n "${COMPONENT_LABEL}" ]; then
+          COMPONENT_NAME="${COMPONENT_LABEL}"
+        fi
+
+        # ── Step 1: Send Slack notification via API ──
+        echo "Sending Slack notification for component: ${COMPONENT_NAME}"
+
+        SLACK_FAILED=""
+        THREAD_TS=""
+        CHANNEL_ID=""
+
+        SLACK_RESPONSE=$(curl -sf -X POST https://slack.com/api/chat.postMessage \
+          -H "Authorization: Bearer ${SLACK_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n \
+            --arg channel "$SLACK_CHANNEL" \
+            --arg text "$SLACK_MESSAGE" \
+            '{channel: $channel, text: $text, unfurl_links: false}')" \
+        ) || {
+          echo "WARNING: Slack API call failed (non-blocking)"
+          SLACK_FAILED=true
+        }
+
+        if [ -z "${SLACK_FAILED}" ]; then
+          SLACK_OK=$(echo "$SLACK_RESPONSE" | jq -r '.ok')
+          if [ "$SLACK_OK" = "true" ]; then
+            THREAD_TS=$(echo "$SLACK_RESPONSE" | jq -r '.ts')
+            CHANNEL_ID=$(echo "$SLACK_RESPONSE" | jq -r '.channel')
+            echo "Slack notification sent (thread_ts=${THREAD_TS}, channel=${CHANNEL_ID})"
+          else
+            SLACK_ERROR=$(echo "$SLACK_RESPONSE" | jq -r '.error // "unknown"')
+            echo "WARNING: Slack API returned ok=false: ${SLACK_ERROR}"
+            SLACK_FAILED=true
+          fi
+        fi
+
+        printf "%s" "${THREAD_TS}" > "$(results.slack-thread-ts.path)"
+        printf "%s" "${CHANNEL_ID}" > "$(results.slack-channel-id.path)"
+
+        # ── Step 2: Create/update Jira (only if Build Buddy enabled) ──
+        if [ "${ENABLE_BUILD_BUDDY}" != "true" ]; then
+          echo "Build Buddy disabled — skipping Jira"
+          printf "" > "$(results.jira-issue-key.path)"
+          printf "" > "$(results.jira-action.path)"
+          exit 0
+        fi
+
+        echo "Build Buddy enabled — checking for existing Jira issues"
+
+        SLACK_THREAD_URL=""
+        if [ -n "${THREAD_TS}" ] && [ -n "${CHANNEL_ID}" ]; then
+          SLACK_THREAD_URL="https://redhat-internal.slack.com/archives/${CHANNEL_ID}/p${THREAD_TS//./}"
+        fi
+
+        REPO_NAME=$(echo "$GIT_URL" | sed 's|.*/||;s|\.git$||')
+        TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        SHORT_REV="${REVISION:0:7}"
+
+        # Build the YAML metadata attachment content
+        cat > /tmp/build-failure-metadata.yaml <<METADATA_EOF
+        component: ${COMPONENT_NAME}
+        repository: ${GIT_URL}
+        revision: ${REVISION}
+        revision_short: ${SHORT_REV}
+        pipelinerun: ${PIPELINE_RUN_NAME}
+        pipeline_template: ${PIPELINE_TEMPLATE}
+        build_log_url: ${BUILD_URL}
+        commit_url: ${COMMIT_URL}
+        output_image: ${OUTPUT_IMAGE}
+        namespace: ${PIPELINE_RUN_NAMESPACE}
+        slack_thread_url: ${SLACK_THREAD_URL}
+        slack_thread_ts: ${THREAD_TS}
+        slack_channel_id: ${CHANNEL_ID}
+        timestamp: ${TIMESTAMP}
+        METADATA_EOF
+
+        AUTH_HEADER="Authorization: Basic $(echo -n "${JIRA_USER}:${JIRA_TOKEN}" | base64)"
+
+        # ── Duplicate detection ──
+        COMPONENT_LABEL="component:${COMPONENT_NAME}"
+        JQL="project = ${JIRA_PROJECT_KEY} AND labels = ops-buddy AND labels = build-failure AND labels = \"${COMPONENT_LABEL}\" AND status != Done AND created >= -7d"
+
+        SEARCH_RESPONSE=$(curl -sf -X POST "${JIRA_URL}/rest/api/2/search" \
+          -H "${AUTH_HEADER}" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg jql "$JQL" '{jql: $jql, maxResults: 1, fields: ["key","status","summary"]}')" \
+        ) || {
+          echo "WARNING: Jira search failed — will create new issue"
+          SEARCH_RESPONSE='{"total":0}'
+        }
+
+        EXISTING_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r '.total // 0')
+
+        if [ "$EXISTING_COUNT" -gt 0 ]; then
+          # ── Update existing issue ──
+          EXISTING_KEY=$(echo "$SEARCH_RESPONSE" | jq -r '.issues[0].key')
+          echo "Found existing issue ${EXISTING_KEY} — adding comment"
+
+          COMMENT_BODY="New build failure for *${COMPONENT_NAME}* at ${TIMESTAMP}
+        PipelineRun: ${PIPELINE_RUN_NAME}
+        Revision: [${SHORT_REV}|${COMMIT_URL}]
+        Build Log: [View|${BUILD_URL}]
+        Slack Thread: [Thread|${SLACK_THREAD_URL:-N/A}]"
+
+          curl -sf -X POST "${JIRA_URL}/rest/api/2/issue/${EXISTING_KEY}/comment" \
+            -H "${AUTH_HEADER}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg body "$COMMENT_BODY" '{body: $body}')" \
+          && echo "Comment added to ${EXISTING_KEY}" \
+          || echo "WARNING: Failed to add comment to ${EXISTING_KEY}"
+
+          # Attach updated metadata YAML
+          curl -sf -X POST "${JIRA_URL}/rest/api/2/issue/${EXISTING_KEY}/attachments" \
+            -H "${AUTH_HEADER}" \
+            -H "X-Atlassian-Token: no-check" \
+            -F "file=@/tmp/build-failure-metadata.yaml" \
+          > /dev/null 2>&1 || echo "WARNING: Failed to attach metadata to ${EXISTING_KEY}"
+
+          printf "%s" "$EXISTING_KEY" > "$(results.jira-issue-key.path)"
+          printf "updated" > "$(results.jira-action.path)"
+        else
+          # ── Create new issue ──
+          echo "No existing issue — creating new Jira issue"
+
+          ISSUE_SUMMARY="[Build Failure] ${COMPONENT_NAME} - ${REPO_NAME} ($(date -u +%Y-%m-%d))"
+
+          ISSUE_DESCRIPTION="Build failure detected by Build Buddy.
+        Component: ${COMPONENT_NAME}
+        Repository: [${REPO_NAME}|${GIT_URL}]
+        Slack Thread: [View Thread|${SLACK_THREAD_URL:-N/A}]
+        See attached build-failure-metadata.yaml for full details."
+
+          # Build the create payload, conditionally include epic link
+          CREATE_PAYLOAD=$(jq -n \
+            --arg project "$JIRA_PROJECT_KEY" \
+            --arg summary "$ISSUE_SUMMARY" \
+            --arg description "$ISSUE_DESCRIPTION" \
+            --arg component_label "$COMPONENT_LABEL" \
+            --arg epic_key "${JIRA_EPIC_KEY:-}" \
+            '{
+              fields: {
+                project: {key: $project},
+                summary: $summary,
+                description: $description,
+                issuetype: {name: "Bug"},
+                labels: ["ops-buddy", "build-failure", "unprocessed", "no-autofix", $component_label]
+              }
+            }
+            | if $epic_key != "" then .fields["customfield_12311140"] = $epic_key else . end')
+
+          CREATE_RESPONSE=$(curl -sf -X POST "${JIRA_URL}/rest/api/2/issue" \
+            -H "${AUTH_HEADER}" \
+            -H "Content-Type: application/json" \
+            -d "$CREATE_PAYLOAD" \
+          ) || {
+            echo "ERROR: Failed to create Jira issue"
+            printf "" > "$(results.jira-issue-key.path)"
+            printf "" > "$(results.jira-action.path)"
+            exit 0
+          }
+
+          NEW_KEY=$(echo "$CREATE_RESPONSE" | jq -r '.key')
+          echo "Created Jira issue: ${NEW_KEY}"
+
+          # Attach metadata YAML
+          curl -sf -X POST "${JIRA_URL}/rest/api/2/issue/${NEW_KEY}/attachments" \
+            -H "${AUTH_HEADER}" \
+            -H "X-Atlassian-Token: no-check" \
+            -F "file=@/tmp/build-failure-metadata.yaml" \
+          > /dev/null 2>&1 || echo "WARNING: Failed to attach metadata to ${NEW_KEY}"
+
+          printf "%s" "$NEW_KEY" > "$(results.jira-issue-key.path)"
+          printf "created" > "$(results.jira-action.path)"
+
+          # Post Jira link back to Slack thread
+          if [ -n "${THREAD_TS}" ] && [ -z "${SLACK_FAILED}" ]; then
+            curl -sf -X POST https://slack.com/api/chat.postMessage \
+              -H "Authorization: Bearer ${SLACK_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n \
+                --arg channel "$CHANNEL_ID" \
+                --arg thread_ts "$THREAD_TS" \
+                --arg text ":jira: Build Buddy tracking: <${JIRA_URL}/browse/${NEW_KEY}|${NEW_KEY}>" \
+                '{channel: $channel, thread_ts: $thread_ts, text: $text}')" \
+            > /dev/null 2>&1 || echo "WARNING: Failed to post Jira link to Slack thread"
+          fi
+        fi
+
+        echo "report-build-failure complete"

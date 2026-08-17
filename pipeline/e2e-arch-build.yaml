@@ -117,6 +117,10 @@ spec:
     type: string
     default: push
     description: Type of pipeline execution (push)
+  - name: enable-build-buddy
+    default: "true"
+    type: string
+    description: Enable Build Buddy Jira issue tracking on build failure
   - name: enable-group-testing
     default: "false"
     type: string
@@ -353,23 +357,31 @@ spec:
       - name: kind
         value: task
       resolver: bundles
-  - name: send-slack-notification
+  - name: report-build-failure
     params:
-    - name: message
+    - name: slack-message
       value: "$(tasks.rhoai-init.results.slack-message-failure-text)"
-    - name: secret-name
-      value: ci-slack-secret
-    - name: key-name
-      value: secret
+    - name: pipeline-run-name
+      value: "$(context.pipelineRun.name)"
+    - name: git-url
+      value: "$(params.git-url)"
+    - name: revision
+      value: "$(params.revision)"
+    - name: output-image
+      value: "$(params.output-image)"
+    - name: pipeline-template
+      value: "$(context.pipeline.name)"
+    - name: enable-build-buddy
+      value: "$(params.enable-build-buddy)"
     taskRef:
+      resolver: git
       params:
-      - name: name
-        value: slack-webhook-notification
-      - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-slack-webhook-notification:0.1@sha256:69945a30c11387a766e3d0ae33991b68e865a290c09da1fea44f193d358926ba
-      - name: kind
-        value: task
-      resolver: bundles
+      - name: url
+        value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+      - name: revision
+        value: build-buddy
+      - name: pathInRepo
+        value: konflux-tekton-tasks/report-build-failure/0.1/report-build-failure.yaml
     when:
     - input: $(tasks.pipeline-success-indicator.status)
       operator: notin
