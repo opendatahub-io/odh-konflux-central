@@ -266,11 +266,9 @@ spec:
               fi
             fi
 
-            # Tier 1: PR image (always check ODH path — PR builds push to quay.io/opendatahub/)
-            tier1_path="${odh_repo_path}"
-            if skopeo inspect "docker://quay.io/${tier1_path}:${TAG}" &>/dev/null; then
-              echo "✓ [Tier 1] Found PR image with tag ${TAG} on quay.io/${tier1_path}"
-              repo_path="${tier1_path}"
+            # Tier 1: PR image on the component's own quay path
+            if skopeo inspect "docker://quay.io/${repo_path}:${TAG}" &>/dev/null; then
+              echo "✓ [Tier 1] Found PR image with tag ${TAG} on quay.io/${repo_path}"
               IMAGE_STATUS="ready"
             else
               echo "⚠️  WARNING: Component '${component}' does not have PR image for tag ${TAG}" >&2
