@@ -38,3 +38,5 @@ config:
       early-gate-enabled: true
     spark-operator:
       early-gate-enabled: true
+    workbenches-operator:
+      early-gate-enabled: true
