@@ -40,3 +40,5 @@ config:
       early-gate-enabled: true
     workbenches-operator:
       early-gate-enabled: true
+    workbenches:
+      early-gate-enabled: true
