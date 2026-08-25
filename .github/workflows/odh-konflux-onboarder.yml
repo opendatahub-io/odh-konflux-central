@@ -282,6 +282,12 @@ jobs:
               sed -i -E 's|Dockerfiles/rhoai\.Dockerfile|Dockerfiles/Dockerfile|g' "$target_file"
               # Release-only: Remove BUILD_MODE parameter entirely
               sed -i -E '/\$\$BUILD_MODE\$\$/d' "$target_file"
+              # Release-only: Fix application and component labels for release pipeline
+              sed -i 's|appstudio.openshift.io/application: opendatahub-builds|appstudio.openshift.io/application: opendatahub-release|' "$target_file"
+              sed -i -E "s|appstudio.openshift.io/component: ${COMPONENT_NAME}-ci|appstudio.openshift.io/component: ${COMPONENT_NAME}|" "$target_file"
+              # Release-only: Remove on-comment and on-label triggers (release pipelines trigger on push only)
+              sed -i '/pipelinesascode.tekton.dev\/on-comment/d' "$target_file"
+              sed -i '/pipelinesascode.tekton.dev\/on-label/d' "$target_file"
 
             done
           fi
