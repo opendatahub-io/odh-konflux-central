@@ -166,6 +166,11 @@ spec:
         results:
           - name: TEST_OUTPUT
             description: Test results in Konflux format
+        volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 1Gi
         sidecars:
           - name: postgres
             image: pgvector/pgvector:pg17
@@ -224,6 +229,9 @@ spec:
               limits:
                 memory: "8Gi"
                 cpu: "4"
+            volumeMounts:
+              - name: dshm
+                mountPath: /dev/shm
 
           - name: vllm-embedding
             image: quay.io/opendatahub/vllm-cpu:Qwen3.5-0.8B-granite-embedding-125m-english
@@ -254,6 +262,9 @@ spec:
               limits:
                 memory: "4Gi"
                 cpu: "2"
+            volumeMounts:
+              - name: dshm
+                mountPath: /dev/shm
 
           - name: ogx
             image: $(params.component-image)
