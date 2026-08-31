@@ -1,10 +1,9 @@
 ---
 apiVersion: tekton.dev/v1
-kind: PipelineRun
+kind: Pipeline
 metadata:
   name: opendatahub-operator-e2e-test
 spec:
-  pipelineSpec:
     description: |
       An integration test which provisions an ephemeral Hypershift cluster, deploys opendatahub-operator
       from a Konflux snapshot and runs the e2e tests against it.
@@ -139,6 +138,7 @@ spec:
               fi
 
       - name: provision-eaas-space
+        timeout: "10m"
         runAfter:
           - check-prerequisites
         taskRef:
@@ -161,6 +161,7 @@ spec:
             values: ["true"]
 
       - name: provision-cluster
+        timeout: "4h0m0s"
         runAfter:
           - provision-eaas-space
         taskSpec:
@@ -216,6 +217,7 @@ spec:
             operator: in
             values: ["true"]
       - name: deploy-and-test
+        timeout: "3h0m0s"
         runAfter:
           - provision-cluster
         params:

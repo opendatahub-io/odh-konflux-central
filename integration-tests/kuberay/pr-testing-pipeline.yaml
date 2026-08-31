@@ -1,15 +1,12 @@
 ---
 apiVersion: tekton.dev/v1
-kind: PipelineRun
+kind: Pipeline
 metadata:
   name: odh-pr-test-kuberay
   annotations:
     pipelinesascode.tekton.dev/on-event: "[pull_request]"
     pipelinesascode.tekton.dev/on-target-branch: "[dev]"
 spec:
-  timeouts:
-    pipeline: 2h
-  pipelineSpec:
     description: |
       An integration test which provisions an ephemeral Hypershift cluster, deploys the KubeRay
       operator from the Konflux snapshot image via kustomize, and runs the e2e tests
@@ -88,6 +85,7 @@ spec:
                 echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
 
       - name: provision-eaas-space
+        timeout: "10m"
         runAfter:
           - audit-snapshot
         taskRef:
@@ -106,6 +104,7 @@ spec:
             value: $(context.pipelineRun.uid)
 
       - name: provision-cluster
+        timeout: "4h0m0s"
         runAfter:
           - provision-eaas-space
         taskSpec:
@@ -158,7 +157,7 @@ spec:
                   value: m5.2xlarge
 
       - name: deploy-and-test
-        timeout: 90m
+        timeout: "4h0m0s"
         runAfter:
           - provision-cluster
         taskSpec:

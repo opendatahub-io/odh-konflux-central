@@ -126,7 +126,7 @@ spec:
       - name: pathInRepo
         value: integration-tests/odh-model-controller/pr-test-pipelinerun.yaml
     resolver: git
-    resourceKind: pipelinerun
+    resourceKind: pipeline
 
 ---
 apiVersion: appstudio.redhat.com/v1beta2
@@ -150,7 +150,7 @@ spec:
       - name: pathInRepo
         value: integration-tests/opendatahub-operator/pr-test-pipelinerun.yaml
     resolver: git
-    resourceKind: pipelinerun
+    resourceKind: pipeline
 ---
 apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
@@ -173,7 +173,7 @@ spec:
       - name: pathInRepo
         value: integration-tests/trainer/pr-testing-pipeline.yaml
     resolver: git
-    resourceKind: pipelinerun
+    resourceKind: pipeline
 ---
 apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
@@ -219,7 +219,7 @@ spec:
       - name: pathInRepo
         value: integration-tests/kuberay/pr-testing-pipeline.yaml
     resolver: git
-    resourceKind: pipelinerun
+    resourceKind: pipeline
 ---
 apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
@@ -272,4 +272,4 @@ spec:
       - name: pathInRepo
         value: integration-tests/distributed-workloads/pr-testing-pipeline.yaml
     resolver: git
-    resourceKind: pipelinerun
+    resourceKind: pipeline
