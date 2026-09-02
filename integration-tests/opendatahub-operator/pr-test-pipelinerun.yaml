@@ -312,7 +312,7 @@ spec:
 
                 # Run e2e tests
                 echo "Running e2e tests..."
-                make e2e-test -e E2E_TEST_OPERATOR_NAMESPACE=$(params.namespace) || {
+                make e2e-test SKIP_IMAGE_OVERRIDES=1 E2E_TEST_OPERATOR_NAMESPACE=$(params.namespace) || {
                   EXIT_CODE=$?
                   echo "============================================"
                   echo "E2E tests failed with exit code: $EXIT_CODE"
