@@ -27,7 +27,12 @@ spec:
   - name: dockerfile
     value: Dockerfile
   - name: path-context
-    value: sdk/python/feast/infra/feature_servers/multicloud 
+    value: sdk/python/feast/infra/feature_servers/multicloud
+  - name: build-platforms
+    value:
+    - linux/x86_64
+    - linux/arm64
+    - linux/ppc64le
   pipelineRef:
     resolver: git
     params:
