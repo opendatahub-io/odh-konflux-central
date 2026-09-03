@@ -300,13 +300,44 @@ spec:
                   -n cert-manager-operator \
                   -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator \
                   --timeout=300s
-                echo "Waiting for cert-manager deployment to be available..."
+                echo "Waiting for cert-manager deployments to be available..."
+                for deploy in cert-manager cert-manager-webhook cert-manager-cainjector; do
+                  for i in $(seq 1 30); do
+                    oc get deployment "${deploy}" -n cert-manager 2>/dev/null && break
+                    echo "  ${deploy} not found, attempt $i/30, retrying in 10s..."
+                    sleep 10
+                  done
+                  oc wait --for=condition=available "deployment/${deploy}" -n cert-manager --timeout=300s
+                done
+                # The webhook can be Available while still serving a cert the API server
+                # does not trust (caBundle / serving-cert race). Probe until TLS works.
+                echo "Waiting until cert-manager webhook TLS is trusted..."
+                WEBHOOK_TLS_READY=0
                 for i in $(seq 1 30); do
-                  oc get deployment cert-manager -n cert-manager 2>/dev/null && break
-                  echo "  attempt $i/30, retrying in 10s..."
+                  if oc create --dry-run=server -o name -f - >/dev/null 2>/tmp/cm-webhook-probe.err <<'EOF'
+                apiVersion: cert-manager.io/v1
+                kind: Issuer
+                metadata:
+                  generateName: cert-manager-webhook-probe-
+                  namespace: cert-manager
+                spec:
+                  selfSigned: {}
+                EOF
+                  then
+                    echo "cert-manager webhook is serving a trusted cert"
+                    WEBHOOK_TLS_READY=1
+                    break
+                  fi
+                  echo "  attempt $i/30: $(tr '\n' ' ' < /tmp/cm-webhook-probe.err | cut -c1-200), retrying in 10s..."
                   sleep 10
                 done
-                oc wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=300s
+                if [ "${WEBHOOK_TLS_READY}" != "1" ]; then
+                  echo "ERROR: cert-manager webhook TLS not trusted after 300s" >&2
+                  oc get validatingwebhookconfiguration cert-manager-webhook -o yaml || true
+                  oc get pods -n cert-manager -o wide || true
+                  oc logs -n cert-manager deploy/cert-manager-webhook --tail=50 || true
+                  exit 1
+                fi
 
                 # Deploy the operator using the image built by the Konflux PR build pipeline
                 echo "Deploying kuberay operator (image: ${KUBERAY_IMAGE})..."
