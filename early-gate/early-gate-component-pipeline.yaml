@@ -461,7 +461,7 @@ spec:
           echo "CACHI2_ARTIFACT=${CACHI2_ARTIFACT}"
           echo "exploring manifests"
           ls /var/workdir/cachi2
-          ls /var/workdir/cachi2/prefetched-manifests
+          ls /var/workdir/cachi2/output/prefetched-manifests
           echo "exploring sources"
           ls /var/workdir/source
 
