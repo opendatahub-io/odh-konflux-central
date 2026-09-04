@@ -86,6 +86,7 @@ on:
           - praxis-extproc
           - modelexpress
           - ai-gateway-controller
+          - eval-hub-contrib
       pr_target_branch:
         description: 'Target branch for the PR (e.g. main)'
         required: true
