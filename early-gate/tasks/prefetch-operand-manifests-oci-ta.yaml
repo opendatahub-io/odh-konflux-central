@@ -396,15 +396,25 @@ spec:
       }
 
       echo "*************** Prefetching manifests ********************"
-      PREFETCHED_MANIFEST_DIR_PATH="/var/workdir/cachi2/prefetched-manifests"
-      PREFETCHED_CHARTS_DIR_PATH="/var/workdir/cachi2/prefetched-charts"
+      PREFETCHED_MANIFEST_DIR_PATH="/var/workdir/cachi2/output/prefetched-manifests"
+      PREFETCHED_CHARTS_DIR_PATH="/var/workdir/cachi2/output/prefetched-charts"
       MANIFEST_CONFIG_PATH=/var/workdir/source/build/manifests-config.yaml
 
-      # Create both dirs so operator CI BUILD_TYPE=CI can always cp charts
+      # Create both dirs so operator CI BUILD_TYPE=CI can always cp charts.
+      # Content goes under output/ so KBC (buildah 0.10.5+) mounts it at
+      # /cachi2/output inside the build container.
       mkdir -p "$PREFETCHED_MANIFEST_DIR_PATH"
       mkdir -p "$PREFETCHED_CHARTS_DIR_PATH"
-      echo "# general cachi2 config" > /var/workdir/cachi2/cachi2.env
 
+      # cachi2.env is sourced by KBC before every RUN instruction.
+      # Create compatibility symlinks so the operator Dockerfile's
+      # hardcoded /cachi2/prefetched-manifests and /cachi2/prefetched-charts
+      # paths resolve to the KBC-mounted /cachi2/output/ tree.
+      cat > /var/workdir/cachi2/cachi2.env << 'ENVEOF'
+      ln -snf /cachi2/output/prefetched-manifests /cachi2/prefetched-manifests 2>/dev/null || true
+      ln -snf /cachi2/output/prefetched-charts /cachi2/prefetched-charts 2>/dev/null || true
+      ENVEOF
+    
       fetch_and_copy_entries "$MANIFEST_CONFIG_PATH" /var/workdir/manifests \
         "$PREFETCHED_MANIFEST_DIR_PATH" "$PREFETCHED_CHARTS_DIR_PATH"
 
