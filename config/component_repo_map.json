@@ -179,6 +179,7 @@
     "odh-mod-arch-agent-ops-ci": "opendatahub/odh-mod-arch-agent-ops",
     "odh-mod-arch-automl-ci": "opendatahub/odh-mod-arch-automl",
     "odh-mod-arch-autorag-ci": "opendatahub/odh-mod-arch-autorag",
+    "odh-mod-arch-data-registry-ci": "opendatahub/odh-mod-arch-data-registry",
     "odh-mod-arch-eval-hub": "opendatahub/odh-mod-arch-eval-hub",
     "odh-mod-arch-gen-ai-ci": "opendatahub/odh-mod-arch-gen-ai",
     "odh-mod-arch-mlflow": "opendatahub/odh-mod-arch-mlflow",
