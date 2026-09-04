@@ -70,8 +70,8 @@ spec:
       echo "CACHI2_ARTIFACT=${CACHI2_ARTIFACT}"
       echo "exploring manifests"
       ls /var/workdir/cachi2
-      ls /var/workdir/cachi2/prefetched-manifests
-
+      ls /var/workdir/cachi2/output/prefetched-manifests
+      
       echo "exploring sources"
       ls /var/workdir/source
 
@@ -93,7 +93,7 @@ spec:
       #add content to new-dir
       OUTPUT_IMAGE_DIGEST=${OUTPUT_IMAGE_DIGEST/sha256:/}
       mkdir -p components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
-      cp -r /var/workdir/cachi2/prefetched-manifests/* components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
+      cp -r /var/workdir/cachi2/output/prefetched-manifests/* components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
       cp /var/workdir/source/build/operands-map.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
       cp /var/workdir/source/build/manifests-config.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
 
