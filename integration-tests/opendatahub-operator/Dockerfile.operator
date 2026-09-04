@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.26
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26.7-1788409979
 User 0
 RUN yum install -y git jq wget tar python3 pip podman skopeo make gcc automake binutils && \
     yum clean all && rm -rf /var/cache/dnf/*
