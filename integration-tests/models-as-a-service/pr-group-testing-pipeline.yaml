@@ -239,6 +239,10 @@ spec:
                 value: /workspace/artifacts-dir
               - name: SNAPSHOT
                 value: $(tasks.generate-snapshot.results.SNAPSHOT)
+              - name: TARGET_BRANCH
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
             workingDir: /workspace/source
             volumeMounts:
               - name: credentials
@@ -268,6 +272,25 @@ spec:
               echo "MAAS_API_IMAGE (tag): ${MAAS_API_IMAGE%%@*}:${MAAS_API_TAG}"
               echo "MAAS_CONTROLLER_IMAGE=${MAAS_CONTROLLER_IMAGE}"
               echo "MAAS_CONTROLLER_IMAGE (tag): ${MAAS_CONTROLLER_IMAGE%%@*}:${MAAS_CONTROLLER_TAG}"
+
+              # main -> stable promotion PRs are the integration gate: deploy via the ODH
+              # operator (latest catalog) with ai-gateway-operator pinned to its stable image,
+              # so the operator's own ModelsAsService/AIGateway reconcilers get exercised
+              # against this PR's images before it can merge. Plain /group-test runs (main)
+              # keep the default kustomize-based deploy used by every other PR.
+              if [ "${TARGET_BRANCH:-}" = "stable" ]; then
+                echo "TARGET_BRANCH=stable: deploying via ODH operator (latest) + ai-gateway-operator (stable)"
+                export DEPLOY_MODE=operator
+                export OPERATOR_CATALOG="${OPERATOR_CATALOG:-quay.io/opendatahub/opendatahub-operator-catalog:latest}"
+                # The "latest" ODH catalog only ships a "fast" channel (no "fast-3"), unlike
+                # community-operators. deploy.sh defaults custom-catalog ODH installs to
+                # fast-3, which does not exist here and fails subscription resolution — so
+                # this must be pinned explicitly. Confirmed via manual testing.
+                export OPERATOR_CHANNEL="${OPERATOR_CHANNEL:-fast}"
+                export AI_GATEWAY_OPERATOR_IMAGE="${AI_GATEWAY_OPERATOR_IMAGE:-quay.io/opendatahub/odh-ai-gateway-operator:odh-stable}"
+              else
+                echo "TARGET_BRANCH=${TARGET_BRANCH:-<unset>}: using default kustomize deploy"
+              fi
 
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
