@@ -90,18 +90,35 @@ spec:
       git fetch --depth=1 origin main
       git checkout main
 
-      #add content to new-dir
       OUTPUT_IMAGE_DIGEST=${OUTPUT_IMAGE_DIGEST/sha256:/}
-      mkdir -p components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
-      cp -r /var/workdir/cachi2/output/prefetched-manifests/* components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
-      cp /var/workdir/source/build/operands-map.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
-      cp /var/workdir/source/build/manifests-config.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
 
-      git add --sparse components/odh-operator/${OUTPUT_IMAGE_DIGEST}
-      git commit -m "build-meta for operator image ${OUTPUT_IMAGE_DIGEST}"
+      # Payload lives outside this git worktree, so we can re-stage after
+      # reset --hard instead of rebasing. Rebase loads the full origin/main
+      # tree (thousands of digest dirs) and OOM-kills the step (exit 137).
+      stage_metadata() {
+        mkdir -p components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests || return 1
+        cp -r /var/workdir/cachi2/output/prefetched-manifests/* components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests || return 1
+        cp /var/workdir/source/build/operands-map.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST} || return 1
+        cp /var/workdir/source/build/manifests-config.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST} || return 1
+        git add --sparse components/odh-operator/${OUTPUT_IMAGE_DIGEST} || return 1
+        if git diff --cached --quiet; then
+          # After reset we are even with origin/main. git push would then
+          # succeed as "up-to-date" even if this digest was never committed.
+          if git cat-file -e "HEAD:components/odh-operator/${OUTPUT_IMAGE_DIGEST}" 2>/dev/null; then
+            echo "digest ${OUTPUT_IMAGE_DIGEST} already present on origin/main"
+            return 0
+          fi
+          echo "ERROR: nothing staged for digest ${OUTPUT_IMAGE_DIGEST}"
+          return 1
+        fi
+        git commit -m "build-meta for operator image ${OUTPUT_IMAGE_DIGEST}"
+      }
+
+      stage_metadata || exit 1
 
       # Retry loop: concurrent builds writing to different digest dirs
-      # can race on git push. Rebase is safe because paths never overlap.
+      # can race on git push. Do not rebase — reset to origin/main (sparse)
+      # and recommit the unique digest directory.
       MAX_RETRIES=10
       for attempt in $(seq 1 $MAX_RETRIES); do
         if git push; then
@@ -112,6 +129,8 @@ spec:
           echo "ERROR: Push failed after ${MAX_RETRIES} attempts"
           exit 1
         fi
-        echo "Push failed (attempt ${attempt}/${MAX_RETRIES}), rebasing and retrying..."
-        git pull --rebase origin main
+        echo "Push failed (attempt ${attempt}/${MAX_RETRIES}), resetting to origin/main and retrying..."
+        git fetch --depth=1 origin main
+        git reset --hard origin/main
+        stage_metadata || exit 1
       done
