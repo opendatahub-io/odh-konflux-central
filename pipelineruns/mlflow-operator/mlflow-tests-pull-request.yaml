@@ -13,9 +13,9 @@ metadata:
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: opendatahub-builds
-    appstudio.openshift.io/component: mlflow-operator-ci
+    appstudio.openshift.io/component: mlflow-tests
     pipelines.appstudio.openshift.io/type: build
-  name: mlflow-operator-on-pull-request
+  name: mlflow-tests-on-pull-request
   namespace: open-data-hub-tenant
 spec:
   params:
@@ -24,11 +24,13 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/opendatahub/mlflow-operator:odh-pr
+    value: quay.io/opendatahub/mlflow-tests:odh-pr
   - name: dockerfile
-    value: Dockerfile
+    value: mlflow-tests/images/Dockerfile.konflux
   - name: path-context
     value: .
+  - name: hermetic
+    value: "false"
   - name: additional-tags
     value:
     - 'odh-pr-{{revision}}'
