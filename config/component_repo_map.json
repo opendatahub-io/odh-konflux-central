@@ -222,6 +222,7 @@
   "pipelines-components": {
     "odh-automl-ci": "opendatahub/odh-automl",
     "odh-autorag-ci": "opendatahub/odh-autorag",
+    "odh-autorag-inference-ci": "opendatahub/odh-autorag-inference",
     "odh-pipelines-components-ci": "opendatahub/odh-pipelines-components"
   },
   "praxis-extproc": {
