@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/python-311:1
+FROM registry.access.redhat.com/ubi9/python-311:1-1779945715
 
 # Prow expects to be able to check out a repo under /go
 USER 0:0
