@@ -282,6 +282,17 @@ def mark_cluster_api_unreachable(reason: str, artifacts_dir: Path | None = None)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def clear_cluster_api_unreachable_marker(artifacts_dir: Path | None = None) -> None:
+    """Drop guest API-death marker after a successful re-probe (transient blip recovery)."""
+    root = resolve_artifacts_dir(artifacts_dir)
+    if root is None:
+        return
+    try:
+        (root / _CLUSTER_API_UNREACHABLE_MARKER).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def maas_gateway_https_blocked_reason() -> str:
     """Infra reason when Kuadrant stack or a prior HTTPS wait blocks MaaS prep."""
     from helpers.gateway_stack_marker import reconcile_gateway_stack_incomplete_marker

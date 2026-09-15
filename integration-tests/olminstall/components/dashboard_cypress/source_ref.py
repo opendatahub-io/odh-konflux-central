@@ -11,6 +11,7 @@ from suite.component_version_gate import normalize_version_for_enablement
 _UPSTREAM_DASHBOARD_REPO = "https://github.com/opendatahub-io/odh-dashboard.git"
 _RHDS_DASHBOARD_REPO = "https://github.com/red-hat-data-services/odh-dashboard.git"
 _RHOAI_RELEASE_BRANCH_RE = re.compile(r"^rhoai-\d+\.\d+(?:-ea\.\d+)?$")
+_EA_RELEASE_RE = re.compile(r"^(\d+)\.(\d+)(?:\.\d+)?-ea\.(\d+)$")
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,12 @@ def resolve_dashboard_source_ref(
     ver = (operator_version or "").strip()
     if ver in {"", "(unknown)", "n/a"}:
         return fallback
+
+    ea_match = _EA_RELEASE_RE.match(ver)
+    if ea_match:
+        major, minor, ea = ea_match.group(1), ea_match.group(2), ea_match.group(3)
+        prefix = _branch_prefix_for_product(product)
+        return f"{prefix}-{major}.{minor}-ea.{ea}"
 
     compare_ver, is_numeric = normalize_version_for_enablement(ver)
     if not is_numeric or not compare_ver:

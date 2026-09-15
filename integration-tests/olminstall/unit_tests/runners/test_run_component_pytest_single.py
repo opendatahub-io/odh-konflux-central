@@ -90,6 +90,28 @@ def test_external_existing_pytest_extra_args_skip_rhoai_cluster_sanity() -> None
         )
 
 
+def test_needs_schedulable_nodes_wait_ephc_only() -> None:
+    with mock.patch.dict(os.environ, {"CLUSTER_SOURCE": "EPHC"}, clear=False):
+        assert run_component_pytest._needs_schedulable_nodes_wait() is True
+    with mock.patch.dict(os.environ, {"CLUSTER_SOURCE": "my-secret"}, clear=False):
+        assert run_component_pytest._needs_schedulable_nodes_wait() is False
+
+
+def test_wait_for_schedulable_nodes_before_component_pytest_skips_non_ephc() -> None:
+    with mock.patch.dict(os.environ, {"CLUSTER_SOURCE": "my-secret"}, clear=False):
+        assert run_component_pytest._wait_for_schedulable_nodes_before_component_pytest() == ""
+
+
+def test_wait_for_schedulable_nodes_before_component_pytest_returns_error() -> None:
+    with mock.patch.dict(os.environ, {"CLUSTER_SOURCE": "EPHC"}, clear=False):
+        with mock.patch(
+            "steps.prepare_bvt_cluster_nodes.wait_for_schedulable_nodes_for_bvt",
+            side_effect=RuntimeError("cluster_health precheck timed out waiting for schedulable nodes (120s): node-a"),
+        ):
+            msg = run_component_pytest._wait_for_schedulable_nodes_before_component_pytest()
+    assert "node-a" in msg
+
+
 def test_needs_full_dsc_ready_before_pytest() -> None:
     assert run_component_pytest._needs_full_dsc_ready_before_pytest("ogx") is True
     assert run_component_pytest._needs_full_dsc_ready_before_pytest("ai_safety_evalhub") is True

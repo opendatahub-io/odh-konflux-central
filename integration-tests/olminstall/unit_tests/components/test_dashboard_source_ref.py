@@ -18,10 +18,16 @@ class DashboardSourceRefTest(unittest.TestCase):
             "rhoai-3.4",
         )
 
-    def test_maps_ea_version_to_minor_branch(self) -> None:
+    def test_maps_ea_version_to_ea_branch(self) -> None:
         self.assertEqual(
             resolve_dashboard_source_ref("3.5.0-ea.2", catalog_ref="main", product="rhoai"),
-            "rhoai-3.5",
+            "rhoai-3.5-ea.2",
+        )
+
+    def test_maps_rhoai_36_ea_to_ea_branch(self) -> None:
+        self.assertEqual(
+            resolve_dashboard_source_ref("3.6.0-ea.1", catalog_ref="main", product="rhoai"),
+            "rhoai-3.6-ea.1",
         )
 
     def test_odh_product_uses_odh_prefix(self) -> None:

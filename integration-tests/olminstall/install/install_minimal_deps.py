@@ -43,9 +43,11 @@ from install.llama_stack_deps import (
     try_prepare_llama_stack_operator,
 )
 from install.dsc_install import ensure_dsc_models_as_service, _install_requires_dashboard_gateway, _smoke_components_need_servicemesh
+from install.approve_transitive_installplans import approve_pending_installplans
 from install.gateway_config import (
     ensure_openshift_gateway_istio_for_dep_operators,
     reconcile_servicemesh_olm_conflicts,
+    wait_servicemesh_csv_succeeded,
 )
 from suite.its_trigger_params import is_pooled_external_cluster_source
 from install.rhcl_deps import (
@@ -111,10 +113,18 @@ def _ensure_yq_on_path(env: dict[str, str]) -> dict[str, str]:
 
 def _ensure_maas_bvt_prerequisites() -> None:
     """MaaS DB secret and modelsAsService=Managed before BVT when MaaS smoke ids are selected."""
+    from components.maas_billing.common import maas_api_deployment_exists
     from components.maas_billing.database import ensure_maas_database
 
     ensure_maas_database()
-    ensure_dsc_models_as_service()
+    wait_aigateway = maas_api_deployment_exists()
+    if not wait_aigateway:
+        print(
+            "NOTE: maas-api not deployed yet; patching DSC modelsAsAService only and "
+            "deferring AIGateway reconcile wait to prepare-components-prerequisites",
+            flush=True,
+        )
+    ensure_dsc_models_as_service(wait_for_aigateway=wait_aigateway)
 
 
 def _ensure_kubectl_on_path(env: dict[str, str]) -> dict[str, str]:
@@ -173,6 +183,15 @@ def _ensure_openshift_gateway_istio_stack(components_csv: str) -> None:
             print(
                 f"✓ Reconciled {removed} orphan Service Mesh CSV(s) before openshift-gateway Istio",
                 flush=True,
+            )
+        approved = approve_pending_installplans("openshift-operators")
+        if approved:
+            print(
+                f"✓ Approved {approved} Service Mesh InstallPlan(s) before openshift-gateway Istio",
+                flush=True,
+            )
+            wait_servicemesh_csv_succeeded(
+                timeout_sec=int(os.environ.get("SERVICEMESH_CSV_WAIT_SEC", "300")),
             )
         if not ensure_openshift_gateway_istio_for_dep_operators():
             msg = (

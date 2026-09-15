@@ -105,16 +105,18 @@ def test_refresh_working_kubeconfig_from_credentials_no_secret(tmp_path: Path) -
     bootstrap = tmp_path / "bootstrap"
     bootstrap.write_text("bootstrap", encoding="utf-8")
     work = tmp_path / "work"
-    with mock.patch("k8s.external_credentials.load_external_cluster_credentials", return_value=None):
-        assert (
-            refresh_working_kubeconfig_from_credentials(
-                namespace="ns",
-                cluster_source="olminstall-kubeconfig-rh-nightly-pm",
-                bootstrap_path=bootstrap,
-                work_path=work,
-            )
-            is False
+    with mock.patch(
+        "k8s.external_credentials.resolve_external_cluster_credentials",
+        return_value=(None, ""),
+    ):
+        used, source = refresh_working_kubeconfig_from_credentials(
+            namespace="ns",
+            cluster_source="olminstall-kubeconfig-rh-nightly-pm",
+            bootstrap_path=bootstrap,
+            work_path=work,
         )
+        assert used is False
+        assert source == ""
 
 
 def test_refresh_working_kubeconfig_from_credentials_logs_in(tmp_path: Path) -> None:
@@ -129,7 +131,10 @@ def test_refresh_working_kubeconfig_from_credentials_logs_in(tmp_path: Path) -> 
         api_server="https://api.test:6443",
     )
     with (
-        mock.patch("k8s.external_credentials.load_external_cluster_credentials", return_value=creds),
+        mock.patch(
+            "k8s.external_credentials.resolve_external_cluster_credentials",
+            return_value=(creds, "tenant Secret 'olminstall-external-rh-nightly-pm-credentials'"),
+        ),
         mock.patch("k8s.external_credentials.seed_working_kubeconfig") as seed,
         mock.patch(
             "steps.tekton_util.materialize_htpasswd_kubeconfig_login",
@@ -137,15 +142,14 @@ def test_refresh_working_kubeconfig_from_credentials_logs_in(tmp_path: Path) -> 
         ),
         mock.patch("steps.tekton_util.ensure_kubeconfig_bearer_token"),
     ):
-        assert (
-            refresh_working_kubeconfig_from_credentials(
-                namespace="ns",
-                cluster_source="olminstall-kubeconfig-rh-nightly-pm",
-                bootstrap_path=bootstrap,
-                work_path=work,
-            )
-            is True
+        used, source = refresh_working_kubeconfig_from_credentials(
+            namespace="ns",
+            cluster_source="olminstall-kubeconfig-rh-nightly-pm",
+            bootstrap_path=bootstrap,
+            work_path=work,
         )
+        assert used is True
+        assert "tenant Secret" in source
     seed.assert_called_once()
 
 
@@ -156,11 +160,14 @@ def test_refresh_working_kubeconfig_from_credentials_login_failure(tmp_path: Pat
     work = tmp_path / "work"
     creds = ExternalClusterCredentials(username="dev", password="bad", api_server="https://api.test:6443")
     with (
-        mock.patch("k8s.external_credentials.load_external_cluster_credentials", return_value=creds),
+        mock.patch(
+            "k8s.external_credentials.resolve_external_cluster_credentials",
+            return_value=(creds, "tenant Secret 'olminstall-external-rh-nightly-pm-credentials'"),
+        ),
         mock.patch("k8s.external_credentials.seed_working_kubeconfig"),
         mock.patch("steps.tekton_util.materialize_htpasswd_kubeconfig_login", return_value=False),
     ):
-        with pytest.raises(AppError, match="htpasswd oc login failed"):
+        with pytest.raises(AppError, match="oc login failed"):
             refresh_working_kubeconfig_from_credentials(
                 namespace="ns",
                 cluster_source="olminstall-kubeconfig-rh-nightly-pm",

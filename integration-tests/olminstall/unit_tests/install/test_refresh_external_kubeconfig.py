@@ -35,7 +35,11 @@ def test_refresh_external_kubeconfig_uses_credentials(
     monkeypatch.setenv("TESTS_SHARED", str(shared))
 
     with (
-        mock.patch.object(mod, "refresh_working_kubeconfig_from_credentials", return_value=True),
+        mock.patch.object(
+            mod,
+            "refresh_working_kubeconfig_from_credentials",
+            return_value=(True, "tenant Secret 'olminstall-external-rh-nightly-pm-credentials'"),
+        ),
         mock.patch.object(mod, "verify_external_cluster_login", return_value="dev"),
         mock.patch.object(mod, "update_external_kubeconfig_secret") as update_secret,
         mock.patch.object(mod, "sync_external_kubeconfig_secret_cluster_metadata") as sync_metadata,
@@ -62,7 +66,7 @@ def test_refresh_external_kubeconfig_falls_back_to_bootstrap(
     monkeypatch.setenv("KUBECONFIG", str(work))
 
     with (
-        mock.patch.object(mod, "refresh_working_kubeconfig_from_credentials", return_value=False),
+        mock.patch.object(mod, "refresh_working_kubeconfig_from_credentials", return_value=(False, "")),
         mock.patch.object(mod, "verify_external_cluster_login", return_value="bootstrap-user"),
         mock.patch.object(mod, "update_external_kubeconfig_secret") as update_secret,
     ):
@@ -82,7 +86,7 @@ def test_refresh_external_kubeconfig_missing_bootstrap_and_creds(
     monkeypatch.setenv("KUBECONFIG_BOOTSTRAP", str(tmp_path / "missing" / "kubeconfig"))
     monkeypatch.setenv("KUBECONFIG", str(work))
 
-    with mock.patch.object(mod, "refresh_working_kubeconfig_from_credentials", return_value=False):
+    with mock.patch.object(mod, "refresh_working_kubeconfig_from_credentials", return_value=(False, "")):
         assert mod.refresh_external_kubeconfig() == 1
 
 
@@ -97,7 +101,11 @@ def test_refresh_external_kubeconfig_write_back_failure(
     monkeypatch.setenv("KUBECONFIG", str(work))
 
     with (
-        mock.patch.object(mod, "refresh_working_kubeconfig_from_credentials", return_value=True),
+        mock.patch.object(
+            mod,
+            "refresh_working_kubeconfig_from_credentials",
+            return_value=(True, "tenant Secret 'olminstall-external-rh-nightly-pm-credentials'"),
+        ),
         mock.patch.object(mod, "verify_external_cluster_login", return_value="dev"),
         mock.patch.object(
             mod,

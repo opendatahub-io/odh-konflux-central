@@ -548,21 +548,46 @@ def repair_servicemesh_subscription_stale_refs(namespace: str = "openshift-opera
 
 def _istio_resource_not_found(stderr: str, stdout: str = "") -> bool:
     combined = f"{stderr}\n{stdout}".lower()
-    return "notfound" in combined or "not found" in combined
+    return (
+        "notfound" in combined
+        or "not found" in combined
+        or "doesn't have a resource type" in combined
+        or "no matches for kind" in combined
+    )
+
+
+def _parse_openshift_gateway_istio_json(stdout: str) -> tuple[dict | None, str]:
+    if not (stdout or "").strip():
+        return None, "missing"
+    try:
+        doc = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None, "error"
+    if not isinstance(doc, dict):
+        return None, "error"
+    return doc, "ok"
 
 
 def _fetch_openshift_gateway_istio_doc() -> tuple[dict | None, str]:
     """Return (doc, status) where status is ``ok``, ``missing``, or ``error``."""
-    r = oc_run(
+    get_commands = (
         ["get", "istio", _OPENSHIFT_GATEWAY_ISTIO_NAME, "-o", "json"],
-        check=False,
-        capture_output=True,
-        timeout=30,
+        ["get", "istios.sailoperator.io", _OPENSHIFT_GATEWAY_ISTIO_NAME, "-o", "json"],
     )
-    if r.returncode != 0:
+    last_err = ""
+    for command in get_commands:
+        r = oc_run(
+            command,
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if r.returncode == 0:
+            return _parse_openshift_gateway_istio_json(r.stdout or "")
         err = (r.stderr or r.stdout or "").strip()
+        last_err = err or last_err
         if _istio_resource_not_found(r.stderr or "", r.stdout or ""):
-            return None, "missing"
+            continue
         print(
             f"WARN: could not read Istio/{_OPENSHIFT_GATEWAY_ISTIO_NAME}: "
             f"{err or 'unknown error'}",
@@ -570,15 +595,14 @@ def _fetch_openshift_gateway_istio_doc() -> tuple[dict | None, str]:
             flush=True,
         )
         return None, "error"
-    if not (r.stdout or "").strip():
-        return None, "missing"
-    try:
-        doc = json.loads(r.stdout)
-    except json.JSONDecodeError:
-        return None, "error"
-    if not isinstance(doc, dict):
-        return None, "error"
-    return doc, "ok"
+    if last_err:
+        print(
+            f"WARN: Istio/{_OPENSHIFT_GATEWAY_ISTIO_NAME} not found via istio or "
+            f"istios.sailoperator.io: {last_err}",
+            file=sys.stderr,
+            flush=True,
+        )
+    return None, "missing"
 
 
 def _openshift_gateway_istio_doc() -> dict | None:
@@ -858,6 +882,58 @@ def wait_openshift_gateway_istio_ready(
     return False
 
 
+_OPENSHIFT_GATEWAY_CONTROLLER_DEPLOYMENTS = (
+    "istiod-openshift-gateway",
+    "data-science-gateway-data-science-gateway-class",
+)
+
+
+def wait_openshift_gateway_controller_deployments(
+    *,
+    namespace: str = _OPENSHIFT_GATEWAY_NS,
+    timeout_sec: int = 300,
+) -> bool:
+    """Wait for istiod and data-science-gateway controller deployments (rh-ai route backend)."""
+    ready = True
+    for name in _OPENSHIFT_GATEWAY_CONTROLLER_DEPLOYMENTS:
+        r = oc_run(
+            [
+                "wait",
+                "--for=condition=available",
+                f"--timeout={timeout_sec}s",
+                f"deployment/{name}",
+                "-n",
+                namespace,
+            ],
+            check=False,
+            capture_output=True,
+            timeout=timeout_sec + 30,
+        )
+        if r.returncode == 0:
+            print(f"✓ deployment/{name} in {namespace} is Available", flush=True)
+            continue
+        err = (r.stderr or r.stdout or "").strip()
+        print(
+            f"WARN: deployment/{name} in {namespace} not Available within {timeout_sec}s"
+            f"{f': {err}' if err else ''}",
+            file=sys.stderr,
+            flush=True,
+        )
+        ready = False
+    return ready
+
+
+def ensure_openshift_gateway_istio_for_verify(namespace: str = "openshift-operators") -> bool:
+    """verify-operator-ready: patch EOL openshift-gateway Istio and wait for controller pods."""
+    deploy_wait = int(os.environ.get("OPENSHIFT_GATEWAY_CONTROLLER_WAIT_SEC", "300"))
+    if openshift_gateway_istio_stack_ready():
+        return wait_openshift_gateway_controller_deployments(timeout_sec=deploy_wait)
+    reconcile_openshift_gateway_istio_eol(namespace)
+    if not wait_openshift_gateway_istio_ready(timeout_sec=_openshift_gateway_istio_wait_sec()):
+        return False
+    return wait_openshift_gateway_controller_deployments(timeout_sec=deploy_wait)
+
+
 def ensure_openshift_gateway_istio_for_dep_operators(namespace: str = "openshift-operators") -> bool:
     """install-dep-operators: fix EOL openshift-gateway Istio before RHOAI gateway stack install."""
     target_version = _servicemesh_istio_version_from_csv(namespace)
@@ -867,7 +943,7 @@ def ensure_openshift_gateway_istio_for_dep_operators(namespace: str = "openshift
     if status == "missing":
         return True
     if status == "error" or not doc:
-        return False
+        return _openshift_gateway_istio_stack_ready(target_version=target_version)
     if _openshift_gateway_istio_reconciled(doc):
         if target_version:
             istio_version = str((doc.get("spec") or {}).get("version") or "").strip()
@@ -934,6 +1010,19 @@ def reconcile_servicemesh_olm_conflicts(namespace: str = "openshift-operators") 
     except json.JSONDecodeError:
         return 0
 
+    upgrade_stale_csvs: set[str] = set()
+    for item in sub_doc.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        name = ((item.get("metadata") or {}).get("name") or "").lower()
+        if not _is_servicemesh_csv_name(name):
+            continue
+        status = item.get("status") or {}
+        current_csv = str(status.get("currentCSV") or "").strip()
+        installed_csv = str(status.get("installedCSV") or "").strip()
+        if current_csv and installed_csv and current_csv != installed_csv:
+            upgrade_stale_csvs.add(installed_csv)
+
     orphan_names: list[str] = []
     for item in csv_doc.get("items") or []:
         if not isinstance(item, dict):
@@ -947,6 +1036,8 @@ def reconcile_servicemesh_olm_conflicts(namespace: str = "openshift-operators") 
         if csv_name in target_csvs and phase in ("Installing", "Replacing"):
             continue
         if phase in ("Pending", "Failed") and csv_name not in target_csvs:
+            orphan_names.append(csv_name)
+        elif phase == "Pending" and csv_name in upgrade_stale_csvs:
             orphan_names.append(csv_name)
         elif resolution_failed and phase == "Pending" and len(target_csvs) == 1 and csv_name in target_csvs:
             orphan_names.append(csv_name)

@@ -86,9 +86,21 @@ class InstallMinimalDepsTest(unittest.TestCase):
             return_value=0,
         )
         cls._reconcile_servicemesh_patcher.start()
+        cls._approve_installplans_patcher = patch(
+            "install.install_minimal_deps.approve_pending_installplans",
+            return_value=0,
+        )
+        cls._approve_installplans_patcher.start()
+        cls._wait_servicemesh_csv_patcher = patch(
+            "install.install_minimal_deps.wait_servicemesh_csv_succeeded",
+            return_value=True,
+        )
+        cls._wait_servicemesh_csv_patcher.start()
 
     @classmethod
     def tearDownClass(cls) -> None:
+        cls._wait_servicemesh_csv_patcher.stop()
+        cls._approve_installplans_patcher.stop()
         cls._reconcile_servicemesh_patcher.stop()
         cls._openshift_gateway_patcher.stop()
         cls._jobset_lws_patcher.stop()
@@ -559,6 +571,24 @@ class InstallMinimalDepsTest(unittest.TestCase):
                 ) as reconcile:
                     self.assertEqual(main(), 0)
                     reconcile.assert_called_once()
+
+    def test_maas_bvt_prereqs_defer_aigateway_when_maas_api_missing(self) -> None:
+        self._maas_bvt_patcher.stop()
+        try:
+            with patch("components.maas_billing.database.ensure_maas_database"):
+                with patch(
+                    "components.maas_billing.common.maas_api_deployment_exists",
+                    return_value=False,
+                ):
+                    with patch(
+                        "install.install_minimal_deps.ensure_dsc_models_as_service",
+                    ) as dsc:
+                        from install.install_minimal_deps import _ensure_maas_bvt_prerequisites
+
+                        _ensure_maas_bvt_prerequisites()
+                        dsc.assert_called_once_with(wait_for_aigateway=False)
+        finally:
+            self._maas_bvt_patcher.start()
 
 
 if __name__ == "__main__":

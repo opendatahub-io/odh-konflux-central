@@ -10,7 +10,7 @@ spec:
 
     - Test framework: golang ginkgo suite.
     - Image: quay.io/opendatahub/opendatahub-operator-e2e:main.
-    - Smoke command: bash run_e2e_tests.sh.
+    - Smoke command: bash run_e2e_tests.sh '--test-component=!sparkoperator'.
     - Timeouts: smoke 45m, tier1 90m.
     - Min pass rate for Tekton success: 97%.
     - Version gate: minRhoai 3.3.

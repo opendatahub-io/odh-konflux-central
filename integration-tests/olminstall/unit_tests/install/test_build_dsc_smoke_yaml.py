@@ -93,11 +93,24 @@ class BuildDscSmokeYamlTest(unittest.TestCase):
         yaml_doc = _build_dsc_smoke_yaml("ogx")
         self.assertIn("    ogx:\n      managementState: Managed", yaml_doc)
 
-    def test_distributed_workloads_enables_training_ray(self) -> None:
-        yaml_doc = _build_dsc_smoke_yaml("distributed_workloads")
-        self.assertIn("    trainingoperator:\n      managementState: Managed", yaml_doc)
+    def test_distributed_workloads_enables_trainer_ray_on_36(self) -> None:
+        yaml_doc = _build_dsc_smoke_yaml(
+            "distributed_workloads",
+            operator_version="3.6.0-ea.1",
+        )
+        self.assertIn("    trainer:\n      managementState: Managed", yaml_doc)
         self.assertIn("    ray:\n      managementState: Managed", yaml_doc)
+        self.assertIn("    trainingoperator:\n      managementState: Removed", yaml_doc)
         self.assertIn("    kueue:\n      managementState: Removed", yaml_doc)
+
+    def test_distributed_workloads_pre35_includes_trainingoperator(self) -> None:
+        yaml_doc = _build_dsc_smoke_yaml(
+            "distributed_workloads",
+            operator_version="3.4.0",
+        )
+        self.assertIn("    trainingoperator:\n      managementState: Managed", yaml_doc)
+        self.assertIn("    trainer:\n      managementState: Managed", yaml_doc)
+        self.assertIn("    ray:\n      managementState: Managed", yaml_doc)
 
     def test_spark_operator_enables_sparkoperator(self) -> None:
         yaml_doc = _build_dsc_smoke_yaml("spark_operator")

@@ -10,6 +10,7 @@ from suite.trigger_param_registry import (
     apply_trigger_param_resolution,
     build_trigger_context_from_args,
     resolve_trigger_params,
+    resolve_trigger_patch_plan,
 )
 
 
@@ -134,6 +135,32 @@ class TriggerParamRegistryTests(unittest.TestCase):
         apply_trigger_param_resolution(args, its_manifest_path=None)
         self.assertFalse(args.cleanup)
         self.assertTrue(args.cleanup_opt_out)
+
+    def test_components_from_committed_its_after_stage_clear(self) -> None:
+        ctx = TriggerContext(
+            product="rhoai",
+            rhoai_version="",
+            tests="bvt,smoke",
+            install_dependencies=False,
+            external_kubeconfig=False,
+            committed_its_params={"COMPONENTS": "dashboard_cypress,platform"},
+        )
+        resolved = resolve_trigger_params(ctx, its_params={}, explicit={})
+        self.assertEqual(resolved["COMPONENTS"], "dashboard_cypress,platform")
+        _, patch_plan = resolve_trigger_patch_plan(ctx, its_params={}, explicit={})
+        self.assertTrue(patch_plan["COMPONENTS"])
+
+    def test_test_gates_from_committed_its_patches_non_default(self) -> None:
+        ctx = TriggerContext(
+            product="rhoai",
+            rhoai_version="",
+            tests="smoke",
+            install_dependencies=False,
+            external_kubeconfig=False,
+            committed_its_params={"TEST_GATES": "smoke"},
+        )
+        _, patch_plan = resolve_trigger_patch_plan(ctx, its_params={}, explicit={})
+        self.assertTrue(patch_plan["TEST_GATES"])
 
     def test_build_trigger_context_from_args(self) -> None:
         import argparse

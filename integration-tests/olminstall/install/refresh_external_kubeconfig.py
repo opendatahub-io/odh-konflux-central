@@ -53,8 +53,9 @@ def refresh_external_kubeconfig() -> int:
     )
 
     refreshed = False
+    refresh_source = ""
     try:
-        refreshed = refresh_working_kubeconfig_from_credentials(
+        refreshed, refresh_source = refresh_working_kubeconfig_from_credentials(
             namespace=namespace,
             cluster_source=cluster_source,
             bootstrap_path=bootstrap_path,
@@ -66,7 +67,10 @@ def refresh_external_kubeconfig() -> int:
         return 1
 
     if refreshed:
-        print(f"Refreshed external kubeconfig via htpasswd Secret {creds_secret!r}")
+        if refresh_source:
+            print(f"Refreshed external kubeconfig via {refresh_source}")
+        else:
+            print(f"Refreshed external kubeconfig via htpasswd Secret {creds_secret!r}")
     elif bootstrap_path.is_file():
         print(
             f"No credentials Secret {creds_secret!r}; using bootstrap kubeconfig from {cluster_source!r}"

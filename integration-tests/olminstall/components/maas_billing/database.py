@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote_plus, urlparse, urlunparse
 
 from install.dsc_install import oc_run
 from install.dependency_operators import unblock_terminating_namespace
@@ -23,10 +23,13 @@ from components.maas_billing.common import (
     _MODELS_AS_SERVICE_REPO,
     _kubectl_shim_dir,
     _secret_exists,
+    maas_api_deployment_exists,
     maas_api_namespace,
 )
 
 _MAAS_INFRA_NS = "odh-ai-gateway-infra"
+_RHOAI_GATEWAY_INFRA_NS = "redhat-ai-gateway-infra"
+_OPERATOR_MAAS_POSTGRES_DEPLOY = "maas-postgres"
 _MAAS_TENANT_NS = "models-as-a-service"
 _DEFAULT_MAAS_INFRA_CLEANUP_TIMEOUT_SEC = 300
 
@@ -58,9 +61,32 @@ def _maas_postgres_service() -> str:
     return os.environ.get("MAAS_POSTGRES_SERVICE", "postgres").strip() or "postgres"
 
 
+def _deployment_exists(namespace: str, name: str) -> bool:
+    r = oc_run(
+        ["get", "deployment", name, "-n", namespace],
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    return r.returncode == 0
+
+
+def _maas_postgres_location() -> tuple[str, str]:
+    """Postgres backing maas-api: operator maas-postgres (RHOAI 3.5+) or setup-database.sh postgres."""
+    if _deployment_exists(_RHOAI_GATEWAY_INFRA_NS, _OPERATOR_MAAS_POSTGRES_DEPLOY):
+        return _RHOAI_GATEWAY_INFRA_NS, _OPERATOR_MAAS_POSTGRES_DEPLOY
+    return _maas_infra_namespace(), _maas_postgres_service()
+
+
+def _postgres_service_for_infra_ns(infra_ns: str) -> str:
+    if infra_ns == _RHOAI_GATEWAY_INFRA_NS:
+        return _OPERATOR_MAAS_POSTGRES_DEPLOY
+    return _maas_postgres_service()
+
+
 def _postgres_host_for_apps_namespace(infra_ns: str | None = None) -> str:
     ns = (infra_ns or _maas_infra_namespace()).strip()
-    service = _maas_postgres_service()
+    service = _postgres_service_for_infra_ns(ns)
     return f"{service}.{ns}.svc.cluster.local"
 
 
@@ -68,10 +94,11 @@ def _rewrite_db_connection_url_for_apps_namespace(
     connection_url: str,
     *,
     infra_ns: str | None = None,
+    postgres_service: str | None = None,
 ) -> str:
     """maas-api runs in apps ns; Postgres from setup-database.sh is in the infra ns."""
     infra = (infra_ns or _maas_infra_namespace()).strip()
-    service = _maas_postgres_service()
+    service = (postgres_service or _postgres_service_for_infra_ns(infra)).strip()
     target_host = _postgres_host_for_apps_namespace(infra)
     parsed = urlparse(connection_url)
     if not parsed.hostname:
@@ -118,6 +145,32 @@ def _repair_apps_maas_db_connection_url_if_needed() -> bool:
     return True
 
 
+def _maas_api_deployment_available_replicas() -> int:
+    """Ready replicas for maas-api when the deployment exists, else 0."""
+    for ns in _MAAS_API_NS_CANDIDATES:
+        r = oc_run(
+            [
+                "get",
+                "deployment",
+                "maas-api",
+                "-n",
+                ns,
+                "-o",
+                "jsonpath={.status.availableReplicas}",
+            ],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if r.returncode != 0:
+            continue
+        try:
+            return int((r.stdout or "0").strip() or "0")
+        except ValueError:
+            return 0
+    return 0
+
+
 def _restart_maas_api_after_db_config() -> None:
     """Roll maas-api so it picks up maas-db-config in redhat-ods-applications."""
     ns = maas_api_namespace()
@@ -136,6 +189,14 @@ def _restart_maas_api_after_db_config() -> None:
 
     rollout_timeout = int(os.environ.get("MAAS_API_ROLLOUT_TIMEOUT_SEC", "300"))
     ready_timeout = int(os.environ.get("MAAS_API_READY_TIMEOUT_SEC", "600"))
+    if _maas_api_deployment_available_replicas() < 1:
+        print(
+            f"NOTE: maas-api in {ns} not yet available; waiting for first rollout "
+            f"instead of restart after {_MAAS_DB_SECRET} update",
+            flush=True,
+        )
+        _wait_maas_api_deployment_ready(timeout_sec=ready_timeout)
+        return
     print(
         f"Rolling out maas-api in {ns} after {_MAAS_DB_SECRET} update...",
         flush=True,
@@ -148,19 +209,20 @@ def _restart_maas_api_after_db_config() -> None:
     _wait_maas_api_deployment_ready(timeout_sec=ready_timeout)
 
 
-def _promote_maas_db_secret_to_apps_namespace() -> bool:
-    """Copy maas-db-config into redhat-ods-applications when setup-database.sh left it in infra."""
+def _promote_maas_db_secret_from_infra(infra_ns: str) -> bool:
+    """Copy maas-db-config from an infra namespace into redhat-ods-applications."""
     if _secret_exists(_MAAS_APPS_NS, _MAAS_DB_SECRET):
         return True
-    infra_ns = _maas_infra_namespace()
     if not _namespace_exists(infra_ns) or not _secret_exists(infra_ns, _MAAS_DB_SECRET):
         return False
     connection_url = _read_secret_data_key(infra_ns, _MAAS_DB_SECRET, "DB_CONNECTION_URL")
     if not connection_url:
         return False
+    service = _postgres_service_for_infra_ns(infra_ns)
     connection_url = _rewrite_db_connection_url_for_apps_namespace(
         connection_url,
         infra_ns=infra_ns,
+        postgres_service=service,
     )
     print(
         f"Promoting {_MAAS_DB_SECRET} from {infra_ns} to {_MAAS_APPS_NS} "
@@ -169,6 +231,104 @@ def _promote_maas_db_secret_to_apps_namespace() -> bool:
     )
     _create_maas_db_config_secret(_MAAS_APPS_NS, connection_url)
     return _secret_exists(_MAAS_APPS_NS, _MAAS_DB_SECRET)
+
+
+def _promote_maas_db_secret_to_apps_namespace() -> bool:
+    """Copy maas-db-config into redhat-ods-applications when setup-database.sh left it in infra."""
+    infra_ns, _ = _maas_postgres_location()
+    return _promote_maas_db_secret_from_infra(infra_ns)
+
+
+def _operator_maas_postgres_active() -> bool:
+    infra_ns, deploy = _maas_postgres_location()
+    return infra_ns == _RHOAI_GATEWAY_INFRA_NS and deploy == _OPERATOR_MAAS_POSTGRES_DEPLOY
+
+
+def _defer_maas_db_config_until_operator_install() -> None:
+    """Skip setup-database.sh when operator maas-postgres owns the DB on RHOAI 3.5+."""
+    print(
+        f"NOTE: operator {_OPERATOR_MAAS_POSTGRES_DEPLOY} in {_RHOAI_GATEWAY_INFRA_NS}; "
+        f"skipping setup-database.sh (legacy {_MAAS_INFRA_NS} postgres must not block). "
+        f"Deferring {_MAAS_DB_SECRET} until install-rhoai / prepare-components",
+        flush=True,
+    )
+
+
+def _read_operator_maas_postgres_credentials() -> tuple[str, str, str] | None:
+    """Read user/password/db from operator maas-postgres deployment env."""
+    infra_ns = _RHOAI_GATEWAY_INFRA_NS
+    deploy = _OPERATOR_MAAS_POSTGRES_DEPLOY
+    if not _postgres_deploy_ready(infra_ns, deploy):
+        return None
+    proc = oc_run(
+        ["get", "deployment", deploy, "-n", infra_ns, "-o", "json"],
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        body = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    containers = body.get("spec", {}).get("template", {}).get("spec", {}).get("containers") or []
+    if not containers:
+        return None
+    env_map: dict[str, str] = {}
+    for item in containers[0].get("env") or []:
+        name = (item.get("name") or "").strip()
+        if name and "value" in item:
+            env_map[name] = str(item["value"])
+    user = env_map.get("POSTGRESQL_USER") or env_map.get("POSTGRES_USER") or "maas"
+    password = env_map.get("POSTGRESQL_PASSWORD") or env_map.get("POSTGRES_PASSWORD") or ""
+    dbname = env_map.get("POSTGRESQL_DATABASE") or env_map.get("POSTGRES_DB") or "maas"
+    if not password:
+        return None
+    return user, password, dbname
+
+
+def _build_operator_maas_db_connection_url() -> str | None:
+    creds = _read_operator_maas_postgres_credentials()
+    if creds is None:
+        return None
+    user, password, dbname = creds
+    host = _postgres_host_for_apps_namespace(_RHOAI_GATEWAY_INFRA_NS)
+    return (
+        f"postgresql://{quote_plus(user)}:{quote_plus(password)}"
+        f"@{host}:5432/{quote_plus(dbname)}"
+    )
+
+
+def _ensure_operator_maas_db_config_secrets() -> bool:
+    """Create maas-db-config for operator postgres (maas-api reads gateway infra NS)."""
+    connection_url = _build_operator_maas_db_connection_url()
+    if not connection_url:
+        return False
+    gateway_url = connection_url
+    apps_url = _rewrite_db_connection_url_for_apps_namespace(
+        connection_url,
+        infra_ns=_RHOAI_GATEWAY_INFRA_NS,
+    )
+    targets = (
+        (_RHOAI_GATEWAY_INFRA_NS, gateway_url),
+        (_MAAS_APPS_NS, apps_url),
+    )
+    for ns, url in targets:
+        if not _namespace_exists(ns):
+            continue
+        if _secret_exists(ns, _MAAS_DB_SECRET):
+            continue
+        print(
+            f"Creating {_MAAS_DB_SECRET} in {ns} from operator "
+            f"{_OPERATOR_MAAS_POSTGRES_DEPLOY} credentials...",
+            flush=True,
+        )
+        _create_maas_db_config_secret(ns, url)
+    return (
+        _secret_exists(_RHOAI_GATEWAY_INFRA_NS, _MAAS_DB_SECRET)
+        and _secret_exists(_MAAS_APPS_NS, _MAAS_DB_SECRET)
+    )
 
 
 def _create_maas_db_config_secret(namespace: str, connection_url: str) -> None:
@@ -259,7 +419,7 @@ def _wait_namespace_deleted(name: str, *, timeout_sec: int) -> None:
 
 def _delete_maas_db_secrets() -> None:
     infra_ns = _maas_infra_namespace()
-    for ns in (_MAAS_APPS_NS, infra_ns):
+    for ns in (_MAAS_APPS_NS, infra_ns, _RHOAI_GATEWAY_INFRA_NS):
         if not _secret_exists(ns, _MAAS_DB_SECRET):
             continue
         oc_run(
@@ -285,13 +445,60 @@ def _delete_namespace_if_present(name: str, *, wait: bool, timeout_sec: int) -> 
         _wait_namespace_deleted(name, timeout_sec=timeout_sec)
 
 
+def _reset_maas_postgres_database(infra_ns: str, deploy: str) -> None:
+    """Drop/recreate the maas DB when operator Postgres survives pooled-cluster reruns."""
+    if not _postgres_deploy_ready(infra_ns, deploy):
+        return
+    print(
+        f"Resetting stale MaaS Postgres database in {infra_ns}/{deploy}...",
+        flush=True,
+    )
+    for sql in (
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        "WHERE datname = 'maas' AND pid <> pg_backend_pid();",
+        "DROP DATABASE IF EXISTS maas;",
+        "CREATE DATABASE maas OWNER maas;",
+    ):
+        proc = oc_run(
+            [
+                "exec",
+                "-n",
+                infra_ns,
+                f"deploy/{deploy}",
+                "--",
+                "psql",
+                "-U",
+                "postgres",
+                "-d",
+                "postgres",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                sql,
+            ],
+            check=False,
+            capture_output=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(
+                f"Could not reset MaaS Postgres in {infra_ns}/{deploy}: {err or sql}"
+            )
+    print(f"✓ Reset MaaS Postgres database in {infra_ns}/{deploy}", flush=True)
+
+
 def cleanup_maas_postgres_infra(*, wait: bool = True) -> None:
     """Remove MaaS Postgres/DB secrets and infra namespace before operator cleanup."""
     timeout_sec = int(
         os.environ.get("MAAS_INFRA_CLEANUP_TIMEOUT_SEC", str(_DEFAULT_MAAS_INFRA_CLEANUP_TIMEOUT_SEC))
     )
     _delete_maas_db_secrets()
-    _delete_namespace_if_present(_maas_infra_namespace(), wait=wait, timeout_sec=timeout_sec)
+    pg_ns, pg_deploy = _maas_postgres_location()
+    if pg_ns == _RHOAI_GATEWAY_INFRA_NS:
+        _reset_maas_postgres_database(pg_ns, pg_deploy)
+    else:
+        _delete_namespace_if_present(_maas_infra_namespace(), wait=wait, timeout_sec=timeout_sec)
 
 
 def cleanup_maas_tenant_namespace(*, wait: bool = True) -> None:
@@ -317,12 +524,13 @@ def cleanup_maas_database_infra(*, wait: bool = True) -> None:
     cleanup_maas_tenant_namespace(wait=wait)
 
 
-def _postgres_deploy_ready(infra_ns: str) -> bool:
+def _postgres_deploy_ready(infra_ns: str, deploy: str | None = None) -> bool:
+    deploy_name = deploy or _maas_postgres_service()
     r = oc_run(
         [
             "get",
             "deployment",
-            _maas_postgres_service(),
+            deploy_name,
             "-n",
             infra_ns,
             "-o",
@@ -341,15 +549,15 @@ def _postgres_deploy_ready(infra_ns: str) -> bool:
 
 
 def _read_maas_postgres_schema_version() -> int | None:
-    infra_ns = _maas_infra_namespace()
-    if not _namespace_exists(infra_ns) or not _postgres_deploy_ready(infra_ns):
+    infra_ns, deploy = _maas_postgres_location()
+    if not _namespace_exists(infra_ns) or not _postgres_deploy_ready(infra_ns, deploy):
         return None
     proc = oc_run(
         [
             "exec",
             "-n",
             infra_ns,
-            f"deploy/{_maas_postgres_service()}",
+            f"deploy/{deploy}",
             "--",
             "psql",
             "-U",
@@ -400,18 +608,57 @@ def _maas_api_deployment_ready() -> bool:
     return False
 
 
-def _needs_maas_postgres_reset() -> bool:
-    version = _read_maas_postgres_schema_version()
-    if version is None or version <= 0:
+def _maas_postgres_has_missing_schema() -> bool:
+    """True when infra Postgres is up but schema_migrations was never created."""
+    infra_ns, deploy = _maas_postgres_location()
+    if not _postgres_deploy_ready(infra_ns, deploy):
         return False
+    proc = oc_run(
+        [
+            "exec",
+            "-n",
+            infra_ns,
+            f"deploy/{deploy}",
+            "--",
+            "psql",
+            "-U",
+            "maas",
+            "-d",
+            "maas",
+            "-tAc",
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        ],
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    if proc.returncode == 0:
+        return False
+    combined = f"{proc.stderr or ''}\n{proc.stdout or ''}".lower()
+    return "schema_migrations" in combined and "does not exist" in combined
+
+
+def _needs_maas_postgres_reset() -> bool:
     if _maas_api_deployment_ready():
         return False
-    print(
-        f"WARN: MaaS Postgres schema_migrations version={version} with maas-api not ready "
-        "(likely incompatible with current maas-api image)",
-        flush=True,
-    )
-    return True
+    version = _read_maas_postgres_schema_version()
+    if version is not None and version > 0:
+        print(
+            f"WARN: MaaS Postgres schema_migrations version={version} with maas-api not ready "
+            "(likely incompatible with current maas-api image)",
+            flush=True,
+        )
+        return True
+    if _maas_postgres_has_missing_schema():
+        # Fresh install: postgres comes up before maas-api runs migrations. Resetting here
+        # deletes odh-ai-gateway-infra while maas-api is still starting (iter59 mtqfx).
+        print(
+            "NOTE: MaaS Postgres has no schema_migrations yet; "
+            "maas-api creates them on startup — skipping infra reset",
+            flush=True,
+        )
+        return False
+    return False
 
 
 def _apps_namespace_ready_for_secrets() -> bool:
@@ -512,6 +759,18 @@ def ensure_maas_database() -> None:
         _create_maas_db_config_secret(_MAAS_APPS_NS, external_url)
         print(f"✓ MaaS database secret {_MAAS_APPS_NS}/{_MAAS_DB_SECRET} created", flush=True)
         _restart_maas_api_after_db_config()
+        return
+
+    if _operator_maas_postgres_active():
+        if _ensure_operator_maas_db_config_secrets():
+            print(
+                f"✓ MaaS database ready (operator {_OPERATOR_MAAS_POSTGRES_DEPLOY} "
+                f"in {_RHOAI_GATEWAY_INFRA_NS})",
+                flush=True,
+            )
+            _restart_maas_api_after_db_config()
+            return
+        _defer_maas_db_config_until_operator_install()
         return
 
     repo = _clone_models_as_a_service()

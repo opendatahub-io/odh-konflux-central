@@ -304,7 +304,7 @@ def main() -> int:
     artifacts_dir = _artifacts_dir()
     os.environ.setdefault("ARTIFACTS_DIR", str(artifacts_dir))
     prepare_kubeconfig_auth_for_tests(tekton_kubeconfig_path=tekton_kubeconfig)
-    from k8s.jenkins_vault import ensure_runtime_vault_env
+    from k8s.vault_runtime import ensure_runtime_vault_env
 
     ensure_runtime_vault_env()
 
@@ -574,17 +574,22 @@ def main() -> int:
 
         run_command = prepend_kfto_smoke_patch(run_command)
     elif filter_id == "trainer":
-        from components.trainer.smoke import prepend_trainer_smoke_patch
+        from components.trainer.smoke import prepend_trainer_smoke_patch_if_ephc
 
-        run_command = prepend_trainer_smoke_patch(run_command)
+        run_command = prepend_trainer_smoke_patch_if_ephc(run_command)
     elif filter_id == "kuberay":
-        from components.kuberay.auth_options import prepend_kuberay_auth_options_skip
+        from components.kuberay.rhoai_images import prepend_kuberay_smoke_patch
 
-        run_command = prepend_kuberay_auth_options_skip(run_command)
+        run_command = prepend_kuberay_smoke_patch(run_command)
     elif filter_id == "mlflow":
-        from components.mlflow.ephc_tracking import prepend_mlflow_ephc_tracking
+        from components.mlflow.ephc_tracking import (
+            prepend_mlflow_ephc_tracking,
+            prepend_mlflow_run_wall_clock,
+        )
 
         run_command = prepend_mlflow_ephc_tracking(run_command)
+        if test_timeout_sec:
+            run_command = prepend_mlflow_run_wall_clock(run_command, test_timeout_sec)
     elif filter_id == "platform":
         from components.platform.smoke import prepend_platform_smoke_command
 

@@ -38,14 +38,17 @@ class ClusterApiUnreachableTextTest(unittest.TestCase):
 
 class ClusterApiUnreachableReasonTest(unittest.TestCase):
     @patch("suite.cluster_api_health.oc_run")
-    def test_probe_returns_reason_on_dns_failure(self, mock_oc_run: MagicMock) -> None:
+    def test_probe_retries_before_reporting_dns_failure(self, mock_oc_run: MagicMock) -> None:
         mock_oc_run.return_value = MagicMock(
             returncode=1,
             stderr="Unable to connect to the server: dial tcp: lookup x: no such host",
             stdout="",
         )
-        reason = cluster_api_unreachable_reason()
+        with patch("suite.cluster_api_health.time.sleep") as mock_sleep:
+            reason = cluster_api_unreachable_reason()
         self.assertIn("cluster API unreachable", reason)
+        self.assertEqual(mock_oc_run.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
 
     @patch("suite.cluster_api_health.oc_run")
     def test_probe_empty_when_cluster_responds(self, mock_oc_run: MagicMock) -> None:
@@ -80,8 +83,11 @@ class OperatorWebhookUnavailableReasonTest(unittest.TestCase):
     @patch("suite.cluster_api_health.oc_run")
     def test_detects_missing_endpoints(self, mock_oc_run: MagicMock, _mock_discover: MagicMock) -> None:
         mock_oc_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        reason = operator_admission_webhook_unavailable_reason()
+        with patch("suite.cluster_api_health.time.sleep") as mock_sleep:
+            reason = operator_admission_webhook_unavailable_reason()
         self.assertIn("webhook has no endpoints", reason)
+        self.assertEqual(mock_oc_run.call_count, 3)
+        self.assertGreaterEqual(mock_sleep.call_count, 2)
 
     @patch("install.dsc_install._discover_operator_admission_webhook_service", return_value="rhods-operator-service")
     @patch("suite.cluster_api_health.oc_run")
@@ -166,19 +172,36 @@ class OpenshiftGuestRhAiRouteTektonUnreachableTest(unittest.TestCase):
 
 
 class ClusterSmokeInfraBlockedReasonTest(unittest.TestCase):
+    @patch("suite.cluster_api_health._clear_cluster_api_unreachable_marker")
+    @patch("suite.cluster_api_health.cluster_api_unreachable_reason", return_value="")
     @patch("suite.cluster_api_health._persist_cluster_api_unreachable")
+    @patch("suite.cluster_api_health._prior_cluster_api_unreachable_reason", return_value="prior elb death")
+    def test_clears_stale_marker_when_api_recovers(
+        self,
+        _mock_prior: MagicMock,
+        mock_persist: MagicMock,
+        mock_api: MagicMock,
+        mock_clear: MagicMock,
+    ) -> None:
+        with patch(
+            "suite.cluster_api_health._extended_ephc_infra_probes_enabled",
+            return_value=False,
+        ):
+            self.assertEqual(cluster_smoke_infra_blocked_reason(), "")
+        mock_api.assert_called_once_with(probe=True)
+        mock_clear.assert_called_once_with()
+        mock_persist.assert_not_called()
+
     @patch("suite.cluster_api_health._prior_cluster_api_unreachable_reason", return_value="prior elb death")
     def test_returns_prior_marker_without_probe(
         self,
         _mock_prior: MagicMock,
-        mock_persist: MagicMock,
     ) -> None:
         with patch(
             "suite.cluster_api_health.cluster_api_unreachable_reason",
         ) as mock_api:
-            self.assertEqual(cluster_smoke_infra_blocked_reason(), "prior elb death")
+            self.assertEqual(cluster_smoke_infra_blocked_reason(probe=False), "prior elb death")
             mock_api.assert_not_called()
-            mock_persist.assert_not_called()
 
     @patch("suite.cluster_api_health._extended_ephc_infra_probes_enabled", return_value=False)
     @patch("suite.cluster_api_health.cluster_api_unreachable_reason")

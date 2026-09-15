@@ -12,6 +12,7 @@ spec:
     - Image: quay.io/opendatahub/distributed-workloads-tests:latest.
     - Smoke command: mkdir -p results && bash run-test.sh --format standard-verbose --junitfile results/xunit_report.xml --junitfile-testsuite-name short --junitfile-testcase-classname relative -- -timeout 60m ./kfto -args -testTier=Smoke.
     - Timeouts: smoke 15m, tier1 45m.
+    - Version gate: maxRhoai 3.5.
   params:
   - name: COMPONENT_ID
     type: string

@@ -53,10 +53,50 @@ def test_repair_payload_pre_processing_deletes_stale_deployment() -> None:
 
 
 def test_cleanup_stale_maas_ingress_workloads_deletes_both_deployments() -> None:
-    with patch.object(mod, "oc_run") as oc_run:
+    with (
+        patch.object(mod, "ensure_maas_controller_openshift_ingress_hpa_rbac"),
+        patch.object(mod, "oc_run") as oc_run,
+    ):
         oc_run.return_value = type("R", (), {"returncode": 0, "stdout": "deleted", "stderr": ""})()
         mod.cleanup_stale_maas_ingress_workloads()
-    assert oc_run.call_count == 2
+    assert oc_run.call_count == 4
+
+
+def test_ensure_maas_controller_openshift_ingress_hpa_rbac_skips_when_can_i_yes() -> None:
+    with (
+        patch.object(mod, "_maas_controller_can_manage_openshift_ingress_hpa", return_value=True),
+        patch.object(mod, "oc_run") as oc_run,
+    ):
+        mod.ensure_maas_controller_openshift_ingress_hpa_rbac()
+        oc_run.assert_not_called()
+
+
+def test_ensure_maas_controller_openshift_ingress_hpa_rbac_checks_every_verb() -> None:
+    with (
+        patch.object(mod, "_HPA_RBAC_RULE", {"verbs": ["get", "patch"]}),
+        patch.object(mod, "oc_run") as oc_run,
+    ):
+        oc_run.return_value = type("R", (), {"returncode": 0, "stdout": "yes", "stderr": ""})()
+        mod._maas_controller_can_manage_openshift_ingress_hpa()
+        assert oc_run.call_count == 2
+        assert oc_run.call_args_list[0][0][0][2] == "get"
+        assert oc_run.call_args_list[1][0][0][2] == "patch"
+
+
+def test_ensure_maas_controller_openshift_ingress_hpa_rbac_applies_role_binding() -> None:
+    with (
+        patch.object(
+            mod,
+            "_maas_controller_can_manage_openshift_ingress_hpa",
+            side_effect=[False, True],
+        ),
+        patch.object(mod, "oc_run") as oc_run,
+    ):
+        oc_run.return_value = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        mod.ensure_maas_controller_openshift_ingress_hpa_rbac()
+        assert oc_run.call_count == 2
+        assert oc_run.call_args_list[0][0][0][:2] == ["apply", "-f"]
+        assert mod._OLMINSTALL_MAAS_INGRESS_RBAC_ROLE in oc_run.call_args_list[0].kwargs["stdin_text"]
 
 
 def test_repair_payload_pre_processing_noop_when_dsc_ready() -> None:
@@ -66,6 +106,7 @@ def test_repair_payload_pre_processing_noop_when_dsc_ready() -> None:
 
 def test_ensure_maas_bbr_pre_processing_skips_without_envoyfilter_crd() -> None:
     with (
+        patch.object(mod, "ensure_maas_controller_openshift_ingress_hpa_rbac"),
         patch.object(mod, "repair_payload_pre_processing_selector_conflict"),
         patch.object(mod, "_envoyfilter_crd_available", return_value=False),
         patch.object(mod, "_envoy_filter_stage_names") as stages,
@@ -76,6 +117,7 @@ def test_ensure_maas_bbr_pre_processing_skips_without_envoyfilter_crd() -> None:
 
 def test_ensure_maas_bbr_pre_processing_skips_without_payload_image() -> None:
     with (
+        patch.object(mod, "ensure_maas_controller_openshift_ingress_hpa_rbac"),
         patch.object(mod, "repair_payload_pre_processing_selector_conflict"),
         patch.object(mod, "_envoyfilter_crd_available", return_value=True),
         patch.object(mod, "_envoy_filter_stage_names", return_value=[]),

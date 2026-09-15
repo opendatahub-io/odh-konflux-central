@@ -22,6 +22,16 @@ smokeComponents:
     keys: [kserve]
   ai_safety:
     keys: [trustyai, kserve]
+  ai_safety_evalhub:
+    keys: [trustyai, kserve]
+  ai_safety_guardrails:
+    keys: [trustyai, kserve]
+  ai_safety_lmeval:
+    keys: [trustyai, kserve]
+  ai_safety_trustyai_operator:
+    keys: [trustyai, kserve]
+  ai_safety_trustyai_service:
+    keys: [trustyai, kserve]
   ai_pipelines:
     keys: [aipipelines]
   kuberay:
@@ -36,7 +46,8 @@ smokeComponents:
     keys: [trainer]
     pre35ExtraKeys: [trainingoperator]
   distributed_workloads:
-    keys: [ray, trainingoperator]
+    keys: [ray, trainer]
+    pre35ExtraKeys: [trainingoperator]
   spark_operator:
     keys: [sparkoperator]
   codeflare_sdk:

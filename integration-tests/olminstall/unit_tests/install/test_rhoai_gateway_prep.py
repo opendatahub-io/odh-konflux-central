@@ -203,6 +203,44 @@ class ServicemeshOlmReconcileTest(unittest.TestCase):
         self.assertIn("delete", delete_call)
         self.assertIn("servicemeshoperator3.v3.2.0", delete_call)
 
+    def test_removes_pending_installed_csv_during_upgrade(self) -> None:
+        sub_json = {
+            "items": [
+                {
+                    "metadata": {"name": "servicemeshoperator3"},
+                    "status": {
+                        "currentCSV": "servicemeshoperator3.v3.4.1",
+                        "installedCSV": "servicemeshoperator3.v3.1.0",
+                    },
+                }
+            ]
+        }
+        csv_json = {
+            "items": [
+                {
+                    "metadata": {"name": "servicemeshoperator3.v3.1.0"},
+                    "status": {"phase": "Pending"},
+                },
+                {
+                    "metadata": {"name": "servicemeshoperator3.v3.4.1"},
+                    "status": {"phase": "Installing"},
+                },
+            ]
+        }
+        with mock.patch.object(gw_mod, "oc_run") as oc_run:
+            oc_run.side_effect = [
+                mock.Mock(returncode=0, stdout=json.dumps(sub_json)),
+                mock.Mock(returncode=0, stdout=json.dumps(csv_json)),
+                mock.Mock(returncode=0, stdout=json.dumps(sub_json)),
+                mock.Mock(returncode=0, stdout=json.dumps(csv_json)),
+                mock.Mock(returncode=0, stdout="", stderr=""),
+                mock.Mock(returncode=0, stdout=json.dumps({"items": []})),
+            ]
+            removed = gw_mod.reconcile_servicemesh_olm_conflicts("openshift-operators")
+        self.assertEqual(removed, 1)
+        delete_call = oc_run.call_args_list[4][0][0]
+        self.assertIn("servicemeshoperator3.v3.1.0", delete_call)
+
     def test_recreate_subscription_when_installplan_missing(self) -> None:
         sub_json = {
             "items": [
@@ -381,6 +419,63 @@ class OpenshiftGatewayIstioTest(unittest.TestCase):
             return_value=(None, "error"),
         ):
             self.assertFalse(gw_mod.ensure_openshift_gateway_istio_for_dep_operators())
+
+    def test_ensure_istio_succeeds_on_probe_error_when_revision_stack_ready(self) -> None:
+        with mock.patch.object(
+            gw_mod,
+            "_servicemesh_istio_version_from_csv",
+            return_value=None,
+        ), mock.patch.object(
+            gw_mod,
+            "_openshift_gateway_istio_stack_ready",
+            side_effect=[False, True],
+        ), mock.patch.object(
+            gw_mod,
+            "_fetch_openshift_gateway_istio_doc",
+            return_value=(None, "error"),
+        ):
+            self.assertTrue(gw_mod.ensure_openshift_gateway_istio_for_dep_operators())
+
+    def test_ensure_istio_for_verify_patches_eol_and_waits_controllers(self) -> None:
+        with mock.patch.object(
+            gw_mod, "openshift_gateway_istio_stack_ready", side_effect=[False, True]
+        ), mock.patch.object(
+            gw_mod, "reconcile_openshift_gateway_istio_eol", return_value=True
+        ), mock.patch.object(
+            gw_mod, "wait_openshift_gateway_istio_ready", return_value=True
+        ), mock.patch.object(
+            gw_mod, "wait_openshift_gateway_controller_deployments", return_value=True
+        ) as wait_dep:
+            self.assertTrue(gw_mod.ensure_openshift_gateway_istio_for_verify())
+        wait_dep.assert_called_once()
+
+    def test_ensure_istio_for_verify_skips_eol_when_stack_ready(self) -> None:
+        with mock.patch.object(
+            gw_mod, "openshift_gateway_istio_stack_ready", return_value=True
+        ), mock.patch.object(
+            gw_mod, "reconcile_openshift_gateway_istio_eol"
+        ) as eol, mock.patch.object(
+            gw_mod, "wait_openshift_gateway_controller_deployments", return_value=True
+        ) as wait_dep:
+            self.assertTrue(gw_mod.ensure_openshift_gateway_istio_for_verify())
+        eol.assert_not_called()
+        wait_dep.assert_called_once()
+
+    def test_fetch_istio_doc_uses_sailoperator_gvr_when_istio_kind_missing(self) -> None:
+        istio_doc = {"metadata": {"name": "openshift-gateway"}, "status": {"state": "Healthy"}}
+        with mock.patch.object(gw_mod, "oc_run") as oc_run:
+            oc_run.side_effect = [
+                mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr='error: the server doesn\'t have a resource type "istio"',
+                ),
+                mock.Mock(returncode=0, stdout=json.dumps(istio_doc)),
+            ]
+            doc, status = gw_mod._fetch_openshift_gateway_istio_doc()
+        self.assertEqual(status, "ok")
+        self.assertEqual(doc, istio_doc)
+        self.assertIn("istios.sailoperator.io", oc_run.call_args_list[1][0][0])
 
     def test_ensure_istio_does_not_short_circuit_on_stale_reconciled_version(self) -> None:
         istio_doc = {

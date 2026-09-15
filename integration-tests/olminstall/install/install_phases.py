@@ -355,7 +355,16 @@ def phase_post_install_dsc(ctx: InstallContext) -> None:
     }
     if serving_ids:
         try:
-            ensure_dsc_models_as_service()
+            from components.maas_billing.common import maas_api_deployment_exists
+
+            wait_aigateway = maas_api_deployment_exists()
+            if not wait_aigateway:
+                print(
+                    "NOTE: maas-api not deployed yet; patching DSC modelsAsAService only and "
+                    "deferring AIGateway reconcile wait to prepare-components-prerequisites",
+                    flush=True,
+                )
+            ensure_dsc_models_as_service(wait_for_aigateway=wait_aigateway)
         except Exception as exc:
             print(
                 f"WARN: post-install aigateway.modelsAsAService patch failed ({exc})",

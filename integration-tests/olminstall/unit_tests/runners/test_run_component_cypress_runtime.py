@@ -937,9 +937,14 @@ class DashboardCypressRuntimeTest(unittest.TestCase):
         ), mock.patch(
             "install.ldap.cluster_has_htpasswd_identity",
             return_value=False,
+        ), mock.patch(
+            "components.dashboard_cypress.runtime._is_ephc_cluster_source",
+            return_value=True,
         ):
             extra = ephc_bearer_extra_cypress_skip_tags(odh_dashboard_url=ephc_url)
-        self.assertEqual(extra, "")
+        self.assertIn("@FeatureStore", extra)
+        self.assertIn("@NotebookAdministration", extra)
+        self.assertIn("@ModelServingCI", extra)
         self.assertEqual(
             ephc_bearer_extra_cypress_skip_tags(
                 odh_dashboard_url="https://rh-ai.apps.rosa.example.com",
@@ -947,7 +952,7 @@ class DashboardCypressRuntimeTest(unittest.TestCase):
             "",
         )
 
-    def test_htpasswd_skips_not_applied_on_ephc_bearer(self) -> None:
+    def test_htpasswd_skips_applied_on_ephc_bearer(self) -> None:
         ephc_url = "https://rh-ai.apps.abc123.prod.konflux-ocp-ci.dev"
         with mock.patch(
             "install.ldap._cluster_is_byoidc",
@@ -958,11 +963,14 @@ class DashboardCypressRuntimeTest(unittest.TestCase):
         ), mock.patch(
             "install.ldap.cluster_has_htpasswd_identity",
             return_value=False,
+        ), mock.patch(
+            "components.dashboard_cypress.runtime._is_ephc_cluster_source",
+            return_value=True,
         ):
             extra = cypress_extra_skip_tags(odh_dashboard_url=ephc_url)
-        self.assertNotIn("@ModelServingCI", extra)
-        self.assertNotIn("@ProjectsCI", extra)
-        self.assertNotIn("@ModelTrainingCI", extra)
+        self.assertIn("@ModelServingCI", extra)
+        self.assertIn("@ProjectsCI", extra)
+        self.assertIn("@FeatureStore", extra)
 
     def test_cypress_extra_skip_tags_merges_byoidc_and_konflux(self) -> None:
         with mock.patch(

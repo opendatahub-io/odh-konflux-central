@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -94,8 +95,8 @@ _DSC_CRD = "datascienceclusters.datasciencecluster.opendatahub.io"
 _DSCI_CRD = "dscinitializations.dscinitialization.opendatahub.io"
 
 
-def dsc_crd_available() -> bool:
-    """True when the cluster exposes the DataScienceCluster CRD."""
+def _probe_dsc_resource_kind() -> tuple[str, bool]:
+    """Resolve oc resource kind; second value True when api-resources probe succeeded."""
     proc = oc_run(
         ["api-resources", "--api-group=datasciencecluster.opendatahub.io", "-o", "name"],
         check=False,
@@ -103,8 +104,41 @@ def dsc_crd_available() -> bool:
         timeout=30,
     )
     if proc.returncode != 0:
+        return "datascienceclusters", False
+    stdout = (proc.stdout or "").lower()
+    if "datascienceclusters" in stdout:
+        return "datascienceclusters", True
+    return "datasciencecluster", True
+
+
+def dsc_crd_available() -> bool:
+    """True when the cluster exposes the DataScienceCluster CRD."""
+    kind, probe_ok = _probe_dsc_resource_kind()
+    if not probe_ok:
         return False
-    return "datascienceclusters" in (proc.stdout or "").lower()
+    return kind == "datascienceclusters"
+
+
+_dsc_resource_kind: str | None = None
+
+
+def reset_dsc_resource_kind_cache() -> None:
+    """Clear cached kind after transient api-resources failure or restore retry."""
+    global _dsc_resource_kind
+    _dsc_resource_kind = None
+
+
+def dsc_resource_kind(*, force_refresh: bool = False) -> str:
+    """oc resource name for DataScienceCluster (plural on CRD v2+ clusters)."""
+    global _dsc_resource_kind
+    if force_refresh:
+        reset_dsc_resource_kind_cache()
+    if _dsc_resource_kind is not None:
+        return _dsc_resource_kind
+    kind, probe_ok = _probe_dsc_resource_kind()
+    if probe_ok:
+        _dsc_resource_kind = kind
+    return kind
 
 _DSC_COMPONENT_KEYS = (
     "dashboard",
@@ -185,8 +219,36 @@ def _probe_update_channel_from_cluster() -> str:
     return (r.stdout or "").strip()
 
 
+_aigateway_maas_crd_probed: bool | None = None
+_aigateway_maas_crd_supported: bool = False
+
+
+def _dsc_crd_supports_aigateway_models_as_a_service() -> bool:
+    """True when DSC exposes spec.components.aigateway.modelsAsAService (not all 3.5 builds)."""
+    global _aigateway_maas_crd_probed, _aigateway_maas_crd_supported
+    if _aigateway_maas_crd_probed is not None:
+        return _aigateway_maas_crd_supported
+    r = oc_run(
+        ["explain", "datasciencecluster.spec.components.aigateway.modelsAsAService"],
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    out = f"{r.stdout or ''}\n{r.stderr or ''}"
+    _aigateway_maas_crd_supported = r.returncode == 0 and "FIELD: modelsAsAService" in out
+    _aigateway_maas_crd_probed = True
+    if not _aigateway_maas_crd_supported:
+        print(
+            "NOTE: DSC has no aigateway.modelsAsAService field; using kserve.modelsAsService for MaaS",
+            flush=True,
+        )
+    return _aigateway_maas_crd_supported
+
+
 def uses_aigateway_models_as_a_service(operator_version: str = "") -> bool:
-    """RHOAI 3.5+ moved MaaS from kserve.modelsAsService to aigateway.modelsAsAService."""
+    """RHOAI 3.5+ may move MaaS to aigateway.modelsAsAService when the DSC CRD exposes it."""
+    if not _dsc_crd_supports_aigateway_models_as_a_service():
+        return False
     ver = (operator_version or _resolve_operator_version_for_dsc()).strip()
     if ver and ver != "(unknown)":
         return rhoai_version_at_least(ver, "3.5")
@@ -676,7 +738,17 @@ def batch_ensure_dsc_managed_for_smoke(component_ids: set[str]) -> None:
         ensure_dsc_component_managed(key)
 
 
-def ensure_dsc_models_as_service() -> None:
+def _aigateway_maas_wait_sec(wait_timeout_sec: int | None = None) -> int:
+    if wait_timeout_sec is not None:
+        return wait_timeout_sec
+    return int(os.environ.get("MAAS_PREP_TIMEOUT_SEC", "900"))
+
+
+def ensure_dsc_models_as_service(
+    *,
+    wait_timeout_sec: int | None = None,
+    wait_for_aigateway: bool = True,
+) -> None:
     """Ensure MaaS is Managed on default-dsc (kserve.modelsAsService pre-3.5; aigateway.modelsAsAService on 3.5+)."""
     if not _cr_exists("datasciencecluster", "default-dsc"):
         print("WARN: default-dsc missing; skipping modelsAsService patch", file=sys.stderr)
@@ -720,7 +792,10 @@ def ensure_dsc_models_as_service() -> None:
         raise RuntimeError(f"Could not patch {label} on default-dsc: {err or 'unknown error'}")
     print(f"✓ Patched DataScienceCluster/default-dsc {label}=Managed")
     if uses_aigateway_models_as_a_service():
-        ensure_aigateway_models_as_a_service_managed()
+        ensure_aigateway_models_as_a_service_managed(
+            wait_timeout_sec=_aigateway_maas_wait_sec(wait_timeout_sec),
+            wait=wait_for_aigateway,
+        )
 
 
 _AIGATEWAY_CR = "default-aigateway"
@@ -743,6 +818,19 @@ def _aigateway_models_as_a_service_state() -> str:
     if r.returncode != 0:
         return ""
     return (r.stdout or "").strip()
+
+
+def _maas_api_deployment_exists() -> bool:
+    for ns in _MAAS_API_DEPLOY_NS:
+        r = oc_run(
+            ["get", "deployment", "maas-api", "-n", ns],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if r.returncode == 0:
+            return True
+    return False
 
 
 def _maas_api_deployment_ready() -> bool:
@@ -771,18 +859,31 @@ def _maas_api_deployment_ready() -> bool:
     return False
 
 
-def ensure_aigateway_models_as_a_service_managed(*, wait_timeout_sec: int = 180) -> None:
+def ensure_aigateway_models_as_a_service_managed(
+    *,
+    wait_timeout_sec: int | None = None,
+    wait: bool = True,
+) -> None:
     """Sync default-aigateway when DSC has modelsAsAService Managed but AIGateway CR lags."""
     if not uses_aigateway_models_as_a_service():
         return
-    deadline = time.time() + wait_timeout_sec
-    while not _cr_exists("aigateway", _AIGATEWAY_CR):
+    timeout_sec = _aigateway_maas_wait_sec(wait_timeout_sec)
+    deadline = time.time() + timeout_sec
+    aigateway_exists = _cr_exists("aigateway", _AIGATEWAY_CR)
+    if not aigateway_exists and not wait:
+        print(
+            f"NOTE: deferring AIGateway/{_AIGATEWAY_CR} modelsAsAService reconcile wait",
+            flush=True,
+        )
+        return
+    while not aigateway_exists:
         if time.time() >= deadline:
             raise RuntimeError(
-                f"AIGateway/{_AIGATEWAY_CR} not found after {wait_timeout_sec}s"
+                f"AIGateway/{_AIGATEWAY_CR} not found after {timeout_sec}s"
             )
         print(f"Waiting for AIGateway/{_AIGATEWAY_CR} CR...", flush=True)
         time.sleep(12)
+        aigateway_exists = _cr_exists("aigateway", _AIGATEWAY_CR)
     remaining = max(1, int(deadline - time.time()))
     state = _aigateway_models_as_a_service_state()
     if state != "Managed":
@@ -802,11 +903,133 @@ def ensure_aigateway_models_as_a_service_managed(*, wait_timeout_sec: int = 180)
                 f"{err or 'unknown error'}"
             )
         print(f"✓ Patched AIGateway/{_AIGATEWAY_CR} modelsAsAService=Managed", flush=True)
+    if not wait:
+        print(
+            f"NOTE: deferring AIGateway/{_AIGATEWAY_CR} modelsAsAService reconcile wait",
+            flush=True,
+        )
+        return
+    from components.maas_billing.bbr_pre_processing import (
+        ensure_maas_controller_openshift_ingress_hpa_rbac,
+    )
+
+    ensure_maas_controller_openshift_ingress_hpa_rbac()
     _wait_aigateway_models_as_a_service_reconciled(timeout_sec=remaining)
+
+
+def _patch_aigateway_models_as_a_service_state(state: str) -> bool:
+    patch_doc = json.dumps(
+        {"spec": {"modelsAsAService": {"managementState": state}}}
+    )
+    r = oc_run(
+        ["patch", "aigateway", _AIGATEWAY_CR, "--type=merge", "-p", patch_doc],
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    return r.returncode == 0
+
+
+def _patch_dsc_aigateway_maas_state(state: str) -> bool:
+    if not _cr_exists("datasciencecluster", "default-dsc"):
+        return False
+    if not uses_aigateway_models_as_a_service():
+        return False
+    patch_doc = json.dumps(
+        {
+            "spec": {
+                "components": {
+                    "aigateway": {
+                        "managementState": "Managed",
+                        "modelsAsAService": {"managementState": state},
+                    }
+                }
+            }
+        }
+    )
+    r = oc_run(
+        ["patch", "datasciencecluster", "default-dsc", "--type=merge", "-p", patch_doc],
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    return r.returncode == 0
+
+
+def _cycle_aigateway_models_as_a_service_state() -> None:
+    """Bump DSC + AIGateway generation when DeploymentsAvailable is stale without maas-api."""
+    print(
+        "NOTE: cycling DSC+AIGateway modelsAsAService Removed→Managed "
+        "to force maas-api reconcile",
+        flush=True,
+    )
+    _patch_dsc_aigateway_maas_state("Removed")
+    if not _patch_aigateway_models_as_a_service_state("Removed"):
+        print(
+            f"WARN: could not patch AIGateway/{_AIGATEWAY_CR} modelsAsAService=Removed",
+            flush=True,
+        )
+        return
+    time.sleep(20)
+    _patch_dsc_aigateway_maas_state("Managed")
+    if _patch_aigateway_models_as_a_service_state("Managed"):
+        print(
+            f"✓ Patched DSC+AIGateway modelsAsAService back to Managed",
+            flush=True,
+        )
+
+
+def _nudge_maas_api_after_aigateway_deployments(*, cycle_spec: bool = False) -> None:
+    """DeploymentsAvailable covers gateway infra; maas-api is reconciled separately."""
+    from components.maas_billing.bbr_pre_processing import (
+        ensure_maas_controller_openshift_ingress_hpa_rbac,
+    )
+
+    ensure_maas_controller_openshift_ingress_hpa_rbac()
+    print(
+        f"NOTE: AIGateway/{_AIGATEWAY_CR} DeploymentsAvailable but maas-api missing; "
+        "nudging operator reconcile",
+        flush=True,
+    )
+    if cycle_spec:
+        _cycle_aigateway_models_as_a_service_state()
+    else:
+        _patch_aigateway_models_as_a_service_state("Managed")
+    nudge_ts = datetime.now(timezone.utc).isoformat()
+    ann_patch = json.dumps(
+        {
+            "metadata": {
+                "annotations": {"olminstall.io/maas-api-nudge": nudge_ts}
+            }
+        }
+    )
+    oc_run(
+        ["patch", "aigateway", _AIGATEWAY_CR, "--type=merge", "-p", ann_patch],
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    restarted: list[str] = []
+    for deployment in ("ai-gateway-operator", "maas-controller"):
+        r = oc_run(
+            ["rollout", "restart", f"deployment/{deployment}", "-n", "redhat-ods-applications"],
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+        if r.returncode == 0:
+            restarted.append(deployment)
+    if restarted:
+        print(
+            f"✓ Restarted {', '.join(restarted)} to reconcile maas-api",
+            flush=True,
+        )
 
 
 def _wait_aigateway_models_as_a_service_reconciled(*, timeout_sec: int) -> None:
     deadline = time.time() + timeout_sec
+    last_nudge = 0.0
+    nudge_count = 0
     while time.time() < deadline:
         if _maas_api_deployment_ready():
             print(
@@ -842,13 +1065,20 @@ def _wait_aigateway_models_as_a_service_reconciled(*, timeout_sec: int) -> None:
         generation = parts[0] if parts else ""
         observed = parts[1] if len(parts) > 1 else ""
         dep_status = (dep_r.stdout or "").strip()
-        if generation and observed and generation == observed and dep_status == "True":
-            print(
-                f"✓ AIGateway/{_AIGATEWAY_CR} reconciled "
-                f"(observedGeneration={observed}, DeploymentsAvailable=True)",
-                flush=True,
-            )
-            return
+        if (
+            generation
+            and observed
+            and generation == observed
+            and dep_status == "True"
+            and not _maas_api_deployment_exists()
+        ):
+            now = time.time()
+            if now - last_nudge >= 60:
+                last_nudge = now
+                nudge_count += 1
+                _nudge_maas_api_after_aigateway_deployments(
+                    cycle_spec=(nudge_count % 3 == 1)
+                )
         if int(time.time()) % 60 < 12:
             print(
                 f"Waiting for AIGateway/{_AIGATEWAY_CR} modelsAsAService reconcile "

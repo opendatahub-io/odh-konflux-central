@@ -8,6 +8,7 @@ import unittest
 from components.mlflow.ephc_tracking import (
     mlflow_ephc_incluster_tracking_shell,
     prepend_mlflow_ephc_tracking,
+    prepend_mlflow_run_wall_clock,
 )
 from suite.its_trigger_params import CLUSTER_SOURCE_EPHC
 
@@ -52,3 +53,13 @@ class MlflowEhcTrackingTest(unittest.TestCase):
             os.environ.pop("CLUSTER_SOURCE", None)
         self.assertIn("FORCE_PORT_FORWARD=true", out)
         self.assertTrue(out.endswith("bash mlflow-tests/images/test-run.sh -m smoke"))
+
+    def test_wall_clock_wraps_run_command(self) -> None:
+        cmd = "bash mlflow-tests/images/test-run.sh -m smoke"
+        out = prepend_mlflow_run_wall_clock(cmd, 900.0)
+        self.assertIn("timeout --foreground -s TERM 900s bash -c", out)
+        self.assertIn(cmd, out)
+
+    def test_wall_clock_skipped_when_zero(self) -> None:
+        cmd = "bash mlflow-tests/images/test-run.sh -m smoke"
+        self.assertEqual(prepend_mlflow_run_wall_clock(cmd, 0), cmd)

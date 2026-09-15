@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
+import time
 from urllib.parse import urlparse
 
 from install.dsc_install import _discover_operator_admission_webhook_service, oc_run
@@ -60,10 +61,14 @@ def _oci_guest_apps_hostname(hostname: str) -> bool:
     return any(marker in host for marker in _OPENSHIFT_CI_EPHEMERAL_API_MARKERS)
 
 
-def cluster_api_unreachable_reason(*, probe: bool = True) -> str:
-    """Return non-empty infra reason when the cluster API cannot be reached."""
-    if not probe:
-        return ""
+_API_PROBE_ATTEMPTS = 3
+_API_PROBE_INTERVAL_SEC = 10.0
+_WEBHOOK_PROBE_ATTEMPTS = 3
+_WEBHOOK_PROBE_INTERVAL_SEC = 10.0
+
+
+def _probe_cluster_api_unreachable_once() -> str:
+    """Single oc probe; empty when the API responds or the error is not infra death."""
     try:
         result = oc_run(
             ["get", "datasciencecluster", "default-dsc"],
@@ -73,13 +78,24 @@ def cluster_api_unreachable_reason(*, probe: bool = True) -> str:
         )
     except Exception as exc:
         return cluster_api_unreachable_text(stderr=str(exc)) or f"{_INFRA_PREFIX}: {exc}"
-    msg = cluster_api_unreachable_text(
+    return cluster_api_unreachable_text(
         stderr=result.stderr or "",
         stdout=result.stdout or "",
     )
-    if msg:
-        return msg
-    return ""
+
+
+def cluster_api_unreachable_reason(*, probe: bool = True) -> str:
+    """Return non-empty infra reason when the cluster API cannot be reached."""
+    if not probe:
+        return ""
+    last = ""
+    for attempt in range(_API_PROBE_ATTEMPTS):
+        last = _probe_cluster_api_unreachable_once()
+        if not last:
+            return ""
+        if attempt < _API_PROBE_ATTEMPTS - 1:
+            time.sleep(_API_PROBE_INTERVAL_SEC)
+    return last
 
 
 def _oc_infra_reason_from_exception(exc: Exception) -> str:
@@ -126,8 +142,15 @@ def operator_admission_webhook_unavailable_reason(*, probe: bool = True) -> str:
         return ""
     ns = (os.environ.get("OPERATOR_NAMESPACE") or "redhat-ods-operator").strip()
     svc = _discover_operator_admission_webhook_service(ns)
-    ready, reason = _service_has_ready_endpoints(service=svc, namespace=ns)
-    return "" if ready else reason
+    last = ""
+    for attempt in range(_WEBHOOK_PROBE_ATTEMPTS):
+        ready, reason = _service_has_ready_endpoints(service=svc, namespace=ns)
+        if ready:
+            return ""
+        last = reason
+        if attempt < _WEBHOOK_PROBE_ATTEMPTS - 1:
+            time.sleep(_WEBHOOK_PROBE_INTERVAL_SEC)
+    return last
 
 
 def _console_hostname_unreachable_reason(hostname: str) -> str:
@@ -254,15 +277,27 @@ def _persist_cluster_api_unreachable(reason: str) -> None:
     mark_cluster_api_unreachable(reason)
 
 
+def _clear_cluster_api_unreachable_marker() -> None:
+    from steps.cluster_prep_state import clear_cluster_api_unreachable_marker
+
+    clear_cluster_api_unreachable_marker()
+
+
 def cluster_smoke_infra_blocked_reason(*, probe: bool = True) -> str:
     """Combined infra probe: API, operator webhook, and console route (EPHC lease death)."""
     prior = _prior_cluster_api_unreachable_reason()
     if prior:
-        return prior
-    reason = cluster_api_unreachable_reason(probe=probe)
-    if reason:
-        _persist_cluster_api_unreachable(reason)
-        return reason
+        if not probe:
+            return prior
+        reason = cluster_api_unreachable_reason(probe=True)
+        if reason:
+            return reason
+        _clear_cluster_api_unreachable_marker()
+    else:
+        reason = cluster_api_unreachable_reason(probe=probe)
+        if reason:
+            _persist_cluster_api_unreachable(reason)
+            return reason
     if not probe or not _extended_ephc_infra_probes_enabled():
         return ""
     reason = operator_admission_webhook_unavailable_reason(probe=probe)

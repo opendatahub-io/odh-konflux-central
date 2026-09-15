@@ -18,6 +18,15 @@ from components.maas_billing.common import (
 
 _BBR_PRE_DEPLOY = "payload-pre-processing"
 _BBR_POST_DEPLOY = "payload-processing"
+_MAAS_CONTROLLER_SA_NS = "redhat-ods-applications"
+_MAAS_CONTROLLER_SA = "maas-controller"
+_OLMINSTALL_MAAS_INGRESS_RBAC_ROLE = "olminstall-maas-controller-payload-processing"
+_OLMINSTALL_MANAGED_BY = "olminstall"
+_HPA_RBAC_RULE = {
+    "apiGroups": ["autoscaling"],
+    "resources": ["horizontalpodautoscalers"],
+    "verbs": ["create", "delete", "get", "list", "patch", "update", "watch"],
+}
 _IPP_PRE_FILTER = "envoy.filters.http.ext_proc.ipp-pre"
 _BBR_PRE_FILTER_LEGACY = "envoy.filters.http.ext_proc.bbr-pre"
 _BBR_POST_FILTER = "envoy.filters.http.ext_proc.bbr"
@@ -216,8 +225,128 @@ def _models_as_service_selector_conflict() -> bool:
 _MAAS_INGRESS_CLEANUP_DEPLOYS = (_BBR_PRE_DEPLOY, _BBR_POST_DEPLOY)
 
 
+def _maas_controller_can_manage_openshift_ingress_hpa() -> bool:
+    """True when maas-controller has every verb required for openshift-ingress HPAs."""
+    for verb in _HPA_RBAC_RULE["verbs"]:
+        r = oc_run(
+            [
+                "auth",
+                "can-i",
+                verb,
+                "horizontalpodautoscalers.autoscaling",
+                "--as",
+                f"system:serviceaccount:{_MAAS_CONTROLLER_SA_NS}:{_MAAS_CONTROLLER_SA}",
+                "-n",
+                _GATEWAY_NS,
+            ],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if r.returncode != 0 or (r.stdout or "").strip().lower() != "yes":
+            return False
+    return True
+
+
+def ensure_maas_controller_openshift_ingress_hpa_rbac() -> None:
+    """Grant maas-controller HPA access in openshift-ingress (trimmed RHOAI ClusterRole gap)."""
+    if _maas_controller_can_manage_openshift_ingress_hpa():
+        print(
+            f"✓ maas-controller can manage HPAs in {_GATEWAY_NS}",
+            flush=True,
+        )
+        return
+    role = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "Role",
+        "metadata": {
+            "name": _OLMINSTALL_MAAS_INGRESS_RBAC_ROLE,
+            "namespace": _GATEWAY_NS,
+            "labels": {"app.kubernetes.io/managed-by": _OLMINSTALL_MANAGED_BY},
+        },
+        "rules": [_HPA_RBAC_RULE],
+    }
+    role_binding = {
+        "apiVersion": "rbac.authorization.k8s.io/v1",
+        "kind": "RoleBinding",
+        "metadata": {
+            "name": _OLMINSTALL_MAAS_INGRESS_RBAC_ROLE,
+            "namespace": _GATEWAY_NS,
+            "labels": {"app.kubernetes.io/managed-by": _OLMINSTALL_MANAGED_BY},
+        },
+        "subjects": [
+            {
+                "kind": "ServiceAccount",
+                "name": _MAAS_CONTROLLER_SA,
+                "namespace": _MAAS_CONTROLLER_SA_NS,
+            }
+        ],
+        "roleRef": {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "Role",
+            "name": _OLMINSTALL_MAAS_INGRESS_RBAC_ROLE,
+        },
+    }
+    manifest = json.dumps(role)
+    apply_role = oc_run(
+        ["apply", "-f", "-"],
+        stdin_text=manifest,
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    if apply_role.returncode != 0:
+        err = (apply_role.stderr or apply_role.stdout or "").strip()
+        raise RuntimeError(
+            f"Could not grant maas-controller HPA Role in {_GATEWAY_NS}: "
+            f"{err or 'unknown error'}"
+        )
+    apply_binding = oc_run(
+        ["apply", "-f", "-"],
+        stdin_text=json.dumps(role_binding),
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    if apply_binding.returncode != 0:
+        err = (apply_binding.stderr or apply_binding.stdout or "").strip()
+        raise RuntimeError(
+            f"Could not grant maas-controller HPA RoleBinding in {_GATEWAY_NS}: "
+            f"{err or 'unknown error'}"
+        )
+    if not _maas_controller_can_manage_openshift_ingress_hpa():
+        raise RuntimeError(
+            f"maas-controller still cannot manage HPAs in {_GATEWAY_NS} after RBAC apply"
+        )
+    print(
+        f"✓ Granted maas-controller HPA RBAC in {_GATEWAY_NS} "
+        f"(Role/{_OLMINSTALL_MAAS_INGRESS_RBAC_ROLE})",
+        flush=True,
+    )
+
+
+def _delete_stale_maas_ingress_hpa(name: str) -> None:
+    proc = oc_run(
+        [
+            "delete",
+            "horizontalpodautoscaler",
+            name,
+            "-n",
+            _GATEWAY_NS,
+            "--ignore-not-found",
+            "--wait=false",
+        ],
+        check=False,
+        capture_output=True,
+        timeout=120,
+    )
+    if proc.returncode == 0 and "deleted" in f"{proc.stdout or ''}{proc.stderr or ''}".lower():
+        print(f"✓ Removed stale MaaS ingress HPA {_GATEWAY_NS}/{name}", flush=True)
+
+
 def cleanup_stale_maas_ingress_workloads() -> None:
     """Delete MaaS ingress Deployments left on pooled clusters after operator cleanup."""
+    ensure_maas_controller_openshift_ingress_hpa_rbac()
     for name in _MAAS_INGRESS_CLEANUP_DEPLOYS:
         proc = oc_run(
             [
@@ -235,6 +364,8 @@ def cleanup_stale_maas_ingress_workloads() -> None:
         )
         if proc.returncode == 0 and "deleted" in f"{proc.stdout or ''}{proc.stderr or ''}".lower():
             print(f"✓ Removed stale MaaS ingress deployment {_GATEWAY_NS}/{name}", flush=True)
+    for name in _MAAS_INGRESS_CLEANUP_DEPLOYS:
+        _delete_stale_maas_ingress_hpa(name)
 
 
 def _wait_models_as_service_after_repair() -> None:
@@ -285,6 +416,7 @@ def repair_payload_pre_processing_selector_conflict() -> bool:
 
 def ensure_maas_bbr_pre_processing() -> None:
     """Apply payload-pre-processing and bbr-pre EnvoyFilter when EA.x controller omits them."""
+    ensure_maas_controller_openshift_ingress_hpa_rbac()
     repair_payload_pre_processing_selector_conflict()
     if not _envoyfilter_crd_available():
         print(

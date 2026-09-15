@@ -1,4 +1,4 @@
-"""Fetch Jenkins VaultSecrets.SHIFT_LEFT at runtime and stage env files for Tekton mounts."""
+"""Fetch Vault shift-left/openshift secrets at runtime and stage env files for Tekton mounts."""
 
 from __future__ import annotations
 
@@ -20,11 +20,17 @@ TENANT_TEST_SECRETS_MOUNT = Path("/tenant-test-secrets")
 SECRET_SOURCE_VAULT = "vault"
 SECRET_SOURCE_TENANT = "tenant"
 SHIFT_LEFT_KV_PATH = "apps/data/rhods-ci/shift-left"
+OPENSHIFT_KV_PATH = "apps/data/rhods-ci/openshift"
 APPROLE_LOGIN_PATH = "v1/auth/approle/login"
 
-_AWS_KEYS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")
+_AWS_KEYS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
+_AWS_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+    "AWS_ACCESS_KEY_ID": ("aws_access_key_id", "awsAccessKeyId", "AWS_ACCESS_KEY"),
+    "AWS_SECRET_ACCESS_KEY": ("aws_secret_access_key", "awsSecretAccessKey", "AWS_SECRET_KEY"),
+    "AWS_SESSION_TOKEN": ("aws_session_token", "awsSessionToken", "token"),
+}
 
-# Cloned Konflux Secret names → Jenkins KV blob keys on apps/rhods-ci/shift-left.
+# Cloned Konflux Secret names → Vault KV blob keys on apps/rhods-ci/shift-left.
 _TENANT_SECRET_TO_BLOB: dict[str, str] = {
     "envfile-mlflow": "envFileMlflow",
     "envfile-ogx": "envFileOGX",
@@ -66,7 +72,7 @@ def copy_tenant_secret_files(src: Path, dest: Path) -> list[str]:
 
 
 def parse_env_file_blob(blob: str) -> dict[str, str]:
-    """Parse a Jenkins envFile* blob (KEY=value / export KEY=value)."""
+    """Parse an envFile* blob (KEY=value / export KEY=value)."""
     out: dict[str, str] = {}
     for raw_line in (blob or "").splitlines():
         line = raw_line.strip()
@@ -84,8 +90,8 @@ def parse_env_file_blob(blob: str) -> dict[str, str]:
     return out
 
 
-def jenkins_vault_blob_key(name: str) -> str:
-    """Map a catalog/tenant secret name to the Jenkins Vault KV blob key."""
+def shift_left_vault_blob_key(name: str) -> str:
+    """Map a catalog/tenant secret name to the Vault shift-left KV blob key."""
     raw = (name or "").strip()
     if not raw:
         return ""
@@ -134,7 +140,7 @@ def stage_shift_left_files(
     written: list[str] = []
     if include_model_serving:
         written.extend(_write_files(dest, merge_model_serving_env(shift_left)))
-    key = jenkins_vault_blob_key(blob_key) if blob_key else ""
+    key = shift_left_vault_blob_key(blob_key) if blob_key else ""
     if key == "volumeFileTestVariables":
         yaml_blob = (shift_left.get("volumeFileTestVariables") or "").strip()
         if yaml_blob:
@@ -154,15 +160,14 @@ def _ssl_context(ca_path: Path) -> ssl.SSLContext:
     return ssl.create_default_context(cafile=str(ca_path))
 
 
-def vault_login_and_read_shift_left(
+def _vault_login_token(
     *,
     vault_addr: str,
     role_id: str,
     secret_id: str,
     ca_path: Path,
     urlopen: UrlOpen | None = None,
-) -> dict[str, str]:
-    """AppRole login then KV v2 get of shift-left. Does not log token or secret_id."""
+) -> tuple[str, UrlOpen | None, ssl.SSLContext | None]:
     addr = (vault_addr or "").rstrip("/")
     if not addr or not (role_id or "").strip() or not (secret_id or "").strip():
         raise AppError("Vault AppRole address/role_id/secret_id incomplete", 1)
@@ -188,8 +193,28 @@ def vault_login_and_read_shift_left(
     if not token:
         errs = login_doc.get("errors")
         raise AppError(f"Vault AppRole login returned no token ({errs})", 1)
+    return token, opener, ctx
+
+
+def vault_login_and_read_kv_data(
+    *,
+    vault_addr: str,
+    role_id: str,
+    secret_id: str,
+    ca_path: Path,
+    kv_path: str,
+    urlopen: UrlOpen | None = None,
+) -> dict[str, str]:
+    """AppRole login then KV v2 get. Does not log token or secret_id."""
+    token, opener, ctx = _vault_login_token(
+        vault_addr=vault_addr,
+        role_id=role_id,
+        secret_id=secret_id,
+        ca_path=ca_path,
+        urlopen=urlopen,
+    )
     kv_req = urllib.request.Request(
-        f"{addr}/v1/{SHIFT_LEFT_KV_PATH}",
+        f"{vault_addr.rstrip('/')}/v1/{kv_path.lstrip('/')}",
         method="GET",
         headers={"X-Vault-Token": token},
     )
@@ -200,16 +225,101 @@ def vault_login_and_read_shift_left(
         with opener(kv_req, timeout=30) as resp:  # type: ignore[misc]
             kv_raw = resp.read()
     except urllib.error.URLError as exc:
-        raise AppError(f"Vault shift-left KV get failed: {exc.reason}", 1) from exc
+        raise AppError(f"Vault KV get failed for {kv_path}: {exc.reason}", 1) from exc
     kv_doc = json.loads(kv_raw.decode("utf-8"))
     data = (kv_doc.get("data") or {}).get("data")
     if not isinstance(data, dict):
-        raise AppError("Vault shift-left KV payload missing data.data", 1)
+        raise AppError(f"Vault KV payload missing data.data for {kv_path}", 1)
     out: dict[str, str] = {}
     for key, val in data.items():
         if isinstance(key, str) and isinstance(val, str):
             out[key] = val
     return out
+
+
+def vault_login_and_read_shift_left(
+    *,
+    vault_addr: str,
+    role_id: str,
+    secret_id: str,
+    ca_path: Path,
+    urlopen: UrlOpen | None = None,
+) -> dict[str, str]:
+    """AppRole login then KV v2 get of shift-left. Does not log token or secret_id."""
+    return vault_login_and_read_kv_data(
+        vault_addr=vault_addr,
+        role_id=role_id,
+        secret_id=secret_id,
+        ca_path=ca_path,
+        kv_path=SHIFT_LEFT_KV_PATH,
+        urlopen=urlopen,
+    )
+
+
+def _aws_credentials_from_mapping(values: Mapping[str, str]) -> dict[str, str]:
+    flat = dict(values)
+    for blob_key in ("envFileCommon", "envFile-for-rhelaiteam", "envFile"):
+        blob = (flat.get(blob_key) or "").strip()
+        if blob:
+            flat.update(parse_env_file_blob(blob))
+    out: dict[str, str] = {}
+    for canonical, aliases in _AWS_KEY_ALIASES.items():
+        val = (flat.get(canonical) or "").strip()
+        if not val:
+            for alias in aliases:
+                val = (flat.get(alias) or "").strip()
+                if val:
+                    break
+        if val:
+            out[canonical] = val
+    return out
+
+
+def load_hcp_install_aws_credentials(
+    *,
+    auth_dir: Path = VAULT_AUTH_MOUNT,
+    environ: Mapping[str, str] | None = None,
+    urlopen: UrlOpen | None = None,
+) -> dict[str, str]:
+    """AWS keys for openshift-cli-installer S3 (apps/rhods-ci/openshift, then shift-left)."""
+    env: Mapping[str, str] = os.environ if environ is None else environ
+    existing = _aws_credentials_from_mapping(env)
+    if existing.get("AWS_ACCESS_KEY_ID") and existing.get("AWS_SECRET_ACCESS_KEY"):
+        return existing
+    if not auth_dir.is_dir():
+        return existing
+    addr = _read_auth_file(auth_dir, "VAULT_ADDR")
+    role_id = _read_auth_file(auth_dir, "role_id")
+    secret_id = _read_auth_file(auth_dir, "secret_id")
+    ca_path = auth_dir / "ca.crt"
+    try:
+        openshift = vault_login_and_read_kv_data(
+            vault_addr=addr,
+            role_id=role_id,
+            secret_id=secret_id,
+            ca_path=ca_path,
+            kv_path=OPENSHIFT_KV_PATH,
+            urlopen=urlopen,
+        )
+        creds = _aws_credentials_from_mapping(openshift)
+        if creds.get("AWS_ACCESS_KEY_ID") and creds.get("AWS_SECRET_ACCESS_KEY"):
+            return creds
+    except AppError as exc:
+        print(f"WARN: could not load openshift Vault AWS credentials: {exc}", flush=True)
+    try:
+        shift_left = vault_login_and_read_shift_left(
+            vault_addr=addr,
+            role_id=role_id,
+            secret_id=secret_id,
+            ca_path=ca_path,
+            urlopen=urlopen,
+        )
+        creds = _aws_credentials_from_mapping(merge_model_serving_env(shift_left))
+        if creds.get("AWS_ACCESS_KEY_ID") and creds.get("AWS_SECRET_ACCESS_KEY"):
+            return creds
+    except AppError as exc:
+        print(f"WARN: could not load shift-left Vault AWS credentials: {exc}", flush=True)
+    return existing
 
 
 def _read_auth_file(auth_dir: Path, name: str) -> str:
@@ -237,9 +347,9 @@ def _blob_key_for_component(component_id: str) -> str:
         return "envFileModelServing"
     runner = comp.runner
     if runner is not None and (runner.vault_secret_key or "").strip():
-        return jenkins_vault_blob_key(runner.vault_secret_key)
+        return shift_left_vault_blob_key(runner.vault_secret_key)
     if (comp.shift_left_env_secret or "").strip():
-        return jenkins_vault_blob_key(comp.shift_left_env_secret)
+        return shift_left_vault_blob_key(comp.shift_left_env_secret)
     return "envFileModelServing"
 
 

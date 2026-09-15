@@ -210,13 +210,19 @@ def _quay_secret(ctx: TriggerContext) -> str:
 def _patch_tests(ctx: TriggerContext, value: str, explicit: Mapping[str, str | None]) -> bool:
     if "TEST_GATES" in explicit:
         return True
+    if bool((ctx.committed_its_params.get("TEST_GATES") or "").strip()):
+        return True
     return ctx.tests_explicit or value != (ctx.tests_catalog_default or ITS_TEST_GATES_PARAM_DEFAULT)
 
 
-def _patch_components(ctx: TriggerContext, _value: str, explicit: Mapping[str, str | None]) -> bool:
+def _patch_components(ctx: TriggerContext, value: str, explicit: Mapping[str, str | None]) -> bool:
     if "COMPONENTS" in explicit:
         return True
-    return (ctx.components_explicit or ctx.components_inferred) and bool((ctx.components_csv or "").strip())
+    if bool((ctx.committed_its_params.get("COMPONENTS") or "").strip()):
+        return True
+    if (ctx.components_explicit or ctx.components_inferred) and bool((ctx.components_csv or "").strip()):
+        return True
+    return bool((value or "").strip())
 
 
 def _arg_set(args: argparse.Namespace, attr: str) -> bool:
@@ -392,6 +398,11 @@ TRIGGER_PARAMS: tuple[TriggerParam, ...] = (
                 "CLI components override",
                 lambda c: (c.components_explicit or c.components_inferred) and bool((c.components_csv or "").strip()),
                 lambda c: (c.components_csv or "").strip(),
+            ),
+            (
+                "ITS COMPONENTS committed",
+                lambda c: bool((c.committed_its_params.get("COMPONENTS") or "").strip()),
+                lambda c: (c.committed_its_params.get("COMPONENTS") or "").strip(),
             ),
         ),
         patch="override_only",

@@ -1177,6 +1177,10 @@ spec:
             secret:
               secretName: $(params.ROSA_HCP_KYVERNO_SECRET)
               optional: true
+          - name: vault-approle
+            secret:
+              secretName: vault-approle
+              optional: true
         stepTemplate:
           env:
             - name: OLMINSTALL_OC_VERBOSE
@@ -1211,6 +1215,9 @@ spec:
                 readOnly: true
               - name: credentials-work
                 mountPath: /credentials
+              - name: vault-approle
+                mountPath: /vault-approle
+                readOnly: true
             env:
               - name: CLUSTER_SOURCE
                 value: $(params.CLUSTER_SOURCE)
@@ -1476,6 +1483,9 @@ spec:
         - wait-for-conforma
         - prepare-cluster-registry
       when:
+        - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
+          operator: in
+          values: ["pass"]
         - input: "$(tasks.prepare-cluster-registry.results.INSTALL_CHAIN_ARMED)"
           operator: in
           values: ["true"]
@@ -1536,6 +1546,9 @@ spec:
         - prepare-cluster-registry
         - install-dep-operators
       when:
+        - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
+          operator: in
+          values: ["pass"]
         - input: "$(params.PRODUCT)"
           operator: in
           values: ["rhoai"]
@@ -1603,6 +1616,9 @@ spec:
         - prepare-cluster-registry
         - install-dep-operators
       when:
+        - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
+          operator: in
+          values: ["pass"]
         - input: "$(params.PRODUCT)"
           operator: in
           values: ["odh"]
@@ -1662,6 +1678,9 @@ spec:
         external test cluster). Stages the dashboard URL for component tests.
       timeout: 90m0s
       when:
+        - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
+          operator: in
+          values: ["pass"]
         - input: "$(params.PRODUCT)-$(params.CLUSTER_SOURCE)"
           operator: notin
           values: ["-"]
@@ -1721,6 +1740,9 @@ spec:
         - external-cluster-ready
         - install-dep-operators
       when:
+        - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
+          operator: in
+          values: ["pass"]
         - input: "$(tasks.verify-operator-ready.results.OPERATOR_VERIFY_ARMED)"
           operator: in
           values: ["true"]
@@ -2313,8 +2335,6 @@ spec:
             description: Version-aware smoke flag for ai_pipelines
           - name: RUN_SMOKE_kuberay
             description: Version-aware smoke flag for kuberay
-          - name: RUN_SMOKE_platform
-            description: Version-aware smoke flag for platform
           - name: RUN_SMOKE_mlflow
             description: Version-aware smoke flag for mlflow
           - name: RUN_SMOKE_ogx
@@ -2345,6 +2365,8 @@ spec:
             description: Version-aware smoke flag for workbench_images
           - name: RUN_SMOKE_codeflare_sdk
             description: Version-aware smoke flag for codeflare_sdk
+          - name: RUN_SMOKE_platform
+            description: Version-aware smoke flag for platform
         steps:
           - name: refresh
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
@@ -2381,9 +2403,6 @@ spec:
 
               - name: RUN_SMOKE_kuberay_PATH
                 value: $(results.RUN_SMOKE_kuberay.path)
-
-              - name: RUN_SMOKE_platform_PATH
-                value: $(results.RUN_SMOKE_platform.path)
 
               - name: RUN_SMOKE_mlflow_PATH
                 value: $(results.RUN_SMOKE_mlflow.path)
@@ -2429,6 +2448,9 @@ spec:
 
               - name: RUN_SMOKE_codeflare_sdk_PATH
                 value: $(results.RUN_SMOKE_codeflare_sdk.path)
+
+              - name: RUN_SMOKE_platform_PATH
+                value: $(results.RUN_SMOKE_platform.path)
 
             script: |
               #!/usr/bin/env python3
@@ -2939,7 +2961,7 @@ spec:
         - name: tests-shared
           workspace: tests-shared
       runAfter:
-        - test-platform
+        - test-kuberay
       when:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
@@ -3617,6 +3639,7 @@ spec:
         - Image: quay.io/opendatahub/distributed-workloads-tests:latest.
         - Smoke command: mkdir -p results && bash run-test.sh --format standard-verbose --junitfile results/xunit_report.xml --junitfile-testsuite-name short --junitfile-testcase-classname relative -- -timeout 60m ./kfto -args -testTier=Smoke.
         - Timeouts: smoke 15m, tier1 45m.
+        - Version gate: maxRhoai 3.5.
       timeout: 69m0s
       workspaces:
         - name: tests-shared
@@ -3861,7 +3884,7 @@ spec:
 
         - Test framework: golang ginkgo suite.
         - Image: quay.io/opendatahub/opendatahub-operator-e2e:main.
-        - Smoke command: bash run_e2e_tests.sh.
+        - Smoke command: bash run_e2e_tests.sh '--test-component=!sparkoperator'.
         - Timeouts: smoke 45m, tier1 90m.
         - Min pass rate for Tekton success: 97%.
         - Version gate: minRhoai 3.3.
@@ -3871,7 +3894,7 @@ spec:
         - name: tests-shared
           workspace: tests-shared
       runAfter:
-        - test-kuberay
+        - test-codeflare-sdk
       when:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
@@ -3931,7 +3954,7 @@ spec:
       runAfter:
         - opendatahub-tests-prepare
         - bvt-health-checks
-        - test-codeflare-sdk
+        - test-platform
       when:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
@@ -3978,6 +4001,9 @@ spec:
         Collect cluster diagnostics after the run: pod logs, DSC status, and
         optional OLM dumps. Writes a diagnostic log for upload in publish-results.
       when:
+        - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
+          operator: in
+          values: ["pass"]
         - input: "$(tasks.status)"
           operator: in
           values: ["Succeeded", "Failed", "Completed"]
@@ -4522,33 +4548,6 @@ spec:
               bash "${SCRIPTS_REPO_ROOT}/tekton/scripts/run_write_task_message.sh" || true
               exit 0
 
-          - name: check-requested-gates-ran
-            displayName: Fail hollow green when gates skipped
-            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
-            env:
-              - name: TEST_GATES
-                value: $(params.TEST_GATES)
-              - name: PRODUCT
-                value: $(params.PRODUCT)
-              - name: CONFORMA_GATE
-                value: $(params.CONFORMA_GATE)
-              - name: PIPELINE_RUN_NAME
-                value: $(context.pipelineRun.name)
-              - name: PIPELINE_NAMESPACE
-                value: $(context.pipelineRun.namespace)
-              - name: BVT_GATE_PATH
-                value: $(results.BVT_GATE.path)
-              - name: SMOKE_GATE_PATH
-                value: $(results.SMOKE_GATE.path)
-              - name: SCRIPTS_REPO_ROOT
-                value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/olminstall
-            script: |
-              #!/usr/bin/env python3
-              import os, sys
-              sys.path.insert(0, os.environ["SCRIPTS_REPO_ROOT"])
-              from runners.report.check_requested_gates_ran import main
-              raise SystemExit(main())
-
           - name: send-notification
             displayName: Send Slack notification
             onError: continue
@@ -4585,6 +4584,33 @@ spec:
               import os, sys
               os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
               os.execvp(sys.executable, [sys.executable, "-m", "runners.report.send_notification"])
+
+          - name: check-requested-gates-ran
+            displayName: Fail hollow green when gates skipped
+            image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+            env:
+              - name: TEST_GATES
+                value: $(params.TEST_GATES)
+              - name: PRODUCT
+                value: $(params.PRODUCT)
+              - name: CONFORMA_GATE
+                value: $(params.CONFORMA_GATE)
+              - name: PIPELINE_RUN_NAME
+                value: $(context.pipelineRun.name)
+              - name: PIPELINE_NAMESPACE
+                value: $(context.pipelineRun.namespace)
+              - name: BVT_GATE_PATH
+                value: $(results.BVT_GATE.path)
+              - name: SMOKE_GATE_PATH
+                value: $(results.SMOKE_GATE.path)
+              - name: SCRIPTS_REPO_ROOT
+                value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/olminstall
+            script: |
+              #!/usr/bin/env python3
+              import os, sys
+              sys.path.insert(0, os.environ["SCRIPTS_REPO_ROOT"])
+              from runners.report.check_requested_gates_ran import main
+              raise SystemExit(main())
 
   workspaces:
     - name: tests-shared

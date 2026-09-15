@@ -201,6 +201,63 @@ class RunBvtPytestFallbackTest(unittest.TestCase):
             ],
         )
 
+    def test_health_suite_external_rewaits_dashboard_before_apps_marker(self) -> None:
+        seen: list[str] = []
+        wait_calls = 0
+
+        def _record_run_single() -> int:
+            seen.append(run_bvt_pytest.os.environ.get("ARTIFACT_PREFIX", ""))
+            return 0
+
+        def _record_wait(**_kwargs: object) -> None:
+            nonlocal wait_calls
+            wait_calls += 1
+
+        env = {
+            "BVT_SUITE": "health",
+            "ARTIFACTS_DIR": "/artifacts",
+            "CLUSTER_SOURCE": "rh-nightly-pm-kubeconfig",
+            "PRODUCT": "rhoai",
+        }
+        with (
+            mock.patch.dict("os.environ", env, clear=False),
+            mock.patch.object(run_bvt_pytest, "_prepare_bvt_oc"),
+            mock.patch(
+                "steps.prepare_bvt_cluster_nodes.prepare_bvt_cluster_nodes",
+                return_value=0,
+            ),
+            mock.patch("steps.prepare_bvt_dsc_ready.prepare_bvt_dsc_ready", return_value=0),
+            mock.patch(
+                "steps.prepare_bvt_apps_namespace.suspend_apps_cronjobs_for_bvt",
+                return_value=[],
+            ),
+            mock.patch(
+                "steps.prepare_bvt_apps_namespace.pause_mlflow_operator_reconcile_for_bvt",
+                return_value=None,
+            ),
+            mock.patch(
+                "steps.prepare_bvt_apps_namespace.wait_dashboard_pods_ready_for_bvt",
+                side_effect=_record_wait,
+            ),
+            mock.patch.object(run_bvt_pytest, "run_single", side_effect=_record_run_single),
+            mock.patch.object(
+                run_bvt_pytest,
+                "resolve_junit_aggregate_exit",
+                return_value=({}, 0),
+            ),
+        ):
+            ec = run_bvt_pytest.run_health_suite()
+        self.assertEqual(ec, 0)
+        self.assertEqual(
+            seen,
+            [
+                "cluster-health",
+                "operator-health-core",
+                "operator-health-apps",
+            ],
+        )
+        self.assertEqual(wait_calls, 1)
+
     def test_health_suite_placeholder_when_external_without_odh_apis(self) -> None:
         env = {
             "BVT_SUITE": "health",

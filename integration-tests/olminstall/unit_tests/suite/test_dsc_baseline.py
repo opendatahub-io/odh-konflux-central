@@ -130,13 +130,81 @@ class RestoreFromBaselineTest(unittest.TestCase):
             import unittest.mock as mock
 
             fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-            with mock.patch("install.dsc_install.run_oc", return_value=fake_result) as mock_oc:
+            with (
+                mock.patch(
+                    "install.dsc_install.dsc_resource_kind",
+                    return_value="datascienceclusters",
+                ),
+                mock.patch("install.dsc_install.run_oc", return_value=fake_result) as mock_oc,
+            ):
                 result = restore_dsc_from_baseline(root)
             self.assertTrue(result)
             call_args = mock_oc.call_args
             args_list = call_args[0][0] if call_args[0] else call_args[1].get("args", [])
             self.assertIn("patch", args_list)
-            self.assertIn("datasciencecluster", args_list)
+            self.assertIn("datascienceclusters", args_list)
+
+    def test_restore_retries_after_kind_cache_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline = {"dashboard": {"managementState": "Managed"}}
+            (root / ".dsc-baseline.json").write_text(
+                json.dumps(baseline), encoding="utf-8"
+            )
+            import subprocess
+            import unittest.mock as mock
+
+            fail = subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="",
+                stderr='error: the server doesn\'t have a resource type "datasciencecluster"',
+            )
+            ok = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+            kind_calls = iter(["datasciencecluster", "datascienceclusters"])
+
+            with (
+                mock.patch(
+                    "install.dsc_install.dsc_resource_kind",
+                    side_effect=lambda **kwargs: next(kind_calls),
+                ),
+                mock.patch("install.dsc_install.reset_dsc_resource_kind_cache"),
+                mock.patch("install.dsc_install.run_oc", side_effect=[fail, ok]) as mock_oc,
+            ):
+                result = restore_dsc_from_baseline(root)
+            self.assertTrue(result)
+            self.assertEqual(mock_oc.call_count, 2)
+            retry_args = mock_oc.call_args_list[1][0][0]
+            self.assertIn("datascienceclusters", retry_args)
+
+class DscResourceKindCacheTest(unittest.TestCase):
+    def test_does_not_cache_kind_on_failed_api_resources_probe(self) -> None:
+        import subprocess
+        import unittest.mock as mock
+
+        import install.dsc_install as dsc_install
+
+        dsc_install.reset_dsc_resource_kind_cache()
+        fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="timeout")
+        with mock.patch("install.dsc_install.oc_run", return_value=fail) as mock_oc:
+            self.assertEqual(dsc_install.dsc_resource_kind(), "datascienceclusters")
+            self.assertEqual(dsc_install.dsc_resource_kind(), "datascienceclusters")
+            self.assertEqual(mock_oc.call_count, 2)
+
+    def test_caches_kind_after_successful_probe(self) -> None:
+        import subprocess
+        import unittest.mock as mock
+
+        import install.dsc_install as dsc_install
+
+        dsc_install.reset_dsc_resource_kind_cache()
+        ok = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="datascienceclusters\n", stderr=""
+        )
+        with mock.patch("install.dsc_install.oc_run", return_value=ok) as mock_oc:
+            self.assertEqual(dsc_install.dsc_resource_kind(), "datascienceclusters")
+            self.assertEqual(dsc_install.dsc_resource_kind(), "datascienceclusters")
+            self.assertEqual(mock_oc.call_count, 1)
 
 class FilterDriftsForComponentTest(unittest.TestCase):
     def test_filters_to_managed_keys(self) -> None:

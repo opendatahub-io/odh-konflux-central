@@ -202,15 +202,72 @@ def test_maas_billing_prep_enables_models_as_service_after_gateway() -> None:
         patch("components.maas_billing.prep.ensure_maas_gateway", side_effect=_track("gateway")),
         patch("components.maas_billing.prep.ensure_maas_gateway_route"),
         patch("components.maas_billing.prep._wait_maas_gateway_https_for_models_as_service"),
+        patch("components.maas_billing.prep.maas_api_deployment_exists", return_value=True),
         patch(
             "components.maas_billing.prep.ensure_dsc_models_as_service",
             side_effect=_track("models_as_service"),
-        ),
+        ) as models_as_service,
         patch("components.maas_billing.prep._restart_maas_api_after_gateway"),
         patch("components.maas_billing.prep.mark_maas_gateway_mas_done"),
     ):
         maas_prep.ensure_maas_gateway_before_models_as_service()
         assert call_order.index("gateway") < call_order.index("models_as_service")
+        models_as_service.assert_called_once_with(
+            wait_timeout_sec=900,
+            wait_for_aigateway=True,
+        )
+
+
+def test_maas_gateway_prep_defers_aigateway_when_maas_api_missing() -> None:
+    with (
+        patch("helpers.hypershift_admission_webhooks.neutralize_broken_hypershift_admission_webhooks"),
+        patch("components.maas_billing.gateway.ensure_openshift_default_gateway_class"),
+        patch("components.maas_billing.auth.recover_kuadrant_after_gateway_api_provider"),
+        patch("components.maas_billing.common._dsc_condition", return_value=("False", "", "")),
+        patch("steps.cluster_prep_state.maas_gateway_https_blocked_reason", return_value=""),
+        patch("components.maas_billing.prep.maas_gateway_mas_already_done", return_value=False),
+        patch("components.maas_billing.prep.ensure_maas_gateway_ingress_tls_secret"),
+        patch("components.maas_billing.prep.ensure_authorino_tls"),
+        patch("components.maas_billing.prep.ensure_maas_gateway"),
+        patch("components.maas_billing.prep.ensure_maas_gateway_route"),
+        patch("components.maas_billing.prep._wait_maas_gateway_https_for_models_as_service"),
+        patch("components.maas_billing.prep.maas_api_deployment_exists", return_value=False),
+        patch("components.maas_billing.prep.dep_operators_already_done", return_value=False),
+        patch("components.maas_billing.prep.ensure_dsc_models_as_service") as models_as_service,
+        patch("components.maas_billing.prep._restart_maas_api_after_gateway"),
+        patch("components.maas_billing.prep.mark_maas_gateway_mas_done"),
+    ):
+        maas_prep.ensure_maas_gateway_before_models_as_service()
+        models_as_service.assert_called_once_with(
+            wait_timeout_sec=900,
+            wait_for_aigateway=False,
+        )
+
+
+def test_maas_gateway_prep_waits_aigateway_after_install_rhoai_when_maas_api_missing() -> None:
+    with (
+        patch("helpers.hypershift_admission_webhooks.neutralize_broken_hypershift_admission_webhooks"),
+        patch("components.maas_billing.gateway.ensure_openshift_default_gateway_class"),
+        patch("components.maas_billing.auth.recover_kuadrant_after_gateway_api_provider"),
+        patch("components.maas_billing.common._dsc_condition", return_value=("False", "", "")),
+        patch("steps.cluster_prep_state.maas_gateway_https_blocked_reason", return_value=""),
+        patch("components.maas_billing.prep.maas_gateway_mas_already_done", return_value=False),
+        patch("components.maas_billing.prep.ensure_maas_gateway_ingress_tls_secret"),
+        patch("components.maas_billing.prep.ensure_authorino_tls"),
+        patch("components.maas_billing.prep.ensure_maas_gateway"),
+        patch("components.maas_billing.prep.ensure_maas_gateway_route"),
+        patch("components.maas_billing.prep._wait_maas_gateway_https_for_models_as_service"),
+        patch("components.maas_billing.prep.maas_api_deployment_exists", return_value=False),
+        patch("components.maas_billing.prep.dep_operators_already_done", return_value=True),
+        patch("components.maas_billing.prep.ensure_dsc_models_as_service") as models_as_service,
+        patch("components.maas_billing.prep._restart_maas_api_after_gateway"),
+        patch("components.maas_billing.prep.mark_maas_gateway_mas_done"),
+    ):
+        maas_prep.ensure_maas_gateway_before_models_as_service()
+        models_as_service.assert_called_once_with(
+            wait_timeout_sec=900,
+            wait_for_aigateway=True,
+        )
 
 def test_maas_prep_probes_only_on_existing_without_install_dependencies(monkeypatch) -> None:
     monkeypatch.setenv("PRODUCT", "")

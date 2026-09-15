@@ -99,7 +99,29 @@ def ensure_maas_gateway_before_models_as_service(*, https_wait_sec: int | None =
     ensure_maas_gateway_route()
     timeout = https_wait_sec if https_wait_sec is not None else maas_gateway_prep_programmed_wait_sec()
     _wait_maas_gateway_https_for_models_as_service(timeout_sec=timeout)
-    ensure_dsc_models_as_service()
+    # A cleanup reinstall can leave kserve controllers still converging after the
+    # gateway service is ready.  Keep the AIGateway reconcile within the full
+    # MaaS preparation budget instead of the install helper's short default.
+    wait_for_aigateway = maas_api_deployment_exists()
+    if not wait_for_aigateway and dep_operators_already_done():
+        # install-rhoai finished: operator should create maas-api once modelsAsAService
+        # reconciles — waiting here is required (defer only applies pre-install-rhoai).
+        wait_for_aigateway = True
+        print(
+            "NOTE: maas-api not deployed yet; install-rhoai complete — "
+            "waiting for AIGateway modelsAsAService reconcile",
+            flush=True,
+        )
+    elif not wait_for_aigateway:
+        print(
+            "NOTE: maas-api not deployed yet; patching DSC modelsAsAService only and "
+            "deferring AIGateway reconcile wait to prepare-components-prerequisites",
+            flush=True,
+        )
+    ensure_dsc_models_as_service(
+        wait_timeout_sec=maas_prep_timeout_sec(),
+        wait_for_aigateway=wait_for_aigateway,
+    )
     _restart_maas_api_after_gateway()
     mark_maas_gateway_mas_done()
 

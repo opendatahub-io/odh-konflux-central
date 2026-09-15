@@ -48,7 +48,7 @@ from runners.component_prereqs import (
 )
 from suite.component_plan import parse_components_selection
 from runners.run_bvt_pytest import run_single as run_single_pytest
-from k8s.jenkins_vault import ensure_runtime_vault_env
+from k8s.vault_runtime import ensure_runtime_vault_env
 from k8s.shift_left_env import (
     apply_cluster_router_ca_from_kubeconfig,
     load_shift_left_env_from_mount,
@@ -112,6 +112,31 @@ def _needs_cluster_sanity_rhoai_skip() -> bool:
     if not is_test_only_product(os.environ.get("PRODUCT", "")):
         return False
     return is_external_cluster_source(os.environ.get("CLUSTER_SOURCE", ""))
+
+
+def _needs_schedulable_nodes_wait() -> bool:
+    """EPHC guests can flip nodes unschedulable mid-smoke; re-check before each pytest."""
+    return is_ephemeral_hosted_cluster_source(os.environ.get("CLUSTER_SOURCE", "").strip())
+
+
+def _wait_for_schedulable_nodes_before_component_pytest() -> str:
+    """Return infra message when nodes stay unschedulable; empty when OK."""
+    if not _needs_schedulable_nodes_wait():
+        return ""
+    from components.maas_billing.timeouts import component_cluster_nodes_timeout_sec
+    from steps.prepare_bvt_cluster_nodes import wait_for_schedulable_nodes_for_bvt
+
+    timeout_sec = component_cluster_nodes_timeout_sec()
+    print(
+        f"Waiting for schedulable cluster nodes before pytest ({timeout_sec}s)...",
+        flush=True,
+    )
+    try:
+        wait_for_schedulable_nodes_for_bvt(timeout_sec=timeout_sec, poll_sec=10)
+    except RuntimeError as exc:
+        return str(exc)
+    print("✓ Cluster nodes schedulable before component pytest", flush=True)
+    return ""
 
 
 def _ensure_yaml_loader() -> None:
@@ -497,6 +522,7 @@ def _apply_cluster_source_pytest_extra_args(extra: str) -> str:
 
 
 _OGX_EA_DISTRIBUTION = "rh-dev"
+_EPHC_SKIP_OGX_FILE_SEARCH = "-k 'not file_search'"
 _OLMINSTALL_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -530,6 +556,9 @@ def _apply_ogx_pytest_extra_args(extra: str) -> str:
         extra = f"-p ogx_ea_distribution_plugin {extra}".strip()
     if "-p ogx_tekton_route_plugin" not in extra:
         extra = f"-p ogx_tekton_route_plugin {extra}".strip()
+    cluster_source = os.environ.get("CLUSTER_SOURCE", "").strip()
+    if is_ephemeral_hosted_cluster_source(cluster_source):
+        extra = _merge_pytest_k_skip(extra, _EPHC_SKIP_OGX_FILE_SEARCH)
     return extra
 
 
@@ -853,6 +882,21 @@ def _run_one_component(
 
         if apply_ogx_tekton_route_patch():
             print("✓ Patched tests.ogx.conftest ogx_client for Tekton port-forward", flush=True)
+    if not collect_only:
+        node_err = _wait_for_schedulable_nodes_before_component_pytest()
+        if node_err:
+            print(
+                f"FAIL component tests {cid}: {node_err} — skipping pytest",
+                flush=True,
+            )
+            return _return_infra_junit_failure(
+                comp,
+                artifacts_dir=artifacts_dir,
+                prefix_by_id=prefix_by_id,
+                testcase_name="cluster_nodes_unschedulable",
+                message=node_err,
+                refresh_test_output=refresh_test_output,
+            )
     raw_ec = run_single_pytest(extra_env=pytest_extra_env or None)
     if not collect_only and cid == "ogx":
         from components.ogx.platform_smoke import ensure_ogx_junit_after_pytest

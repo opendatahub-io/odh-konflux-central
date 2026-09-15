@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+
+from suite.its_trigger_params import is_ephemeral_hosted_cluster_source
+
 _RUNTIME_TEST = "trainer/cluster_training_runtimes_test.go"
 _SMOKE_TEST = "trainer/trainer_smoke_test.go"
 
@@ -18,12 +22,57 @@ def _sed_replace(path: str, old: str, new: str) -> str:
 def _ensure_strings_import(path: str) -> str:
     """strings.Replace in patched tests requires a strings import in the same file."""
     return (
-        f"if [ -f {path} ] && grep -Fq 'strings.Replace' {path} "
+        f"if [ -f {path} ] && grep -Eq 'strings\\.(Replace|HasPrefix)' {path} "
         f"&& ! grep -q '\"strings\"' {path}; then "
         f"sed -i '/^import (/a\t\"strings\"' {path} && "
         f"echo 'trainer: added strings import to {path}'; "
         "fi"
     )
+
+
+_SPECULATOR_IDMS_MARK = "olminstall-trainer-speculator-idms"
+_SPECULATOR_REGISTRY_OLD = (
+    "\t\t\texpectedRegistry := GetExpectedRegistry(test)\n"
+    "\t\t\ttest.Expect(foundImage).To(HavePrefix(expectedRegistry+\"/\"),"
+)
+_SPECULATOR_REGISTRY_NEW = (
+    "\t\t\texpectedRegistry := GetExpectedRegistry(test)\n"
+    '\t\t\tif strings.HasPrefix(foundImage, "registry.redhat.io/") {\n'
+    '\t\t\t\texpectedRegistry = "registry.redhat.io"\n'
+    f"\t\t\t}} // {_SPECULATOR_IDMS_MARK}\n"
+    "\t\t\ttest.Expect(foundImage).To(HavePrefix(expectedRegistry+\"/\"),"
+)
+
+
+def trainer_speculator_idms_patch_shell() -> str:
+    """Accept registry.redhat.io/rhaii-fast speculator images on EPHC IDMS clusters."""
+    py = _python_inline_script(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                f"mark = {_SPECULATOR_IDMS_MARK!r}",
+                f"old = {_SPECULATOR_REGISTRY_OLD!r}",
+                f"new = {_SPECULATOR_REGISTRY_NEW!r}",
+                'p = Path("trainer/cluster_training_runtimes_test.go")',
+                "text = p.read_text()",
+                "if mark in text:",
+                "    raise SystemExit(0)",
+                "if old not in text:",
+                "    raise SystemExit('speculator registry block not found')",
+                "p.write_text(text.replace(old, new, 1))",
+                'print("trainer: patched speculator registry check for EPHC IDMS", flush=True)',
+            ]
+        )
+        + "\n"
+    )
+    return f"if [ -f {_RUNTIME_TEST} ]; then python3 -c {py}; fi"
+
+
+def _python_inline_script(body: str) -> str:
+    import shlex
+    import textwrap
+
+    return shlex.quote(textwrap.dedent(body).strip())
 
 
 def trainer_skip_hub_runtime_name_drift_shell() -> str:
@@ -57,6 +106,7 @@ def trainer_smoke_rhoai_idms_patch_shell() -> str:
                 "expectedImage := imagePrefix + \"/\" + expectedRuntime.Image",
                 'expectedImage := strings.Replace(imagePrefix + "/" + expectedRuntime.Image, "quay.io/rhoai/", "registry.redhat.io/rhoai/", 1)',
             ),
+            trainer_speculator_idms_patch_shell(),
             _ensure_strings_import(_RUNTIME_TEST),
             _sed_replace(
                 _SMOKE_TEST,
@@ -77,8 +127,19 @@ def trainer_smoke_rhoai_idms_patch_shell() -> str:
     )
 
 
+def trainer_idms_patch_enabled() -> bool:
+    """EPHC IDMS mirror patches break RN-PM/P-K trainer repos (speculator block shape differs)."""
+    return is_ephemeral_hosted_cluster_source(os.environ.get("CLUSTER_SOURCE", ""))
+
+
 def prepend_trainer_smoke_patch(run_command: str) -> str:
     cmd = (run_command or "").strip()
     if not cmd:
         return cmd
     return f"{trainer_smoke_rhoai_idms_patch_shell()} && {cmd}"
+
+
+def prepend_trainer_smoke_patch_if_ephc(run_command: str) -> str:
+    if not trainer_idms_patch_enabled():
+        return (run_command or "").strip()
+    return prepend_trainer_smoke_patch(run_command)

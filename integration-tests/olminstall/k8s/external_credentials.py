@@ -49,6 +49,31 @@ def external_credentials_secret_name(
     return f"{_CREDENTIALS_SECRET_PREFIX}{suffix}{_CREDENTIALS_SECRET_SUFFIX}"
 
 
+def resolve_external_cluster_credentials(
+    *,
+    namespace: str,
+    cluster_source: str,
+    bootstrap_path: Path,
+    credentials_secret_override: str = "",
+) -> tuple[ExternalClusterCredentials | None, str]:
+    """Tenant htpasswd Secret first, then ROSA HCP install-data S3 (rosa-admin)."""
+    creds_secret = external_credentials_secret_name(
+        cluster_source,
+        override=credentials_secret_override,
+    )
+    if creds_secret:
+        creds = load_external_cluster_credentials(namespace=namespace, secret_name=creds_secret)
+        if creds:
+            return creds, f"tenant Secret {creds_secret!r}"
+
+    from k8s.rosa_hcp_install_credentials import load_rosa_admin_credentials_from_install_zip
+
+    rosa = load_rosa_admin_credentials_from_install_zip(bootstrap_path=bootstrap_path)
+    if rosa:
+        return rosa, "ROSA HCP install-data S3 (rosa-admin)"
+    return None, ""
+
+
 def load_external_cluster_credentials(
     *,
     namespace: str,
@@ -211,21 +236,18 @@ def refresh_working_kubeconfig_from_credentials(
     bootstrap_path: Path,
     work_path: Path,
     credentials_secret_override: str = "",
-) -> bool:
-    """Login with htpasswd credentials when the tenant Secret exists; return True when used."""
+) -> tuple[bool, str]:
+    """Login with tenant or ROSA HCP S3 credentials; return (used, source label)."""
     from steps.tekton_util import ensure_kubeconfig_bearer_token, materialize_htpasswd_kubeconfig_login
 
-    creds_secret = external_credentials_secret_name(
-        cluster_source,
-        override=credentials_secret_override,
-    )
-    creds = (
-        load_external_cluster_credentials(namespace=namespace, secret_name=creds_secret)
-        if creds_secret
-        else None
+    creds, source = resolve_external_cluster_credentials(
+        namespace=namespace,
+        cluster_source=cluster_source,
+        bootstrap_path=bootstrap_path,
+        credentials_secret_override=credentials_secret_override,
     )
     if not creds:
-        return False
+        return False, ""
 
     seed_working_kubeconfig(
         work_path=work_path,
@@ -234,11 +256,11 @@ def refresh_working_kubeconfig_from_credentials(
     )
     env = {**os.environ, "KUBECONFIG": str(work_path), "CLUSTER_SOURCE": cluster_source}
     if not materialize_htpasswd_kubeconfig_login(creds.username, creds.password, environ=env):
-        raise AppError(f"htpasswd oc login failed using Secret {creds_secret!r}", 1)
+        raise AppError(f"oc login failed using {source or 'external cluster credentials'}", 1)
     active = Path(env.get("KUBECONFIG", str(work_path)))
     ensure_kubeconfig_bearer_token(env)
     active = Path(env.get("KUBECONFIG", str(active)))
     if active != work_path and active.is_file():
         shutil.copy2(active, work_path)
         work_path.chmod(0o600)
-    return True
+    return True, source

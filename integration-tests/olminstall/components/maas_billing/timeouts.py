@@ -74,3 +74,21 @@ def bvt_dsc_ready_settle_sec() -> int:
 def bvt_cluster_nodes_timeout_sec() -> int:
     """Wait for all nodes schedulable before cluster_health BVT."""
     return int(os.environ.get("BVT_CLUSTER_NODES_TIMEOUT_SEC", "600"))
+
+
+def component_cluster_nodes_timeout_sec() -> int:
+    """Wait for schedulable nodes before each component pytest (mid-smoke re-check)."""
+    base = bvt_cluster_nodes_timeout_sec()
+    from suite.its_trigger_params import is_ephemeral_hosted_cluster_source
+
+    source = os.environ.get("CLUSTER_SOURCE", "").strip()
+    if not is_ephemeral_hosted_cluster_source(source):
+        return base
+    cap_raw = os.environ.get("OLMINSTALL_EPHC_CLUSTER_NODES_WAIT_SEC", "120").strip()
+    try:
+        cap = int(cap_raw)
+    except ValueError:
+        cap = 120
+    if cap <= 0:
+        return base
+    return min(base, cap)

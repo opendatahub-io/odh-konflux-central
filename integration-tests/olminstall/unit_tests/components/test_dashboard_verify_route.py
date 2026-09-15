@@ -166,6 +166,32 @@ class DashboardVerifyRouteTest(unittest.TestCase):
         )
         self.assertGreaterEqual(repair_mock.call_count, 2)
 
+    @patch("components.maas_billing.auth._gateway_api_provider_present", return_value=True)
+    @patch("install.gateway_config.gateway_config_ready", return_value=True)
+    @patch("install.gateway_config.ensure_rhoai_gateway_for_install")
+    @patch("install.rhoai_gateway_prep.ensure_transitive_olm_deps_for_gateway", return_value=0)
+    @patch("install.dsc_install.ensure_dashboard_gateway_prereqs")
+    @patch("components.maas_billing.auth.recover_kuadrant_after_gateway_api_provider")
+    @patch("helpers.gateway_stack_marker.reconcile_gateway_stack_incomplete_marker")
+    @patch("components.maas_billing.gateway.ensure_openshift_default_gateway_class")
+    @patch("install.gateway_config.ensure_openshift_gateway_istio_for_verify", return_value=True)
+    def test_repair_calls_openshift_gateway_istio_for_verify(
+        self,
+        istio_verify: object,
+        _gateway_class: object,
+        _marker: object,
+        _kuadrant: object,
+        _dashboard_prereqs: object,
+        _transitive: object,
+        _gateway_install: object,
+        _gateway_ready: object,
+        _provider: object,
+    ) -> None:
+        from components.dashboard_cypress.verify_route import _repair_gateway_stack_for_verify
+
+        _repair_gateway_stack_for_verify()
+        istio_verify.assert_called_once()
+
     @patch.dict(os.environ, {"PRODUCT": ""}, clear=False)
     @patch("components.dashboard_cypress.verify_route._repair_gateway_stack_for_verify")
     @patch(

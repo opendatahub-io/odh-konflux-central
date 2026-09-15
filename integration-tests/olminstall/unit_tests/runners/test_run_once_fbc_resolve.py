@@ -14,6 +14,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _RH_NIGHTLY_SNAP = _ROOT / "config" / "test-snapshot-rh-nightly.yaml"
 _RH_NIGHTLY_ITS = _ROOT / "tekton" / "its" / "its-rhoai-e2e-rh-nightly-pm-ocp420.yaml"
 _EPHC_ITS = _ROOT / "tekton" / "its" / "its-rhoai-e2e-ephc-ocp421.yaml"
+_EPHC_422_ITS = _ROOT / "tekton" / "its" / "its-rhoai-e2e-ephc-ocp422.yaml"
 _ODH_ITS = _ROOT / "tekton" / "its" / "its-olminstall-open-data-hub-tenant.yaml"
 _PINNED_420 = (
     "quay.io/rhoai/rhoai-fbc-fragment@sha256:"
@@ -66,6 +67,41 @@ class RunItsManifestDefaultsTest(unittest.TestCase):
         runner.args.external_kubeconfig_path = Path(kubeconfig)
         runner._apply_run_its_manifest_defaults(_RH_NIGHTLY_ITS)
         self.assertEqual(runner.external_kubeconfig_secret, "")
+
+
+class RunItsComponentsParamTest(unittest.TestCase):
+    def test_run_its_preserves_slice_b_components_after_cli_override_clear(self) -> None:
+        parser = make_parser()
+        args = parse_cli_args(parser, ["--run-its", "rhoai-e2e-ephc-ocp422"])
+        runner = OLMInstallRunner(args)
+        runner.its_file = _EPHC_422_ITS
+        runner._stage_its_manifest_tmp(_EPHC_422_ITS, push_context=False)
+        runner._apply_run_its_manifest_defaults(_EPHC_422_ITS)
+        runner._apply_run_its_cli_overrides(odh_overrides=False)
+        params = runner._read_its_params_from_tmp()
+        self.assertEqual(params.get("COMPONENTS"), "dashboard_cypress,platform")
+
+    def test_run_its_preserves_slice_a_components_after_cli_override_clear(self) -> None:
+        parser = make_parser()
+        args = parse_cli_args(parser, ["--run-its", "rhoai-e2e-ephc-ocp421"])
+        runner = OLMInstallRunner(args)
+        runner.its_file = _EPHC_ITS
+        runner._stage_its_manifest_tmp(_EPHC_ITS, push_context=False)
+        runner._apply_run_its_manifest_defaults(_EPHC_ITS)
+        runner._apply_run_its_cli_overrides(odh_overrides=False)
+        params = runner._read_its_params_from_tmp()
+        components = params.get("COMPONENTS", "")
+        self.assertIn("workbenches", components)
+        self.assertNotIn("dashboard_cypress", components)
+        self.assertNotIn("platform", components)
+
+    def test_run_its_sets_args_components_from_manifest(self) -> None:
+        parser = make_parser()
+        args = parse_cli_args(parser, ["--run-its", "rhoai-e2e-ephc-ocp422"])
+        runner = OLMInstallRunner(args)
+        runner.its_file = _EPHC_422_ITS
+        runner._apply_run_its_manifest_defaults(_EPHC_422_ITS)
+        self.assertEqual(runner.args.components, "dashboard_cypress,platform")
 
 
 class RunItsUpdateChannelTest(unittest.TestCase):

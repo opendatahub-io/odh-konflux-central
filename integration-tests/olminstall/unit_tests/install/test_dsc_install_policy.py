@@ -102,6 +102,19 @@ class DscInstallPolicyTest(unittest.TestCase):
         self.assertIn("ogx", managed)
         self.assertIn("llamastackoperator", managed)
 
+    def test_ai_safety_evalhub_enables_trustyai(self) -> None:
+        managed = resolve_managed_dsc_keys("ai_safety_evalhub", "3.6.0-ea.1", for_install=False)
+        self.assertEqual(managed, {"trustyai", "kserve"})
+
+    def test_distributed_workloads_36_uses_trainer_not_trainingoperator(self) -> None:
+        managed = resolve_managed_dsc_keys(
+            "distributed_workloads",
+            "3.6.0-ea.1",
+            for_install=False,
+        )
+        self.assertEqual(managed, {"ray", "trainer"})
+        self.assertNotIn("trainingoperator", managed)
+
 
 class BatchEnsureDscManagedTest(unittest.TestCase):
     @patch("install.dsc_install._resolve_operator_version_for_dsc", return_value="")

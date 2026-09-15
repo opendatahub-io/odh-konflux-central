@@ -25,6 +25,7 @@ from components.maas_billing.common import (
     _maas_smoke_ready,
     models_as_service_ready_condition_type,
 )
+from suite.component_version_gate import _compare_version_strings, normalize_version_for_enablement
 
 # Primary Ready condition per smoke catalog id (status.conditions[].reason == Removed).
 _SMOKE_READY_CONDITION: dict[str, str] = {
@@ -37,6 +38,11 @@ _SMOKE_READY_CONDITION: dict[str, str] = {
     "kuberay": "RayReady",
     "mlflow": "MLflowOperatorReady",
     "ai_safety": "TrustyAIReady",
+    "ai_safety_evalhub": "TrustyAIReady",
+    "ai_safety_guardrails": "TrustyAIReady",
+    "ai_safety_lmeval": "TrustyAIReady",
+    "ai_safety_trustyai_operator": "TrustyAIReady",
+    "ai_safety_trustyai_service": "TrustyAIReady",
     "llama_stack": "LlamaStackOperatorReady",
     "dashboard_cypress": "DashboardReady",
     "trainer": "TrainerReady",
@@ -74,6 +80,12 @@ def _resolve_smoke_ready_condition(smoke_id: str) -> str:
         if resolved in _dsc_condition_types():
             return resolved
         return cond
+    if smoke_id == "distributed_workloads":
+        op_ver = _resolve_operator_version_for_dsc()
+        compare_ver, is_numeric = normalize_version_for_enablement(op_ver)
+        if is_numeric and _compare_version_strings(compare_ver, "3.5") >= 0:
+            return "TrainerReady"
+        return "TrainingOperatorReady"
     return cond
 
 

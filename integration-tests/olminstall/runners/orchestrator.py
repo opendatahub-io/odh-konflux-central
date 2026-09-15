@@ -14,7 +14,7 @@ from _bootstrap import ensure_olminstall_path
 ensure_olminstall_path()
 
 from install.gateway_config import wait_gateway_config_ready
-from k8s.jenkins_vault import ensure_runtime_vault_env
+from k8s.vault_runtime import ensure_runtime_vault_env
 from k8s.shift_left_env import load_shift_left_env_from_mount
 from runners.component_prereqs import prepare_components_for_smoke
 from runners.selection import selected_component_ids

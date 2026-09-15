@@ -607,6 +607,14 @@ def run_health_suite() -> int:
                 )
                 mlflow_op_prior = None
 
+            from steps.prepare_bvt_apps_namespace import wait_dashboard_pods_ready_for_bvt
+
+            try:
+                wait_dashboard_pods_ready_for_bvt()
+            except RuntimeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+                return 1
+
             ec = _run_marker(
                 "operator_health",
                 "operator-health-apps",

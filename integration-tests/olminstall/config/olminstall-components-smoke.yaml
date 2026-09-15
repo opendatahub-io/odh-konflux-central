@@ -664,6 +664,10 @@ components:
         tier1: 45m
 
   - component:
+      enablement:
+        enable: true
+        odh-stable: true
+        maxRhoai: 3.5
       merge:
         metadata:
           name: distributed-workloads
@@ -813,8 +817,8 @@ components:
           E2E_TEST_WORKBENCHES_NAMESPACE: redhat-ods-applications
           E2E_TEST_TAG: Smoke
         phaseCommands:
-          smoke: "bash run_e2e_tests.sh"
-          tier1: "E2E_TEST_TAG=Tier1 bash run_e2e_tests.sh"
+          smoke: "bash run_e2e_tests.sh '--test-component=!sparkoperator'"
+          tier1: "E2E_TEST_TAG=Tier1 bash run_e2e_tests.sh '--test-component=!sparkoperator'"
       componentTestTimeoutByGate:
         smoke: 45m
         tier1: 90m

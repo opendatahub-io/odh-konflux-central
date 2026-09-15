@@ -28,6 +28,7 @@ class RunnerItsAdminMixin:
     def run_integration_test_scenario(self) -> int:
         """One-shot debug run: direct PipelineRun with ITS manifest params and dynamic generateName."""
         manifest = Path(self.args.its_manifest_path)
+        self.its_file = manifest
         snap_path = getattr(self.args, "run_its_snapshot_path", None)
         self._stage_its_manifest_tmp(manifest, push_context=False)
         if snap_path is not None:
@@ -79,6 +80,14 @@ class RunnerItsAdminMixin:
             prefix = ocp_install_prefix(ocp_version)
             if prefix:
                 self.args.ocp_version = prefix
+        if not getattr(self.args, "components_explicit", False):
+            components = its_manifest_param(manifest, "COMPONENTS")
+            if components:
+                self.args.components = components
+        if not (getattr(self.args, "channel", "") or "").strip():
+            update_channel = its_manifest_param(manifest, "UPDATE_CHANNEL")
+            if update_channel:
+                self.args.channel = update_channel
         # Konflux lookup in resolve_image(); snapshot pin is offline fallback only.
         self._run_its_pinned_fbcf_image = self._snapshot_yaml_container_image()
 

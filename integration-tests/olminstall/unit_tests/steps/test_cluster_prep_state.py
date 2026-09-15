@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from steps.cluster_prep_state import (
+    clear_cluster_api_unreachable_marker,
     cluster_api_unreachable_marker_reason,
     cluster_prep_already_done,
     dep_operators_already_done,
@@ -69,6 +70,8 @@ def test_cluster_api_unreachable_marker_scoped_to_pipelinerun(tmp_path, monkeypa
     monkeypatch.setenv("PIPELINE_RUN_NAME", "pr-api-1")
     mark_cluster_api_unreachable("cluster API unreachable: dial tcp: lookup elb.example")
     assert "elb.example" in cluster_api_unreachable_marker_reason()
+    clear_cluster_api_unreachable_marker()
+    assert cluster_api_unreachable_marker_reason() == ""
     monkeypatch.setenv("PIPELINE_RUN_NAME", "pr-api-2")
     assert cluster_api_unreachable_marker_reason() == ""
 

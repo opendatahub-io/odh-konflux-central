@@ -175,11 +175,29 @@ def _repair_gateway_stack_for_verify() -> None:
     )
     from components.maas_billing.gateway import ensure_openshift_default_gateway_class
     from helpers.gateway_stack_marker import reconcile_gateway_stack_incomplete_marker
-    from install.gateway_config import ensure_rhoai_gateway_for_install, gateway_config_ready
+    from install.gateway_config import (
+        ensure_openshift_gateway_istio_for_verify,
+        ensure_rhoai_gateway_for_install,
+        gateway_config_ready,
+    )
     from install.dsc_install import ensure_dashboard_gateway_prereqs
     from install.rhoai_gateway_prep import ensure_transitive_olm_deps_for_gateway
 
     print("verify-operator-ready: running RHOAI gateway repair (§15 P1–P4)...", flush=True)
+    try:
+        if not ensure_openshift_gateway_istio_for_verify():
+            print(
+                "WARN: openshift-gateway Istio/controller not ready for verify; "
+                "rh-ai dashboard preflight may return 503",
+                file=sys.stderr,
+                flush=True,
+            )
+    except Exception as exc:
+        print(
+            f"WARN: openshift-gateway Istio reconcile failed ({exc}); continuing verify",
+            file=sys.stderr,
+            flush=True,
+        )
     ensure_openshift_default_gateway_class()
     reconcile_gateway_stack_incomplete_marker()
     provider_wait = int(os.environ.get("VERIFY_GATEWAY_CLASS_WAIT_SEC", "180"))

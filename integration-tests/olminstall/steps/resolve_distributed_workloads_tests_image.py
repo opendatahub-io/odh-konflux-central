@@ -9,7 +9,9 @@ from _bootstrap import ensure_olminstall_path
 
 ensure_olminstall_path()
 
+from steps.resolve_opendatahub_tests_image import resolve_csv_version_for_tests_image
 from steps.tekton_util import require_env, write_result
+from suite.resolve_versioned_image import resolve_versioned_image
 
 _DEFAULT_REPO = "quay.io/opendatahub/distributed-workloads-tests"
 
@@ -17,10 +19,13 @@ _DEFAULT_REPO = "quay.io/opendatahub/distributed-workloads-tests"
 def main() -> int:
     result_path = require_env("RESULT_PATH")
     repo = os.environ.get("DISTRIBUTED_WORKLOADS_TESTS_REPO", "").strip() or _DEFAULT_REPO
-    # Jenkins components/distributed-workloads/main.yaml pins :latest (no CSV→tag mapping).
-    resolved = f"{repo}:latest"
+    csv_version = resolve_csv_version_for_tests_image()
+    resolved = resolve_versioned_image(repo, csv_version)
     write_result(result_path, resolved)
-    print(f"Using distributed-workloads-tests image: {resolved} (Jenkins :latest parity)")
+    print(
+        f"Using distributed-workloads-tests image: {resolved} "
+        f"(CSV {csv_version or 'latest'})"
+    )
     return 0
 
 
