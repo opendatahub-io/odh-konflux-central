@@ -1,0 +1,221 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: odh-post-release-kserve-smoke
+spec:
+  description: |
+    Post-release kserve-module smoke on ephemeral OpenShift (Hypershift).
+
+    fresh install → odh-model-controller Running + KServeReady=True
+    → create one LLMInferenceService and confirm Ready=True
+
+    Requires opendatahub-io/kserve at refs/tags/<release_tag> with the
+    post_release pytest suite and make e2e-kserve-module-post-release target.
+  params:
+    - name: release_tag
+      type: string
+      description: ODH release tag (e.g. odh-v3.5)
+    - name: operator_image
+      type: string
+      description: Optional override for odh-kserve-module-operator image
+      default: ""
+    - name: kserve-git-url
+      type: string
+      description: kserve repository URL
+      default: https://github.com/opendatahub-io/kserve.git
+    - name: expected-cluster
+      type: string
+      description: The cluster that this pipeline is expected to be run from
+      default: ""
+    - name: oci-artifacts-repo
+      type: string
+      default: quay.io/opendatahub/odh-ci-artifacts
+      description: OCI repo used to store test artifacts
+    - name: artifact-browser-url
+      type: string
+      default: https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com/
+  tasks:
+    - name: provision-eaas-space
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+      params:
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+
+    - name: provision-cluster
+      runAfter:
+        - provision-eaas-space
+      taskSpec:
+        results:
+          - name: clusterName
+            value: "$(steps.create-cluster.results.clusterName)"
+        steps:
+          - name: get-supported-versions
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+          - name: pick-version
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+            params:
+              - name: prefix
+                value: "$(steps.get-supported-versions.results.versions[0])."
+          - name: create-cluster
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: version
+                value: "$(steps.pick-version.results.version)"
+              - name: instanceType
+                value: m5.2xlarge
+
+    - name: e2e-post-release-smoke
+      runAfter:
+        - provision-cluster
+      params:
+        - name: release_tag
+          value: $(params.release_tag)
+        - name: operator_image
+          value: $(params.operator_image)
+        - name: kserve-git-url
+          value: $(params.kserve-git-url)
+        - name: oci-artifacts-repo
+          value: $(params.oci-artifacts-repo)
+      taskSpec:
+        params:
+          - name: release_tag
+            type: string
+          - name: operator_image
+            type: string
+          - name: kserve-git-url
+            type: string
+          - name: oci-artifacts-repo
+            type: string
+        volumes:
+          - name: credentials
+            emptyDir: {}
+          - name: test-status
+            emptyDir: {}
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+
+          - name: run-post-release-smoke
+            onError: continue
+            image: quay.io/rhoai/rhoai-task-toolset:kserve
+            env:
+              - name: KUBECONFIG
+                value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+              - name: RELEASE_TAG
+                value: $(params.release_tag)
+              - name: OPERATOR_IMAGE
+                value: $(params.operator_image)
+              - name: KSERVE_GIT_URL
+                value: $(params.kserve-git-url)
+              - name: ARTIFACT_DIR
+                value: /workspace/artifact-dir
+            workingDir: /workspace/source
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              set -euxo pipefail
+              STATUS_FILE="/test-status/post-release-smoke-status"
+              echo "failed" > "$STATUS_FILE"
+
+              if [[ -z "${OPERATOR_IMAGE}" ]]; then
+                OPERATOR_IMAGE="quay.io/opendatahub/odh-kserve-module-operator:${RELEASE_TAG}"
+              fi
+              echo "Using operator image: ${OPERATOR_IMAGE}"
+
+              git clone "${KSERVE_GIT_URL}" /workspace/source
+              cd /workspace/source
+              git checkout "${RELEASE_TAG}"
+
+              pip install pytest pyyaml
+
+              make e2e-setup-kserve-module \
+                PLATFORM=ocp \
+                E2E_IMG="${OPERATOR_IMAGE}"
+              make e2e-kserve-module-post-release
+
+              echo "success" > "$STATUS_FILE"
+
+          - name: fail-if-needed
+            image: quay.io/rhoai/rhoai-task-toolset:go-its
+            env:
+              - name: KUBECONFIG
+                value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              STATUS_FILE="/test-status/post-release-smoke-status"
+              if [ -f "$STATUS_FILE" ] && [ "$(cat "$STATUS_FILE")" = "success" ]; then
+                echo "post-release smoke step succeeded"
+                exit 0
+              fi
+              echo "=== Controller logs ==="
+              oc logs deployment/kserve-module-controller-manager -n opendatahub --tail=200 || true
+              echo "=== odh-model-controller logs ==="
+              oc logs deployment/odh-model-controller -n opendatahub --tail=100 || true
+              echo "=== Kserve CR ==="
+              oc get kserve -A -o yaml || true
+              echo "=== LLMInferenceService ==="
+              oc get llminferenceservice -A -o yaml || true
+              echo "Failing pipeline because post-release smoke step failed"
+              exit 1
