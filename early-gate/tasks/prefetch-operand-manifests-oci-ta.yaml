@@ -181,7 +181,18 @@ spec:
       MANIFEST_CONFIG_PATH=source/build/manifests-config.yaml
       PUSH_PIPELINE_PATH=source/.tekton/${ODH_OPERATOR_COMPONENT_NAME}-push.yaml
 
-      python3 utils/utils/operator-processor/operator-processor.py -op process-operator-yamls --patch-yaml-path ${PATCH_YAML_PATH} --operands-map-path ${OPERANDS_MAP_PATH} --manifest-config-path ${MANIFEST_CONFIG_PATH} --rhoai-version ${BUILD_VERSION_TAG} --push-pipeline-yaml-path ${PUSH_PIPELINE_PATH} --push-pipeline-operation enable
+      echo "*************** Running operator-processor ***************"
+      echo "UTILS_REPO_URL=${UTILS_REPO_URL}"
+      echo "UTILS_REPO_BRANCH=${UTILS_REPO_BRANCH}"
+      echo "BUILD_VERSION_TAG=${BUILD_VERSION_TAG}"
+      echo "PATCH_YAML_PATH=${PATCH_YAML_PATH}"
+      echo "OPERANDS_MAP_PATH=${OPERANDS_MAP_PATH}"
+      echo "MANIFEST_CONFIG_PATH=${MANIFEST_CONFIG_PATH}"
+      if ! python3 utils/utils/operator-processor/operator-processor.py -op process-operator-yamls --patch-yaml-path ${PATCH_YAML_PATH} --operands-map-path ${OPERANDS_MAP_PATH} --manifest-config-path ${MANIFEST_CONFIG_PATH} --rhoai-version ${BUILD_VERSION_TAG} --push-pipeline-yaml-path ${PUSH_PIPELINE_PATH} --push-pipeline-operation enable; then
+        echo "ERROR: operator-processor failed while resolving operand images for tag '${BUILD_VERSION_TAG}'." >&2
+        echo "ERROR: Search this log for 'ERROR: git.url and git.commit labels missing' for the failing component, digest, and Quay labels URL." >&2
+        exit 1
+      fi
 
       echo "----- OPERANDS_MAP ------"
       cat $OPERANDS_MAP_PATH
