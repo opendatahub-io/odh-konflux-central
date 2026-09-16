@@ -15,7 +15,12 @@ spec:
   params:
     - name: release_tag
       type: string
-      description: ODH release tag (e.g. odh-v3.5)
+      description: ODH release tag (e.g. odh-v3.6). Set explicitly for manual PipelineRuns.
+      default: ""
+    - name: trigger_comment
+      type: string
+      description: PAC comment that triggered the run (e.g. /post-release-smoke odh-v3.6)
+      default: ""
     - name: operator_image
       type: string
       description: Optional override for odh-kserve-module-operator image
@@ -110,6 +115,8 @@ spec:
       params:
         - name: release_tag
           value: $(params.release_tag)
+        - name: trigger_comment
+          value: $(params.trigger_comment)
         - name: operator_image
           value: $(params.operator_image)
         - name: kserve-git-url
@@ -119,6 +126,8 @@ spec:
       taskSpec:
         params:
           - name: release_tag
+            type: string
+          - name: trigger_comment
             type: string
           - name: operator_image
             type: string
@@ -158,6 +167,8 @@ spec:
                 value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
               - name: RELEASE_TAG
                 value: $(params.release_tag)
+              - name: TRIGGER_COMMENT
+                value: $(params.trigger_comment)
               - name: OPERATOR_IMAGE
                 value: $(params.operator_image)
               - name: KSERVE_GIT_URL
@@ -174,6 +185,15 @@ spec:
               set -euxo pipefail
               STATUS_FILE="/test-status/post-release-smoke-status"
               echo "failed" > "$STATUS_FILE"
+
+              if [[ -z "${RELEASE_TAG}" && -n "${TRIGGER_COMMENT}" ]]; then
+                RELEASE_TAG="$(echo "${TRIGGER_COMMENT}" | awk '{print $2}')"
+              fi
+              if [[ -z "${RELEASE_TAG}" ]]; then
+                echo "release_tag is required: comment /post-release-smoke <tag> or set release_tag param"
+                exit 1
+              fi
+              echo "Using release tag: ${RELEASE_TAG}"
 
               if [[ -z "${OPERATOR_IMAGE}" ]]; then
                 OPERATOR_IMAGE="quay.io/opendatahub/odh-kserve-module-operator:${RELEASE_TAG}"

@@ -8,7 +8,7 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "5"
-    pipelinesascode.tekton.dev/on-comment: "^/post-release-smoke"
+    pipelinesascode.tekton.dev/on-comment: "^/post-release-smoke\\s+\\S+"
   name: kserve-post-release-smoke
   namespace: open-data-hub-tenant
   labels:
@@ -18,7 +18,9 @@ metadata:
 spec:
   params:
     - name: release_tag
-      value: odh-v3.5
+      value: ""
+    - name: trigger_comment
+      value: "{{ trigger_comment }}"
     - name: operator_image
       value: ""
   pipelineRef:

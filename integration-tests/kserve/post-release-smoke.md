@@ -14,21 +14,31 @@ cluster (same EaaS pattern as [pr-group-testing-pipeline.yaml](./pr-group-testin
 - [`post-release-smoke-pipeline.yaml`](./post-release-smoke-pipeline.yaml) — `odh-post-release-kserve-smoke`
 - [`pipelineruns/kserve/kserve-post-release-smoke.yaml`](../../pipelineruns/kserve/kserve-post-release-smoke.yaml) — PAC trigger
 
-## Trigger
+## Trigger (PAC comment)
 
-Comment on an opendatahub-io/kserve PR (or configure equivalent manual PipelineRun):
+Comment on an `opendatahub-io/kserve` PR with the **release tag for this run**:
 
 ```
-/post-release-smoke
+/post-release-smoke odh-v3.6
 ```
 
-Edit `release_tag` (and optional `operator_image`) in the PipelineRun params before
-merging the pipelinerun template, or override when creating a manual run in Konflux.
+The tag is parsed from the comment (`{{ trigger_comment }}` → second token). There is
+no baked-in default — each release supplies its own tag.
 
-| Param | Default | Purpose |
+Optional operator image override (manual PipelineRun only): set `operator_image`
+to a full Quay ref; otherwise defaults to
+`quay.io/opendatahub/odh-kserve-module-operator:<release_tag>`.
+
+## Manual PipelineRun
+
+For Konflux UI or `oc create`, set `release_tag` directly (leave `trigger_comment`
+empty):
+
+| Param | Example | Purpose |
 |-------|---------|---------|
-| `release_tag` | `odh-v3.5` | Git tag on opendatahub-io/kserve and operator image tag |
-| `operator_image` | *(empty)* | Full image ref override; defaults to `quay.io/opendatahub/odh-kserve-module-operator:<release_tag>` |
+| `release_tag` | `odh-v3.6` | Git tag on opendatahub-io/kserve and operator image tag |
+| `trigger_comment` | *(empty)* | Only used when triggered via PAC comment |
+| `operator_image` | *(empty)* | Full image ref override |
 
 ## Prerequisites
 
