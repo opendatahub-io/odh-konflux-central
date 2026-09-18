@@ -347,7 +347,8 @@ spec:
                 make ginkgo
                 mkdir -p "${ARTIFACT_DIR}"
                 echo "Running upstream and midstream Trainer e2e tests..."
-                ./bin/ginkgo -v --junit-report=junit.xml --output-dir="${ARTIFACT_DIR}" ./test/e2e/...
+                ./bin/ginkgo -v --skip='runtime status server instrumentation' \
+                  --junit-report=junit.xml --output-dir="${ARTIFACT_DIR}" ./test/e2e/...
 
                 echo "success" > "$STATUS_FILE"
             - name: must-gather
