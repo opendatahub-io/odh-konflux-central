@@ -1,0 +1,280 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: olminstall-install-dep-operators
+spec:
+  description: >-
+    Install dependency operators and cluster prerequisites before the main
+    operator install: setup-dependencies.sh, RHCL pin, Llama Stack sidecars,
+    and optional component cluster prep (DSC, MaaS gateway, LDAP) when
+    INSTALL_DEPENDENCIES is set on an external cluster.
+  workspaces:
+    - name: tests-shared
+  params:
+    - name: CONFORMA_GATE
+      type: string
+      default: ""
+      description: Pipeline when-binding only (Conforma pass/fail from wait-for-conforma)
+    - name: RUN_INSTALL_DEP_OPERATORS
+      type: string
+      default: ""
+      description: Pipeline when-binding only (parse-pipeline-tests RUN_INSTALL_DEP_OPERATORS)
+    - name: CLUSTER_SOURCE
+      type: string
+      default: ""
+    - name: OLMINSTALL_REPO_URL
+      type: string
+    - name: OLMINSTALL_REPO_REVISION
+      type: string
+    - name: SCRIPTS_REPO_URL
+      type: string
+    - name: SCRIPTS_REPO_REVISION
+      type: string
+    - name: SETUP_DEPENDENCIES_ARGS
+      type: string
+      default: ""
+    - name: COMPONENTS_CSV
+      type: string
+      default: ""
+    - name: OLMINSTALL_GITOPS_BRANCH
+      type: string
+      default: ""
+    - name: PRODUCT
+      type: string
+      default: ""
+    - name: RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS
+      type: string
+      default: "false"
+      description: >-
+        When "true", run shared component cluster prep in this task (set by parse-pipeline-tests
+        when INSTALL_DEPENDENCIES is true with smoke/tier1 on an existing cluster).
+    - name: SMOKE_AWS_SECRET
+      type: string
+      default: "unused-smoke-aws-secret"
+    - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
+      type: string
+      default: "false"
+      description: >-
+        Set to "true" only when git clone requires bypassing TLS certificate verification.
+  results:
+    - name: TASK_MESSAGE
+      description: Pass/fail summary for Konflux task Results panel
+    - name: INSTALL_DEP_COMPLETE
+      description: Set to true when dependency install completes (install-chain when gate)
+  volumes:
+    - name: credentials
+      emptyDir: {}
+    - name: external-kubeconfig-secret
+      secret:
+        secretName: $(params.CLUSTER_SOURCE)
+        optional: true
+        items:
+          - key: kubeconfig
+            path: kubeconfig
+    - name: smoke-aws-credentials
+      emptyDir: {}
+    - name: vault-approle
+      secret:
+        secretName: vault-approle
+        optional: true
+    - name: tenant-test-secrets
+      secret:
+        optional: true
+        secretName: $(params.SMOKE_AWS_SECRET)
+  stepTemplate:
+    env:
+      - name: OLMINSTALL_OC_VERBOSE
+        value: "1"
+  steps:
+    - name: prepare-kubeconfig-ephc
+      displayName: Stage EPHC kubeconfig
+      when:
+        - input: "$(params.CLUSTER_SOURCE)"
+          operator: in
+          values: ["", "EPHC"]
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      volumeMounts:
+        - name: credentials
+          mountPath: /credentials
+      env:
+        - name: TESTS_SHARED
+          value: $(workspaces.tests-shared.path)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        src="${TESTS_SHARED}/credentials/kubeconfig"
+        if [[ ! -f "${src}" ]]; then
+          echo "ERROR: EPHC kubeconfig missing at ${src} (expected stage-ephemeral-kubeconfig to stage it)" >&2
+          exit 1
+        fi
+        cp "${src}" /credentials/kubeconfig
+        echo "EPHC kubeconfig staged at /credentials/kubeconfig (from tests-shared)"
+
+    - name: clone-olminstall
+      displayName: Clone olminstall repository
+      image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+      env:
+        - name: REPO_URL
+          value: $(params.OLMINSTALL_REPO_URL)
+        - name: REPO_REV
+          value: $(params.OLMINSTALL_REPO_REVISION)
+        - name: DEST_DIR
+          value: /workspace/olminstall
+        - name: TLS_WORKAROUND
+          value: $(params.OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE)
+        - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
+          value: $(params.OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE)
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+
+        sys.path.insert(0, os.environ["SCRIPTS_REPO_ROOT"])
+        from steps.tekton_util import git_clone
+
+        tls = os.environ.get("TLS_WORKAROUND", "").strip().lower() in ("1", "true", "yes")
+        git_clone(os.environ["REPO_URL"], os.environ["REPO_REV"], os.environ["DEST_DIR"], tls_workaround=tls)
+
+    - name: prepare-kubeconfig-external
+      displayName: Load external kubeconfig
+      when:
+        - input: "$(params.CLUSTER_SOURCE)"
+          operator: notin
+          values: ["", "EPHC"]
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      volumeMounts:
+        - name: credentials
+          mountPath: /credentials
+        - name: external-kubeconfig-secret
+          mountPath: /var/rhoai-e2e/external-kubeconfig
+          readOnly: true
+      env:
+        - name: CLUSTER_SOURCE
+          value: $(params.CLUSTER_SOURCE)
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "steps.stage_kubeconfig_for_task"])
+
+    - name: setup-dependencies
+      displayName: Run setup-dependencies.sh
+      onError: continue
+      image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+      volumeMounts:
+        - name: credentials
+          mountPath: /credentials
+      env:
+        - name: KUBECONFIG
+          value: /credentials/kubeconfig
+        - name: OLMINSTALL_DIR
+          value: /workspace/olminstall
+        - name: SETUP_DEPENDENCIES_ARGS
+          value: $(params.SETUP_DEPENDENCIES_ARGS)
+        - name: COMPONENTS_CSV
+          value: $(params.COMPONENTS_CSV)
+        - name: OLMINSTALL_GITOPS_BRANCH
+          value: $(params.OLMINSTALL_GITOPS_BRANCH)
+        - name: PRODUCT
+          value: $(params.PRODUCT)
+        - name: RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS
+          value: $(params.RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS)
+        - name: TESTS_SHARED
+          value: $(workspaces.tests-shared.path)
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "install.install_minimal_deps"])
+
+    - name: prepare-component-cluster
+      displayName: Prepare cluster for component tests
+      when:
+        - input: "$(params.RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS)"
+          operator: in
+          values: ["true"]
+      onError: continue
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      volumeMounts:
+        - name: credentials
+          mountPath: /credentials
+        - name: vault-approle
+          mountPath: /vault-approle
+          readOnly: true
+        - name: tenant-test-secrets
+          mountPath: /tenant-test-secrets
+          readOnly: true
+        - name: smoke-aws-credentials
+          mountPath: /smoke-aws-credentials
+      env:
+        - name: KUBECONFIG
+          value: /credentials/kubeconfig
+        - name: TESTS_SHARED
+          value: $(workspaces.tests-shared.path)
+        - name: COMPONENTS_CSV
+          value: $(params.COMPONENTS_CSV)
+        - name: PRODUCT
+          value: $(params.PRODUCT)
+        - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
+          value: $(params.OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE)
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+
+        sys.path.insert(0, os.environ["SCRIPTS_REPO_ROOT"])
+        from steps.tests_payload import ensure_tests_payload_layout
+
+        tests_shared = os.environ["TESTS_SHARED"]
+        ensure_tests_payload_layout(tests_shared)
+        os.environ["ARTIFACTS_DIR"] = os.path.join(tests_shared, "tests-payload", "results")
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "runners.component_cluster_prep"])
+
+    - name: write-konflux-task-summary
+      displayName: Write Konflux task summary
+      onError: continue
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+        - name: PIPELINE_TASK
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['tekton.dev/pipelineTask']
+        - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ -n "${SCRIPTS_REPO_ROOT:-}" ]] || exit 0
+        exec bash "${SCRIPTS_REPO_ROOT}/tekton/scripts/run_write_task_message.sh"
+    - name: finalize-dep-operators
+      displayName: Check dependency install outcome
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        rc="$(cat "$(steps.step-setup-dependencies.exitCode.path)")"
+        if [ "$rc" = "0" ]; then
+          echo "✓ install-dep-operators completed without issues"
+        elif [ "$rc" = "2" ]; then
+          echo "WARN: install-dep-operators completed with recoverable issues (exit 2); downstream verify-operator-ready gates dashboard readiness" >&2
+        else
+          echo "ERROR: install-dep-operators failed (exit ${rc})" >&2
+          exit "$rc"
+        fi
+        if [ -f "$(steps.step-prepare-component-cluster.exitCode.path)" ]; then
+          prc="$(cat "$(steps.step-prepare-component-cluster.exitCode.path)")"
+          if [ "$prc" != "0" ]; then
+            echo "ERROR: prepare-component-cluster failed (exit ${prc})" >&2
+            exit "$prc"
+          fi
+        fi
+        printf '%s' true > "$(results.INSTALL_DEP_COMPLETE.path)"

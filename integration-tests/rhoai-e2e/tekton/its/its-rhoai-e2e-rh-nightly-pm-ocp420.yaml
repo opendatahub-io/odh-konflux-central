@@ -1,0 +1,56 @@
+---
+# Auto ITS: external rh-nightly-pm cluster, RHOAI install on component builds (ocp-420).
+# MIN_RHOAI_VERSION=3.5 is enforced in wait-for-conforma via Snapshot PAC metadata (catalog line).
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  labels:
+    test.appstudio.openshift.io/optional: "true"
+  name: rhoai-e2e-rh-nightly-pm-ocp420
+  namespace: rhoai-tenant
+spec:
+  application: rhoai-fbc-fragment-ocp-420
+  contexts:
+    - description: RHOAI E2E on rh-nightly-pm when rhoai-fbc-fragment-ocp-420 FBC builds
+      name: component_rhoai-fbc-fragment-ocp-420
+  params:
+    - name: CLUSTER_SOURCE
+      value: rhoai-e2e-kubeconfig-rh-nightly-pm
+    - name: OCP_VERSION
+      value: "4.20"
+    - name: PRODUCT
+      value: "rhoai"
+    - name: CLEANUP
+      value: "true"
+    - name: RHOAI_VERSION
+      value: "unspecified (default)"
+    - name: UPDATE_CHANNEL
+      value: "beta"
+    - name: OPERATOR_NAME
+      value: "rhods-operator"
+    - name: RHOAI_FBC_NAME
+      value: "rhoai-fbc-fragment-ocp-420"
+    - name: RHOAI_FBC_IMAGE
+      value: "unspecified (default)"
+    - name: MIN_RHOAI_VERSION
+      value: "3.5"
+    - name: TEST_GATES
+      value: "bvt,smoke"
+    - name: QUAY_PULL_SECRET_NAME
+      value: "rhoai-external-quay-secret"
+    - name: ROSA_HCP_KYVERNO_SECRET
+      value: "rhoai-e2e-rosa-hcp-kyverno"
+    - name: SCRIPTS_REPO_URL
+      value: https://github.com/opendatahub-io/odh-konflux-central.git
+    - name: SCRIPTS_REPO_REVISION
+      value: main
+  resolverRef:
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-rh-nightly.yaml
+    resolver: git
+    resourceKind: pipelinerun
