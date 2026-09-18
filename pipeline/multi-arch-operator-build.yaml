@@ -707,6 +707,9 @@ spec:
                 name: odh-github-secret
                 key: build-metadata-token
           script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+
             echo "SOURCE_ARTIFACT=${SOURCE_ARTIFACT}"
             echo "CACHI2_ARTIFACT=${CACHI2_ARTIFACT}"
             echo "exploring manifests"
@@ -730,41 +733,58 @@ spec:
             git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${BUILD_METADATA_REPO}.git"
             git config core.sparseCheckout true
             git config core.sparseCheckoutCone false
-            echo "components/odh-operator/docs" >> .git/info/sparse-checkout
+            OUTPUT_IMAGE_DIGEST=${OUTPUT_IMAGE_DIGEST#sha256:}
+            printf '/components/odh-operator/docs/\n/components/odh-operator/%s/\n' "${OUTPUT_IMAGE_DIGEST}" > .git/info/sparse-checkout
             git fetch --depth=1 origin main
             git checkout main
 
             #add content to new-dir
-            OUTPUT_IMAGE_DIGEST=${OUTPUT_IMAGE_DIGEST/sha256:/}
-            mkdir -p components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
-            cp -r /var/workdir/cachi2/prefetched-manifests/* components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests
+            mkdir -p "components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests"
+            cp -r /var/workdir/cachi2/prefetched-manifests/* "components/odh-operator/${OUTPUT_IMAGE_DIGEST}/manifests"
             if [ -d /var/workdir/cachi2/prefetched-charts ] && [ "$(ls -A /var/workdir/cachi2/prefetched-charts)" ]; then
-              mkdir -p components/odh-operator/${OUTPUT_IMAGE_DIGEST}/charts
-              cp -r /var/workdir/cachi2/prefetched-charts/* components/odh-operator/${OUTPUT_IMAGE_DIGEST}/charts
+              mkdir -p "components/odh-operator/${OUTPUT_IMAGE_DIGEST}/charts"
+              cp -r /var/workdir/cachi2/prefetched-charts/* "components/odh-operator/${OUTPUT_IMAGE_DIGEST}/charts"
             fi
-            cp /var/workdir/source/build/operands-map.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
-            cp /var/workdir/source/build/manifests-config.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
+            cp /var/workdir/source/build/operands-map.yaml "components/odh-operator/${OUTPUT_IMAGE_DIGEST}"
+            cp /var/workdir/source/build/manifests-config.yaml "components/odh-operator/${OUTPUT_IMAGE_DIGEST}"
             if [ -f /var/workdir/source/build/charts-config.yaml ]; then
-              cp /var/workdir/source/build/charts-config.yaml components/odh-operator/${OUTPUT_IMAGE_DIGEST}
+              cp /var/workdir/source/build/charts-config.yaml "components/odh-operator/${OUTPUT_IMAGE_DIGEST}"
             fi
 
-            git add --sparse components/odh-operator/${OUTPUT_IMAGE_DIGEST}
+            git add --sparse "components/odh-operator/${OUTPUT_IMAGE_DIGEST}"
+            if git diff --cached --quiet; then
+              echo "Metadata already published for ${OUTPUT_IMAGE_DIGEST}"
+              exit 0
+            fi
             git commit -m "build-meta for operator image ${OUTPUT_IMAGE_DIGEST}"
 
-            # Retry loop: concurrent builds writing to different digest dirs
-            # can race on git push. Rebase is safe because paths never overlap.
+            # Other builds may advance main between checkout and push. Replay our
+            # metadata commit on the latest main before retrying; never force-push.
             MAX_RETRIES=10
-            for attempt in $(seq 1 $MAX_RETRIES); do
-              if git push; then
+            for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
+              echo "Pushing metadata (attempt ${attempt}/${MAX_RETRIES})"
+              if git push origin HEAD:main; then
                 echo "Push succeeded (attempt ${attempt})"
                 break
               fi
               if [ "$attempt" -eq "$MAX_RETRIES" ]; then
-                echo "ERROR: Push failed after ${MAX_RETRIES} attempts"
+                echo "ERROR: Push failed after ${MAX_RETRIES} attempts" >&2
                 exit 1
               fi
-              echo "Push failed (attempt ${attempt}/${MAX_RETRIES}), rebasing and retrying..."
-              git pull --rebase origin main
+              delay=$((attempt + RANDOM % 5))
+              echo "Push failed; waiting ${delay}s before fetching origin/main"
+              sleep "$delay"
+              if ! git fetch origin main; then
+                echo "ERROR: Could not fetch origin/main after push rejection" >&2
+                exit 1
+              fi
+              echo "Rebasing metadata onto origin/main"
+              if ! git rebase origin/main; then
+                echo "ERROR: Could not rebase metadata onto origin/main" >&2
+                git rebase --abort || true
+                exit 1
+              fi
+              echo "Rebase completed; retrying push"
             done
 
     when:
