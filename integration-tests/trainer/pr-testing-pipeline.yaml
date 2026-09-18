@@ -335,10 +335,19 @@ spec:
                 echo "Deploying Kubeflow Trainer..."
                 make deploy-rhoai
 
-                echo "Running RHOAI e2e tests..."
+                echo "Installing midstream Trainer runtimes..."
+                oc apply --server-side -k \
+                  'https://github.com/opendatahub-io/trainer-operator//manifests/runtimes?ref=main'
+                echo "Installing upstream E2E-only runtimes..."
+                oc apply --server-side \
+                  -f manifests/base/runtimes/jax_distributed.yaml \
+                  -f manifests/base/runtimes/xgboost_distributed.yaml \
+                  -f examples/flux/flux-runtime.yaml
+
                 make ginkgo
                 mkdir -p "${ARTIFACT_DIR}"
-                ./bin/ginkgo -v --junit-report=junit.xml --output-dir="${ARTIFACT_DIR}" ./test/e2e/rhai/...
+                echo "Running upstream and midstream Trainer e2e tests..."
+                ./bin/ginkgo -v --junit-report=junit.xml --output-dir="${ARTIFACT_DIR}" ./test/e2e/...
 
                 echo "success" > "$STATUS_FILE"
             - name: must-gather
@@ -481,6 +490,8 @@ spec:
                 value: $(tasks.audit-snapshot.results.git-org)
               - name: git-revision
                 value: $(tasks.audit-snapshot.results.git-revision)
+              - name: junit-report-name
+                value: /workspace/odh-ci-artifacts/test-artifacts/$(context.pipelineRun.name)/deploy-and-test/junit.xml
               - name: artifact-browser-url
                 value: $(params.artifact-browser-url)
           - name: cleanup-artifacts-from-git
