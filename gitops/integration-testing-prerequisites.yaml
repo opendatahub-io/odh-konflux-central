@@ -105,6 +105,27 @@ spec:
       url: https://github.com/opendatahub-io/ai-gateway-payload-processing.git
       revision: "main"
 ---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-oci-ta","bundle":"latest"}'
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: 'true'
+    git-provider: github
+    git-provider-url: https://github.com
+  name: ai-gateway-controller-group
+  namespace: open-data-hub-tenant
+spec:
+  application: group-testing
+  componentName: ai-gateway-controller-group
+  containerImage: quay.io/redhat-user-workloads/open-data-hub-tenant/ai-gateway-controller-group
+  source:
+    git:
+      dockerfileUrl: Dockerfile
+      url: https://github.com/opendatahub-io/ai-gateway-controller
+      revision: "main"
+---
 apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:

@@ -1,0 +1,468 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: odh-pr-test-ai-gateway-controller
+spec:
+  description: |
+    Group integration test for ai-gateway-controller. Provisions an ephemeral Hypershift
+    cluster and runs MaaS e2e tests (without external-model modules) using the PR-built
+    odh-ai-gateway-controller-ci image.
+
+    Uses odh-praxis-extproc-ci from the group snapshot when present; otherwise
+    quay.io/opendatahub/odh-praxis-extproc:odh-stable (includes llmisvc_model_provider_resolver
+    since opendatahub-io/praxis-extproc#79 / commit 9872fc9).
+  params:
+    - description: List of components in the group
+      name: group-components
+      type: string
+    - name: oci-artifacts-repo
+      default: 'quay.io/opendatahub/odh-ci-artifacts'
+      description: OCI repo for test artifacts.
+    - name: artifact-browser-url
+      default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
+      description: Artifact browser base URL for PR comments.
+  tasks:
+    - name: generate-snapshot
+      description: Composite snapshot for group components
+      params:
+        - name: COMPONENTS
+          value: $(params.group-components)
+      workspaces:
+      - name: basic-auth
+        workspace: git-auth
+      taskRef:
+        resolver: git
+        params:
+        - name: url
+          value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+        - name: revision
+          value: main
+        - name: pathInRepo
+          value: konflux-tekton-tasks/generate-snapshot-for-group-testing/0.1/generate-snapshot-for-group-testing.yaml
+    - name: audit-snapshot
+      runAfter:
+        - generate-snapshot
+      params:
+        - name: COMPONENTS
+          value: $(params.group-components)
+      taskSpec:
+        params:
+          - name: COMPONENTS
+        results:
+        - name: pull-request-author
+        - name: pull-request-number
+        - name: git-repo
+        - name: git-org
+        - name: git-revision
+        steps:
+          - name: audit-snapshot
+            image: quay.io/konflux-ci/konflux-test:stable
+            workingDir: /workspace
+            env:
+              - name: SNAPSHOT
+                value: $(tasks.generate-snapshot.results.SNAPSHOT)
+              - name: COMPONENTS
+                value: $(params.COMPONENTS)
+              - name: PR_AUTHOR
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sender']
+              - name: PR_NUMBER
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
+              - name: GIT_REPO
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-repository']
+              - name: GIT_ORG
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
+              - name: GIT_REVISION
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha']
+            script: |
+              #!/bin/bash
+              set -e
+              echo "SNAPSHOT=${SNAPSHOT}"
+              while IFS= read -r row; do
+                  COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.key')
+                  IMAGE=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name].image' <<< "${SNAPSHOT}")
+                  GIT_COMMIT=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.commit"' <<< "${SNAPSHOT}")
+                  GIT_URL=$(jq -r --arg component_name "${COMPONENT_NAME}" '.[$component_name]."git.url"' <<< "${SNAPSHOT}")
+                  if [ -z "${IMAGE}" ] || [ "${IMAGE}" = "null" ] || \
+                     [ -z "${GIT_COMMIT}" ] || [ "${GIT_COMMIT}" = "null" ] || \
+                     [ -z "${GIT_URL}" ] || [ "${GIT_URL}" = "null" ]; then
+                      echo "ERROR: snapshot metadata missing for ${COMPONENT_NAME}" >&2
+                      exit 1
+                  fi
+                  echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
+              done < <(echo "$COMPONENTS" | jq -r 'to_entries[] | @base64')
+              echo -n "${PR_AUTHOR}" > "$(results.pull-request-author.path)"
+              echo -n "${PR_NUMBER}" > "$(results.pull-request-number.path)"
+              echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
+              echo -n "${GIT_ORG}" > "$(results.git-org.path)"
+              echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
+    - name: provision-eaas-space
+      runAfter:
+        - audit-snapshot
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/build-definitions.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/eaas-provision-space/0.1/eaas-provision-space.yaml
+      params:
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+    - name: provision-cluster
+      runAfter:
+        - provision-eaas-space
+      taskSpec:
+        results:
+          - name: clusterName
+            value: "$(steps.create-cluster.results.clusterName)"
+        steps:
+          - name: get-supported-versions
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-supported-ephemeral-cluster-versions/0.1/eaas-get-supported-ephemeral-cluster-versions.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+          - name: pick-version
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-latest-openshift-version-by-prefix/0.1/eaas-get-latest-openshift-version-by-prefix.yaml
+            params:
+              - name: prefix
+                value: "$(steps.get-supported-versions.results.versions[0])."
+          - name: create-cluster
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-create-ephemeral-cluster-hypershift-aws/0.1/eaas-create-ephemeral-cluster-hypershift-aws.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: version
+                value: "$(steps.pick-version.results.version)"
+              - name: instanceType
+                value: m5.2xlarge
+    - name: e2e-ai-gateway-controller-openshift
+      timeout: 1h30m
+      workspaces:
+      - name: basic-auth
+        workspace: git-auth
+      runAfter:
+        - provision-cluster
+      taskSpec:
+        volumes:
+          - name: credentials
+            emptyDir: {}
+          - name: test-status
+            emptyDir: {}
+        workspaces:
+          - name: basic-auth
+            optional: true
+        steps:
+          - name: get-kubeconfig
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/build-definitions.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/eaas-get-ephemeral-cluster-credentials/0.1/eaas-get-ephemeral-cluster-credentials.yaml
+            params:
+              - name: eaasSpaceSecretRef
+                value: $(tasks.provision-eaas-space.results.secretRef)
+              - name: clusterName
+                value: "$(tasks.provision-cluster.results.clusterName)"
+              - name: credentials
+                value: credentials
+          - name: clone-repo
+            image: alpine/git
+            env:
+            - name: source_branch
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['pipelinesascode.tekton.dev/source-branch']
+            - name: repo_url
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['pipelinesascode.tekton.dev/source-repo-url']
+            script: |
+              git clone --depth 50 --no-single-branch "${repo_url}" /workspace/source
+              git config --global --add safe.directory /workspace/source
+              cd /workspace/source
+              git checkout "${source_branch}"
+          - name: e2e-ai-gateway-controller
+            onError: continue
+            image: quay.io/rhoai/rhoai-task-toolset:maas
+            env:
+              - name: KUBECONFIG
+                value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+              - name: ARTIFACT_DIR
+                value: /workspace/artifacts-dir
+              - name: SNAPSHOT
+                value: $(tasks.generate-snapshot.results.SNAPSHOT)
+            workingDir: /workspace/source
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              set -euxo pipefail
+
+              STATUS_FILE="/test-status/deploy-and-e2e-status"
+              echo "failed" > "$STATUS_FILE"
+
+              export AI_GATEWAY_CONTROLLER_IMAGE=$(jq -r '."odh-ai-gateway-controller-ci".image' <<< "${SNAPSHOT}")
+              AIGC_TAG=$(jq -r '."odh-ai-gateway-controller-ci".image_tag' <<< "${SNAPSHOT}")
+
+              if [ -z "${AIGC_TAG}" ] || [ "${AIGC_TAG}" = "null" ]; then
+                echo "ERROR: image_tag missing for odh-ai-gateway-controller-ci in SNAPSHOT" >&2
+                exit 1
+              fi
+
+              echo "AI_GATEWAY_CONTROLLER_IMAGE=${AI_GATEWAY_CONTROLLER_IMAGE}"
+              echo "AI_GATEWAY_CONTROLLER_IMAGE (tag): ${AI_GATEWAY_CONTROLLER_IMAGE%%@*}:${AIGC_TAG}"
+
+              PRAXIS_EXTPROC_STABLE_IMAGE="quay.io/opendatahub/odh-praxis-extproc:odh-stable"
+              PRAXIS_FROM_SNAPSHOT=$(jq -r '."odh-praxis-extproc-ci".image // empty' <<< "${SNAPSHOT}")
+              if [ -n "${PRAXIS_FROM_SNAPSHOT}" ] && [ "${PRAXIS_FROM_SNAPSHOT}" != "null" ]; then
+                export PRAXIS_EXTPROC_IMAGE="${PRAXIS_FROM_SNAPSHOT}"
+              else
+                export PRAXIS_EXTPROC_IMAGE="${PRAXIS_EXTPROC_IMAGE:-${PRAXIS_EXTPROC_STABLE_IMAGE}}"
+                echo "NOTE: odh-praxis-extproc-ci not in SNAPSHOT; using PRAXIS_EXTPROC_IMAGE=${PRAXIS_EXTPROC_IMAGE}"
+              fi
+
+              export MAAS_API_IMAGE="${MAAS_API_IMAGE:-quay.io/opendatahub/maas-api:latest}"
+              export MAAS_CONTROLLER_IMAGE="${MAAS_CONTROLLER_IMAGE:-quay.io/opendatahub/maas-controller:latest}"
+              echo "MAAS_API_IMAGE=${MAAS_API_IMAGE}"
+              echo "MAAS_CONTROLLER_IMAGE=${MAAS_CONTROLLER_IMAGE}"
+              echo "PRAXIS_EXTPROC_IMAGE=${PRAXIS_EXTPROC_IMAGE}"
+
+              mkdir -p "${ARTIFACT_DIR}"
+              ./test/e2e/scripts/prow_run_ai_gateway_controller_test.sh \
+                2>&1 | tee "${ARTIFACT_DIR}/prow.log"
+
+              echo "success" > "$STATUS_FILE"
+          - name: must-gather
+            onError: continue
+            image: quay.io/rhoai/rhoai-task-toolset:maas
+            env:
+              - name: KUBECONFIG
+                value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
+              - name: ARTIFACT_DIR
+                value: /workspace/artifacts-dir
+            workingDir: /workspace/source
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+            script: |
+              set -euo pipefail
+              mkdir -p "${ARTIFACT_DIR}/gather-openshift" "${ARTIFACT_DIR}/gather-maas"
+              LOG="${ARTIFACT_DIR}/must-gather.log"
+              MAAS_LOG="${ARTIFACT_DIR}/maas-must-gather.log"
+              export DEPLOYMENT_NAMESPACE="${DEPLOYMENT_NAMESPACE:-opendatahub}"
+              export MAAS_SUBSCRIPTION_NAMESPACE="${MAAS_SUBSCRIPTION_NAMESPACE:-models-as-a-service}"
+              export AITENANT_NAMESPACE="${AITENANT_NAMESPACE:-ai-tenants}"
+              export GATEWAY_NAMESPACE="${GATEWAY_NAMESPACE:-openshift-ingress}"
+              export AUTHORINO_NAMESPACE="${AUTHORINO_NAMESPACE:-kuadrant-system}"
+              export LLM_NAMESPACE="${LLM_NAMESPACE:-llm}"
+              export ISTIO_NAMESPACE="${ISTIO_NAMESPACE:-istio-system}"
+              echo "Collecting MaaS diagnostics (details in ${MAAS_LOG}) ..."
+              {
+                echo "=== MaaS must-gather started at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+                ./test/e2e/scripts/collect-maas-must-gather.sh "${ARTIFACT_DIR}/gather-maas"
+                echo "=== MaaS must-gather finished at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+              } >>"${MAAS_LOG}" 2>&1
+              echo "MaaS must-gather complete"
+              echo "Collecting OpenShift must-gather (details in ${LOG}) ..."
+              {
+                echo "=== must-gather started at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+                oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift"
+                echo "=== must-gather finished at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+              } >>"${LOG}" 2>&1
+              echo "must-gather complete"
+          - name: git-push-artifacts
+            onError: continue
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/secure-git-push/0.1/secure-git-push.yaml
+            params:
+              - name: source-path
+                value: /workspace/artifacts-dir
+              - name: repo-path
+                value: 'opendatahub-io/odh-build-metadata'
+              - name: repo-branch
+                value: 'ci-artifacts'
+              - name: sparse-file-path
+                value: 'test-artifacts/docs'
+              - name: dest-path
+                value: 'test-artifacts/$(context.pipelineRun.name)'
+              - name: pipelinerun-name
+                value: $(context.pipelineRun.name)
+          - name: fail-if-needed
+            image: alpine
+            volumeMounts:
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              STATUS_FILE="/test-status/deploy-and-e2e-status"
+              if ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
+                echo "Failing pipeline because deploy-and-e2e step failed"
+                exit 1
+              fi
+              echo "deploy-and-e2e step succeeded"
+  finally:
+  - name: push-ci-artifacts-and-update-pr
+    workspaces:
+    - name: basic-auth
+      workspace: git-auth
+    params:
+      - name: oci-artifacts-repo
+        value: $(params.oci-artifacts-repo)
+      - name: pipeline-status
+        value: $(tasks.status)
+    taskSpec:
+      volumes:
+        - name: odh-registry-secret-volume
+          secret:
+            secretName: odh-registry-secret
+            items:
+            - key: .dockerconfigjson
+              path: oci-storage-dockerconfigjson
+      workspaces:
+        - name: basic-auth
+          optional: true
+      params:
+        - name: oci-artifacts-repo
+        - name: pipeline-status
+          type: string
+      steps:
+        - name: pull-ci-artifacts
+          onError: continue
+          ref:
+            resolver: git
+            params:
+              - name: url
+                value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+              - name: revision
+                value: main
+              - name: pathInRepo
+                value: stepactions/git-clone/0.1/git-clone.yaml
+          params:
+            - name: repo-path
+              value: 'opendatahub-io/odh-build-metadata'
+            - name: repo-branch
+              value: 'ci-artifacts'
+            - name: sparse-file-path
+              value: 'test-artifacts/$(context.pipelineRun.name)'
+            - name: dest-path
+              value: /workspace/odh-ci-artifacts
+            - name: artifacts-dir-path
+              value: 'test-artifacts/$(context.pipelineRun.name)'
+        - name: secure-push-oci
+          onError: continue
+          ref:
+            resolver: git
+            params:
+              - name: url
+                value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+              - name: revision
+                value: main
+              - name: pathInRepo
+                value: stepactions/secure-push-oci/0.1/secure-push-oci.yaml
+          params:
+            - name: workdir-path
+              value: '/workspace/odh-ci-artifacts/test-artifacts/$(context.pipelineRun.name)'
+            - name: oci-ref
+              value: $(params.oci-artifacts-repo):$(context.pipelineRun.name)
+            - name: credentials-volume-name
+              value: odh-registry-secret-volume
+        - name: share-status-on-pull-request
+          ref:
+            resolver: git
+            params:
+              - name: url
+                value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+              - name: revision
+                value: main
+              - name: pathInRepo
+                value: stepactions/pull-request-comment/0.1/pull-request-comment.yaml
+          params:
+            - name: test-name
+              value: $(context.pipelineRun.name)
+            - name: oci-container
+              value: $(params.oci-artifacts-repo):$(context.pipelineRun.name)
+            - name: pipeline-aggregate-status
+              value: $(params.pipeline-status)
+            - name: pull-request-author
+              value: $(tasks.audit-snapshot.results.pull-request-author)
+            - name: pull-request-number
+              value: $(tasks.audit-snapshot.results.pull-request-number)
+            - name: git-repo
+              value: $(tasks.audit-snapshot.results.git-repo)
+            - name: git-org
+              value: $(tasks.audit-snapshot.results.git-org)
+            - name: git-revision
+              value: $(tasks.audit-snapshot.results.git-revision)
+            - name: artifact-browser-url
+              value: $(params.artifact-browser-url)
+        - name: cleanup-artifacts-from-git
+          onError: continue
+          ref:
+            resolver: git
+            params:
+              - name: url
+                value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+              - name: revision
+                value: main
+              - name: pathInRepo
+                value: stepactions/cleanup-git-repo/0.1/cleanup-git-repo.yaml
+          params:
+            - name: work-dir
+              value: '/workspace/odh-ci-artifacts'
+            - name: artifacts-dir-path
+              value: 'test-artifacts'
+            - name: dir-to-be-deleted
+              value: '$(context.pipelineRun.name)'
+  workspaces:
+  - name: git-auth
+    optional: true
