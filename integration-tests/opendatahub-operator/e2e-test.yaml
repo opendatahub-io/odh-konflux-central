@@ -182,6 +182,8 @@ spec:
                   value: "$(steps.pick-version.results.version)"
                 - name: instanceType
                   value: m5.2xlarge
+                - name: timeout
+                  value: 3h
         when:
           - input: "$(tasks.check-prerequisites.results.prerequisites-met)"
             operator: in
