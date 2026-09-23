@@ -8,11 +8,14 @@ metadata:
     pipelinesascode.tekton.dev/on-target-branch: "[main, stable]"
 spec:
   timeouts:
-    pipeline: 1h
+    pipeline: 2h
+    tasks: 1h40m
+    finally: 20m
   pipelineSpec:
     description: |
       An integration test which provisions an ephemeral Hypershift cluster, deploys the Kubeflow
-      Trainer from a Konflux snapshot and runs the Go e2e tests against it.
+      Trainer from a Konflux snapshot and runs the upstream Trainer e2e and selected
+      distributed-workloads smoke tests against it.
     params:
       - description: Snapshot of the application
         name: SNAPSHOT
@@ -156,7 +159,7 @@ spec:
                 - name: instanceType
                   value: m5.2xlarge
       - name: deploy-and-test
-        timeout: 50m
+        timeout: 1h15m
         runAfter:
           - provision-cluster
         taskSpec:
@@ -186,6 +189,7 @@ spec:
             - name: deploy-and-e2e
               image: quay.io/rhoai/rhoai-task-toolset:trainer
               onError: continue
+              timeout: 55m
               computeResources:
                 requests:
                   memory: "4Gi"
@@ -228,127 +232,21 @@ spec:
                 cd src_code
                 git checkout "${GIT_COMMIT}"
 
-                # Inject the Konflux snapshot image into RHOAI manifests
-                sed -i "s|odh-kubeflow-trainer-controller-image=.*|odh-kubeflow-trainer-controller-image=${TRAINER_IMAGE}|" manifests/rhoai/params.env
-
-                echo "Installing cert-manager (required by JobSet)..."
-                oc apply -f - <<EOF
-                apiVersion: v1
-                kind: Namespace
-                metadata:
-                  name: cert-manager-operator
-                ---
-                apiVersion: operators.coreos.com/v1
-                kind: OperatorGroup
-                metadata:
-                  name: cert-manager-operator
-                  namespace: cert-manager-operator
-                spec:
-                  targetNamespaces:
-                  - cert-manager-operator
-                ---
-                apiVersion: operators.coreos.com/v1alpha1
-                kind: Subscription
-                metadata:
-                  name: openshift-cert-manager-operator
-                  namespace: cert-manager-operator
-                spec:
-                  channel: stable-v1
-                  name: openshift-cert-manager-operator
-                  source: redhat-operators
-                  sourceNamespace: openshift-marketplace
-                EOF
-                echo "Waiting for cert-manager CSV to be created by OLM..."
-                for i in $(seq 1 60); do
-                  CSV=$(oc get csv -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator -o name 2>/dev/null | head -1)
-                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
-                  echo "  attempt $i/60, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
-                  -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator \
-                  --timeout=300s
-                echo "Waiting for cert-manager deployment to be created by the operator..."
-                for i in $(seq 1 30); do
-                  oc get deployment cert-manager -n cert-manager 2>/dev/null && break
-                  echo "  attempt $i/30, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=300s
-
-                echo "Installing JobSet operator (required by Kubeflow Trainer)..."
-                oc apply -f - <<EOF
-                apiVersion: v1
-                kind: Namespace
-                metadata:
-                  name: openshift-jobset-operator
-                ---
-                apiVersion: operators.coreos.com/v1
-                kind: OperatorGroup
-                metadata:
-                  name: openshift-jobset-operator
-                  namespace: openshift-jobset-operator
-                spec:
-                  targetNamespaces:
-                  - openshift-jobset-operator
-                ---
-                apiVersion: operators.coreos.com/v1alpha1
-                kind: Subscription
-                metadata:
-                  name: job-set
-                  namespace: openshift-jobset-operator
-                spec:
-                  channel: stable-v1.0
-                  name: job-set
-                  source: redhat-operators
-                  sourceNamespace: openshift-marketplace
-                EOF
-                echo "Waiting for JobSet CSV to be created by OLM..."
-                for i in $(seq 1 60); do
-                  CSV=$(oc get csv -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator -o name 2>/dev/null | head -1)
-                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
-                  echo "  attempt $i/60, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
-                  -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator \
-                  --timeout=300s
-                oc apply -f - <<EOF
-                apiVersion: operator.openshift.io/v1
-                kind: JobSetOperator
-                metadata:
-                  name: cluster
-                spec:
-                  logLevel: Normal
-                  managementState: Managed
-                  operatorLogLevel: Normal
-                EOF
-                echo "Waiting for jobsets CRD to be created by the operator..."
-                for i in $(seq 1 30); do
-                  oc get crd jobsets.jobset.x-k8s.io 2>/dev/null && break
-                  echo "  attempt $i/30, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=condition=established crd/jobsets.jobset.x-k8s.io --timeout=300s
-                oc wait --for=condition=Available jobsetoperator/cluster --timeout=300s
-
-                echo "Deploying Kubeflow Trainer..."
-                make deploy-rhoai
-
-                echo "Installing midstream Trainer runtimes..."
-                oc apply --server-side -k \
-                  'https://github.com/opendatahub-io/trainer-operator//manifests/runtimes?ref=main'
-                echo "Installing upstream E2E-only runtimes..."
-                oc apply --server-side \
-                  -f manifests/base/runtimes/jax_distributed.yaml \
-                  -f manifests/base/runtimes/xgboost_distributed.yaml \
-                  -f examples/flux/flux-runtime.yaml
-
-                make ginkgo
-                mkdir -p "${ARTIFACT_DIR}"
-                echo "Running upstream and midstream Trainer e2e tests..."
-                ./bin/ginkgo -v --skip='runtime status server instrumentation' \
-                  --junit-report=junit.xml --output-dir="${ARTIFACT_DIR}" ./test/e2e/...
+                echo "Running Trainer integration tests..."
+                TESTS_PASSED=true
+                make -f Makefile.rhai test-integration-rhai \
+                  ARTIFACT_DIR="${ARTIFACT_DIR}" \
+                  JUNIT_REPORT="${ARTIFACT_DIR}/junit.xml" \
+                  TRAINER_IMAGE="${TRAINER_IMAGE}" \
+                  || TESTS_PASSED=false
+                # Keep the pipeline contract explicit: the target must always publish JUnit.
+                if [ ! -s "${ARTIFACT_DIR}/junit.xml" ]; then
+                  echo "Trainer integration target did not produce ${ARTIFACT_DIR}/junit.xml"
+                  TESTS_PASSED=false
+                fi
+                if [ "${TESTS_PASSED}" != "true" ]; then
+                  exit 1
+                fi
 
                 echo "success" > "$STATUS_FILE"
             - name: must-gather
