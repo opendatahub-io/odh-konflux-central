@@ -8,6 +8,8 @@ RUN dnf install -y \
     jq \
     wget \
     tar \
+    python3 \
+    python3-pip \
     && dnf clean all
 
 RUN wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz && \
@@ -15,3 +17,4 @@ RUN wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable
 
 RUN GOBIN=/usr/local/bin go install gotest.tools/gotestsum@v1.13.0
 
+RUN python3 -m pip install --no-cache-dir --disable-pip-version-check junitparser==4.0.2
