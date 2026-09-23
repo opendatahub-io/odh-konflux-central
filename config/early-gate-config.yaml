@@ -42,3 +42,7 @@ config:
       early-gate-enabled: true
     workbenches:
       early-gate-enabled: true
+    NeMo-Guardrails:
+      early-gate-enabled: true
+      additional-branches:
+        - develop
