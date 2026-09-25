@@ -1,6 +1,6 @@
 .kube/
 integration-tests/raw-artifacts/*
-integration-tests/olminstall/unit_tests_*/
+integration-tests/rhoai-e2e/unit_tests_*/
 **/__pycache__/
 *.py[cod]
 .vscode/

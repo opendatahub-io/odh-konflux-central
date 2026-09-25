@@ -1,0 +1,236 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: rhoai-e2e-verify-operator-ready
+spec:
+  description: >-
+    Wait until the operator and dashboard are ready after install: deployments up,
+    DashboardReady condition, and gateway HTTP check. Stages the dashboard URL for
+    later component tests. Skips cleanly when there is no workload cluster.
+  workspaces:
+    - name: tests-shared
+  params:
+    - name: CONFORMA_GATE
+      type: string
+      default: ""
+      description: Pipeline when-binding only (Conforma pass/fail from wait-for-conforma)
+    - name: SCRIPTS_REPO_URL
+      type: string
+    - name: SCRIPTS_REPO_REVISION
+      type: string
+    - name: CLUSTER_SOURCE
+      type: string
+      default: ""
+    - name: PRODUCT
+      type: string
+      default: ""
+    - name: COMPONENTS_CSV
+      type: string
+      default: ""
+    - name: INSTALL_DEPENDENCIES
+      type: string
+      default: "false"
+    - name: RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS
+      type: string
+      default: "false"
+    - name: RHOAI_VERSION
+      type: string
+      default: ""
+      description: Pipeline RHOAI catalog line; updated with installed CSV when install was skipped
+    - name: OPERATOR_NAMESPACE
+      type: string
+      default: "redhat-ods-operator"
+    - name: OPERATOR_NAME
+      type: string
+      default: "rhods-operator"
+    - name: FBCF_IMAGE
+      type: string
+      default: ""
+      description: FBC catalog image from extract-fbcf-image (catalog fallback when CSV probe fails)
+  results:
+    - name: TASK_MESSAGE
+      description: Pass/fail summary for Konflux task Results panel
+    - name: OPERATOR_VERIFY_ARMED
+      description: Set to true when verify-operator-ready completes (test prep when gate)
+    - name: OPERATOR_VERSION
+      description: Installed operator CSV version probed from the target cluster
+    - name: RHOAI_VERSION
+      description: Installed or catalog RHOAI version for Konflux UI when install was skipped
+  volumes:
+    - name: credentials
+      emptyDir: {}
+    - name: external-kubeconfig-secret
+      secret:
+        secretName: $(params.CLUSTER_SOURCE)
+        optional: true
+        items:
+          - key: kubeconfig
+            path: kubeconfig
+  stepTemplate:
+    env:
+      - name: OLMINSTALL_OC_VERBOSE
+        value: "1"
+  steps:
+    - name: skip-without-workload-cluster
+      displayName: Skip when no cluster
+      when:
+        - input: "$(params.PRODUCT)"
+          operator: notin
+          values: ["rhoai", "odh"]
+        - input: "$(params.CLUSTER_SOURCE)"
+          operator: in
+          values: ["", "EPHC"]
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - name: TESTS_SHARED
+          value: $(workspaces.tests-shared.path)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        if [[ ! -f "${TESTS_SHARED}/credentials/kubeconfig" ]]; then
+          echo "test-only PRODUCT without workload cluster; skipping verify-operator-ready"
+          touch "${TESTS_SHARED}/.skip-verify-operator-ready"
+        fi
+
+    - name: prepare-kubeconfig-ephc
+      displayName: Stage EPHC kubeconfig
+      when:
+        - input: "$(params.CLUSTER_SOURCE)"
+          operator: in
+          values: ["", "EPHC"]
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      volumeMounts:
+        - name: credentials
+          mountPath: /credentials
+      env:
+        - name: TESTS_SHARED
+          value: $(workspaces.tests-shared.path)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        if [[ -f "${TESTS_SHARED}/.skip-verify-operator-ready" ]]; then
+          echo "verify-operator-ready skipped (no workload cluster); nothing to stage"
+          exit 0
+        fi
+        src="${TESTS_SHARED}/credentials/kubeconfig"
+        if [[ ! -f "${src}" ]]; then
+          echo "ERROR: EPHC kubeconfig missing at ${src}" >&2
+          exit 1
+        fi
+        cp "${src}" /credentials/kubeconfig
+        echo "EPHC kubeconfig staged at /credentials/kubeconfig"
+
+    - name: prepare-kubeconfig-external
+      displayName: Load external kubeconfig
+      when:
+        - input: "$(params.CLUSTER_SOURCE)"
+          operator: notin
+          values: ["", "EPHC"]
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      volumeMounts:
+        - name: credentials
+          mountPath: /credentials
+        - name: external-kubeconfig-secret
+          mountPath: /var/rhoai-e2e/external-kubeconfig
+          readOnly: true
+      env:
+        - name: CLUSTER_SOURCE
+          value: $(params.CLUSTER_SOURCE)
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "steps.stage_kubeconfig_for_task"])
+
+    - name: sync-kubeconfig-to-workspace
+      displayName: Copy kubeconfig to shared workspace
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      volumeMounts:
+        - name: credentials
+          mountPath: /credentials
+      env:
+        - name: TESTS_SHARED
+          value: $(workspaces.tests-shared.path)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        if [[ -f "${TESTS_SHARED}/.skip-verify-operator-ready" ]]; then
+          echo "verify-operator-ready skipped (no workload cluster)"
+          exit 0
+        fi
+        mkdir -p "${TESTS_SHARED}/credentials"
+        if [[ ! -f /credentials/kubeconfig ]]; then
+          echo "ERROR: kubeconfig missing under /credentials" >&2
+          exit 1
+        fi
+        cp /credentials/kubeconfig "${TESTS_SHARED}/credentials/kubeconfig"
+        echo "Test kubeconfig staged in tests-shared workspace"
+
+    - name: verify-operator-dashboard
+      displayName: Wait for dashboard ready
+      onError: continue
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - name: KUBECONFIG
+          value: $(workspaces.tests-shared.path)/credentials/kubeconfig
+        - name: TESTS_SHARED
+          value: $(workspaces.tests-shared.path)
+        - name: PRODUCT
+          value: $(params.PRODUCT)
+        - name: COMPONENTS_CSV
+          value: $(params.COMPONENTS_CSV)
+        - name: INSTALL_DEPENDENCIES
+          value: $(params.INSTALL_DEPENDENCIES)
+        - name: RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS
+          value: $(params.RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS)
+        - name: CLUSTER_SOURCE
+          value: $(params.CLUSTER_SOURCE)
+        - name: RHOAI_VERSION
+          value: $(params.RHOAI_VERSION)
+        - name: OPERATOR_NAMESPACE
+          value: $(params.OPERATOR_NAMESPACE)
+        - name: OPERATOR_NAME
+          value: $(params.OPERATOR_NAME)
+        - name: FBCF_IMAGE
+          value: $(params.FBCF_IMAGE)
+        - name: OPERATOR_VERSION_PATH
+          value: $(results.OPERATOR_VERSION.path)
+        - name: RHOAI_VERSION_PATH
+          value: $(results.RHOAI_VERSION.path)
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "runners.verify_operator_ready"])
+    - name: write-konflux-task-summary
+      displayName: Write Konflux task summary
+      onError: continue
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+        - name: PIPELINE_TASK
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['tekton.dev/pipelineTask']
+        - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ -n "${SCRIPTS_REPO_ROOT:-}" ]] || exit 0
+        exec bash "${SCRIPTS_REPO_ROOT}/tekton/scripts/run_write_task_message.sh"
+    - name: finalize-verify-operator-ready
+      displayName: Propagate verify-operator-ready outcome
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        rc="$(cat "$(steps.step-verify-operator-dashboard.exitCode.path)")"
+        if [ "$rc" != "0" ]; then
+          echo "ERROR: verify-operator-dashboard failed (exit ${rc})" >&2
+          exit "$rc"
+        fi
+        printf '%s' true > "$(results.OPERATOR_VERIFY_ARMED.path)"

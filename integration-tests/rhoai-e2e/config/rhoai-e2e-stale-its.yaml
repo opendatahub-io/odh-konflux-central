@@ -1,0 +1,12 @@
+# Retired IntegrationTestScenario names on rhoai-tenant/testops-playpen (not current rhoai-e2e-* ITS).
+# Konflux starts one PipelineRun per ITS when a Snapshot is created for the same application.
+# Default ``rhoai_e2e.py`` trigger creates a PipelineRun directly (no Snapshot fan-out).
+# Run ``runners/report/prune_stale_testops_its.py`` before raw ``oc create -f config/test-snapshot.yaml``.
+names:
+  - odh-olminstall-testops
+  - odh-olminstall-testops-rh-nightly
+  - odh-olminstall-smoke-testops
+  - rhoai-test
+  # Manual rhoai-e2e Snapshots use image-only components (no git source); EC fails SLSA
+  # source_code_reference_provided and adds noise — prune before snapshot like rhoai-test.
+  - testops-playpen-enterprise-contract
