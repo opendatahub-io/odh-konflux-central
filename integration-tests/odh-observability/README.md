@@ -22,8 +22,9 @@ reliably so failures gate snapshot validation.
 
 ## Prerequisites
 
-The pipeline installs the OpenShift cert-manager Operator before deploying the
-odh-observability Helm chart. `TestMonitoring` installs Cluster Observability,
+The pipeline installs the OpenShift cert-manager Operator and waits until its
+admission webhook is trusted before deploying the odh-observability Helm chart.
+`TestMonitoring` installs Cluster Observability,
 Tempo, and OpenTelemetry through its existing OLM helper.
 
 The cluster and test steps use `rhoai-task-toolset:odh-observability`, built

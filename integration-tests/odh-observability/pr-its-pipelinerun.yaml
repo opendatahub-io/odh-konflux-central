@@ -307,13 +307,43 @@ spec:
                 oc wait --for=jsonpath='{.status.phase}'=Succeeded "${csv}" \
                   -n cert-manager-operator --timeout=10m
 
-                for attempt in $(seq 1 60); do
-                  oc get deployment/cert-manager -n cert-manager >/dev/null 2>&1 && break
-                  echo "Attempt ${attempt}/60: deployment/cert-manager not created yet"
+                for deployment in cert-manager cert-manager-webhook cert-manager-cainjector; do
+                  for attempt in $(seq 1 60); do
+                    oc get "deployment/${deployment}" -n cert-manager >/dev/null 2>&1 && break
+                    echo "Attempt ${attempt}/60: deployment/${deployment} not created yet"
+                    sleep 10
+                  done
+                  oc wait --for=condition=Available "deployment/${deployment}" \
+                    -n cert-manager --timeout=10m
+                done
+
+                # Deployment availability does not guarantee that the API server trusts
+                # cert-manager's admission webhook certificate and CA bundle yet.
+                webhook_ready=false
+                for attempt in $(seq 1 30); do
+                  if oc create --dry-run=server -o name -f - >/dev/null 2>/tmp/cert-manager-webhook-probe.err <<'EOF'
+                apiVersion: cert-manager.io/v1
+                kind: Issuer
+                metadata:
+                  generateName: cert-manager-webhook-probe-
+                  namespace: cert-manager
+                spec:
+                  selfSigned: {}
+                EOF
+                  then
+                    webhook_ready=true
+                    break
+                  fi
+                  echo "Attempt ${attempt}/30: cert-manager webhook not ready: $(tr '\n' ' ' < /tmp/cert-manager-webhook-probe.err | cut -c1-200)"
                   sleep 10
                 done
-                oc wait --for=condition=Available deployment/cert-manager \
-                  -n cert-manager --timeout=10m
+                if [[ "${webhook_ready}" != true ]]; then
+                  echo "cert-manager admission webhook did not become trusted" >&2
+                  oc get validatingwebhookconfiguration cert-manager-webhook -o yaml || true
+                  oc get pods -n cert-manager -o wide || true
+                  oc logs -n cert-manager deployment/cert-manager-webhook --tail=50 || true
+                  exit 1
+                fi
                 echo 0 > /test-status/prerequisites.exit
 
             - name: deploy-observability
