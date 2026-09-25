@@ -18,6 +18,13 @@ spec:
     - name: artifact-browser-url
       default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
       description: The OCI container used to store all test artifacts.
+    - name: rhoai-must-gather-tag
+      type: string
+      default: 'v3.5.0'
+      description: >
+        Tag for the official RHOAI must-gather image
+        registry.redhat.io/rhoai/odh-must-gather-rhel9:<tag>.
+        Override from the models-as-a-service maas-group-test PipelineRun when needed.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -184,7 +191,15 @@ spec:
         workspace: git-auth
       runAfter:
         - provision-cluster
+      params:
+        - name: rhoai-must-gather-tag
+          value: $(params.rhoai-must-gather-tag)
       taskSpec:
+        params:
+          - name: rhoai-must-gather-tag
+            type: string
+            default: 'v3.5.0'
+            description: Tag for registry.redhat.io/rhoai/odh-must-gather-rhel9
         volumes:
           - name: credentials
             emptyDir: {}
@@ -285,13 +300,47 @@ spec:
                 value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
               - name: ARTIFACT_DIR
                 value: /workspace/artifacts-dir
+              - name: RHOAI_MUST_GATHER_TAG
+                value: $(params.rhoai-must-gather-tag)
             workingDir: /workspace/source
             volumeMounts:
               - name: credentials
                 mountPath: /credentials
             script: |
-              mkdir -p "${ARTIFACT_DIR}/gather-openshift"
-              oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift"
+              set -euxo pipefail
+              RHOAI_MUST_GATHER_IMAGE="registry.redhat.io/rhoai/odh-must-gather-rhel9:${RHOAI_MUST_GATHER_TAG}"
+              echo "RHOAI_MUST_GATHER_IMAGE=${RHOAI_MUST_GATHER_IMAGE}"
+
+              # Group-test installs ODH (opendatahub-operator in openshift-operators), not
+              # rhods-operator. Without OPERATOR_NAMESPACE, must-gather's gather script
+              # probes for a rhods-operator Subscription, prints
+              # "rhods-operator not detected. Skipping.", and exits 0 with empty caches.
+              # Setting these env vars skips that probe (must-gather image unchanged).
+              MG_ODH_ENV="export OPERATOR_NAMESPACE=openshift-operators; export APPLICATIONS_NAMESPACE=opendatahub; export MONITORING_NAMESPACE=opendatahub; export NOTEBOOK_NAMESPACE=opendatahub"
+
+              # Isolate each gather: set -e would otherwise abort after the first failure
+              # and skip later gathers (seen when aigateway failed and gather-openshift
+              # never ran). Prefer openshift base first so the main archive always exists.
+              DEST_DIR="${ARTIFACT_DIR}/gather-openshift"
+              mkdir -p "${DEST_DIR}"
+              oc adm must-gather --dest-dir "${DEST_DIR}" \
+                || echo "WARNING: openshift must-gather failed (continuing)"
+
+              # aigateway-must-gather (includes MaaS CRs on OCP: aitenants, configs,
+              # maasauthpolicies, maasmodelrefs, maassubscriptions, maastenantconfigs,
+              # tenants, kuadrant TRLPs/RLPs, inference ExternalModel/Provider, etc.)
+              DEST_DIR="${ARTIFACT_DIR}/gather-aigateway"
+              mkdir -p "${DEST_DIR}"
+              oc adm must-gather --image="${RHOAI_MUST_GATHER_IMAGE}" --dest-dir "${DEST_DIR}" -- \
+                "${MG_ODH_ENV}; export COMPONENT=aigateway; /usr/bin/gather" \
+                || echo "WARNING: aigateway must-gather failed (continuing)"
+
+              # kserve-must-gather (LLMInferenceService / llmisvc and related serving CRs)
+              DEST_DIR="${ARTIFACT_DIR}/gather-kserve"
+              mkdir -p "${DEST_DIR}"
+              oc adm must-gather --image="${RHOAI_MUST_GATHER_IMAGE}" --dest-dir "${DEST_DIR}" -- \
+                "${MG_ODH_ENV}; export COMPONENT=kserve; /usr/bin/gather" \
+                || echo "WARNING: kserve must-gather failed (continuing)"
           - name: git-push-artifacts
             onError: continue
             ref:
