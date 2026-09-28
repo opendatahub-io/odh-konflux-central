@@ -88,6 +88,7 @@ on:
           - ai-gateway-controller
           - eval-hub-contrib
           - praxis-ai-grid-operator
+          - openshell-dashboard
       pr_target_branch:
         description: 'Target branch for the PR (e.g. main)'
         required: true
