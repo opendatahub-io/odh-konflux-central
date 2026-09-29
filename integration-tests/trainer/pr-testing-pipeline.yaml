@@ -8,8 +8,8 @@ metadata:
     pipelinesascode.tekton.dev/on-target-branch: "[main, stable]"
 spec:
   timeouts:
-    pipeline: 2h
-    tasks: 1h40m
+    pipeline: 3h
+    tasks: 2h40m
     finally: 20m
   pipelineSpec:
     description: |
@@ -159,7 +159,7 @@ spec:
                 - name: instanceType
                   value: m5.2xlarge
       - name: deploy-and-test
-        timeout: 1h15m
+        timeout: 2h20m
         runAfter:
           - provision-cluster
         taskSpec:
@@ -189,7 +189,7 @@ spec:
             - name: deploy-and-e2e
               image: quay.io/rhoai/rhoai-task-toolset:trainer
               onError: continue
-              timeout: 55m
+              timeout: 2h
               computeResources:
                 requests:
                   memory: "4Gi"
