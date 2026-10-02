@@ -15,6 +15,9 @@ RUN dnf install -y \
 RUN wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz && \
     tar xvf openshift-client-linux.tar.gz && chmod +x oc kubectl && mv oc kubectl /usr/local/bin/
 
+RUN wget -q -O /usr/local/bin/helm https://mirror.openshift.com/pub/openshift-v4/clients/helm/latest/helm-linux-amd64 && \
+    chmod +x /usr/local/bin/helm
+
 RUN GOBIN=/usr/local/bin go install gotest.tools/gotestsum@v1.13.0
 
 RUN python3 -m pip install --no-cache-dir --disable-pip-version-check junitparser==4.0.2
