@@ -207,7 +207,7 @@ spec:
                   mountPath: /test-status
               script: |
                 #!/bin/bash
-                set -e
+                set -eo pipefail
                 STATUS_FILE="/test-status/deploy-and-e2e-status"
                 echo "failed" > "$STATUS_FILE"
                 oc whoami
