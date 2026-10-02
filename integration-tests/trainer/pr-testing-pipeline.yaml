@@ -188,6 +188,7 @@ spec:
                   value: credentials
             - name: deploy-and-e2e
               image: quay.io/rhoai/rhoai-task-toolset:trainer
+              imagePullPolicy: Always
               onError: continue
               timeout: 2h
               computeResources:
@@ -252,6 +253,7 @@ spec:
             - name: must-gather
               onError: continue
               image: quay.io/rhoai/rhoai-task-toolset:trainer
+              imagePullPolicy: Always
               env:
                 - name: KUBECONFIG
                   value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
