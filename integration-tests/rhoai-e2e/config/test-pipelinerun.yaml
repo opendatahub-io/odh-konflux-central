@@ -1,0 +1,63 @@
+---
+# Manual test PipelineRun for rhoai-e2e integration scenario.
+# Usage:
+#   oc create -n rhoai-tenant -f integration-tests/rhoai-e2e/config/test-pipelinerun.yaml
+#
+# The run fetches the pipeline from the git resolver (url/revision below).
+# Update `revision` to your branch while iterating; set to `main` after merge.
+# Update `containerImage` to a known good FBCF image to test against.
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: test-rhoai-e2e-
+  labels:
+    appstudio.openshift.io/application: testops-playpen
+spec:
+  pipelineRef:
+    resolver: git
+    params:
+      - name: url
+        value: https://github.com/opendatahub-io/odh-konflux-central.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipeline.yaml
+  params:
+    - name: PRODUCT
+      value: rhoai
+    - name: SNAPSHOT
+      value: |
+        {
+          "components": [{
+            "name": "odh-operator-catalog",
+            "containerImage": "quay.io/rhoai/rhoai-fbc-fragment@sha256:REPLACE_ME"
+          }]
+        }
+    - name: RHOAI_FBC_NAME
+      value: odh-operator-catalog
+    - name: UPDATE_CHANNEL
+      value: stable-3.5
+    - name: OPERATOR_NAMESPACE
+      value: redhat-ods-operator
+    - name: OPERATOR_NAME
+      value: rhods-operator
+    - name: OLMINSTALL_REPO_URL
+      value: https://gitlab.cee.redhat.com/data-hub/olminstall.git
+    - name: QUAY_PULL_SECRET_NAME
+      value: rhoai-external-quay-secret
+    - name: TEST_GATES
+      value: bvt,smoke
+    # External cluster (skip EPHC): create Secret first, then uncomment:
+    #   oc create secret generic rhoai-e2e-kubeconfig-my-cluster \
+    #     --from-file=kubeconfig=$HOME/.kube/my-cluster -n rhoai-tenant
+    # - name: CLUSTER_SOURCE
+    #   value: rhoai-e2e-kubeconfig-my-cluster
+  workspaces:
+    - name: tests-shared
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 15Gi
