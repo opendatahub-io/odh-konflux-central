@@ -284,10 +284,6 @@ spec:
       name: component_py312-rocm64-torch290
     - description: execute the integration test when component odh-th-torch-cpu-py312-ci updates
       name: component_odh-th-torch-cpu-py312-ci
-    - description: execute the integration test when component odh-th-torch-cuda-py312-ci updates
-      name: component_odh-th-torch-cuda-py312-ci
-    - description: execute the integration test when component odh-th-torch-rocm-py312-ci updates
-      name: component_odh-th-torch-rocm-py312-ci
   resolverRef:
     params:
       - name: url
