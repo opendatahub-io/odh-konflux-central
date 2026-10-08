@@ -5,10 +5,9 @@ metadata:
     build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/spark-operator?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
-    pipelinesascode.tekton.dev/cancel-in-progress: "true"
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
+    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
       == "$$TARGET_BRANCH$$"
   creationTimestamp: null
   labels:
