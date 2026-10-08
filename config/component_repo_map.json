@@ -249,7 +249,8 @@
     "odh-rhoai-mcp-ci": "opendatahub/odh-rhoai-mcp"
   },
   "spark-operator": {
-    "odh-spark-operator-module-ci": "opendatahub/odh-spark-operator-module"
+    "odh-spark-operator-module-ci": "opendatahub/odh-spark-operator-module",
+    "spark-operator-ci": "opendatahub/spark-operator"
   },
   "trainer": {
     "trainer-ci": "opendatahub/trainer"
