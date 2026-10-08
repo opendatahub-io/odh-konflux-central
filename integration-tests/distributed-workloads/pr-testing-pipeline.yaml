@@ -8,12 +8,14 @@ metadata:
     pipelinesascode.tekton.dev/on-target-branch: "[main, stable]"
 spec:
   timeouts:
-    pipeline: 1h
+    pipeline: 3h
+    tasks: 2h40m
+    finally: 20m
   pipelineSpec:
     description: |
       An integration test which provisions an ephemeral Hypershift cluster, deploys the Kubeflow
-      Trainer with the built distributed-workloads runtime images from a Konflux snapshot and
-      runs the Smoke and Sanity tests from the distributed-workloads repository against it.
+      Trainer with the built distributed-workloads universal runtime images from a Konflux
+      snapshot and runs the integration test suite from the trainer repository against it.
     params:
       - description: Snapshot of the application
         name: SNAPSHOT
@@ -55,7 +57,6 @@ spec:
           - name: git-repo
           - name: git-org
           - name: git-revision
-          - name: trigger-component
           steps:
             - name: audit-snapshot
               image: quay.io/konflux-ci/konflux-test:stable
@@ -89,7 +90,6 @@ spec:
                 echo "SNAPSHOT=${SNAPSHOT}"
 
                 # Parse JSON and iterate through each component
-                TRIGGER_COMPONENT=""
                 while IFS= read -r row; do
                     COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.name')
                     IMAGE=$(echo "$row" | base64 -d | jq -r '.containerImage')
@@ -98,18 +98,13 @@ spec:
                     echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
                     echo "GIT_COMMIT=${GIT_COMMIT}"
                     echo "GIT_URL=${GIT_URL}"
-                    if [ "${GIT_COMMIT}" = "${GIT_REVISION}" ]; then
-                      TRIGGER_COMPONENT="${COMPONENT_NAME}"
-                    fi
                 done < <(echo "$SNAPSHOT" | jq -r '.components[] | @base64')
 
-                echo "TRIGGER_COMPONENT=${TRIGGER_COMPONENT}"
                 echo -n "${PR_AUTHOR}" > "$(results.pull-request-author.path)"
                 echo -n "${PR_NUMBER}" > "$(results.pull-request-number.path)"
                 echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
                 echo -n "${GIT_ORG}" > "$(results.git-org.path)"
                 echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
-                echo -n "${TRIGGER_COMPONENT}" > "$(results.trigger-component.path)"
 
       - name: provision-cluster
         runAfter:
@@ -140,7 +135,7 @@ spec:
           - name: env
             value: '{"COMPUTE_NODE_TYPE":"$(params.compute-node-type)","HYPERSHIFT_NODE_COUNT":"$(params.hypershift-node-count)","HOSTED_MANAGEMENT_CLUSTER":"$(params.hosted-management-cluster)"}'
       - name: deploy-and-test
-        timeout: 50m
+        timeout: 2h20m
         runAfter:
           - provision-cluster
         params:
@@ -158,8 +153,10 @@ spec:
               emptyDir: {}
           steps:
             - name: deploy-and-e2e
-              image: quay.io/rhoai/rhoai-task-toolset:distributed-workloads
+              image: quay.io/rhoai/rhoai-task-toolset:trainer
+              imagePullPolicy: Always
               onError: continue
+              timeout: 2h
               computeResources:
                 requests:
                   memory: "4Gi"
@@ -172,16 +169,16 @@ spec:
                   value: /credentials/kubeconfig
                 - name: SNAPSHOT
                   value: $(params.SNAPSHOT)
-                - name: TRIGGER_COMPONENT
-                  value: $(tasks.audit-snapshot.results.trigger-component)
+                - name: GIT_REVISION
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
+                - name: COMPONENT_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['appstudio.openshift.io/component']
                 - name: ARTIFACT_DIR
                   value: /workspace/artifacts-dir
-                - name: TEST_OUTPUT_DIR
-                  value: /workspace/artifacts-dir
-                - name: APPLICATIONS_NAMESPACE
-                  value: kubeflow-trainer-system
-                - name: TEST_TIMEOUT_DOUBLE
-                  value: 40m
               workingDir: /workspace/source
               volumeMounts:
                 - name: credentials
@@ -198,192 +195,64 @@ spec:
 
                 echo "SNAPSHOT=${SNAPSHOT}"
 
-                # Extract DW runtime image URLs from snapshot and map to params.env keys
-                # Component name pattern: odh-<image-name>-ci -> params.env key: odh-<image-name>-image
-                while IFS= read -r row; do
-                  COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.name')
-                  IMAGE=$(echo "$row" | base64 -d | jq -r '.containerImage')
-                  GIT_COMMIT=$(echo "$row" | base64 -d | jq -r '.source.git.revision')
-                  GIT_URL=$(echo "$row" | base64 -d | jq -r '.source.git.url')
+                # Extract the universal training runtime images from the snapshot.
+                # Component name pattern: odh-th-torch-<device>-py312-ci.
+                extract_image() {
+                  echo "${SNAPSHOT}" | jq -er --arg component_name "$1" \
+                    '.components[] | select(.name == $component_name) | .containerImage'
+                }
+                ODH_TH_TORCH_CUDA_IMAGE=$(extract_image odh-th-torch-cuda-py312-ci) || ODH_TH_TORCH_CUDA_IMAGE=""
+                ODH_TH_TORCH_ROCM_IMAGE=$(extract_image odh-th-torch-rocm-py312-ci) || ODH_TH_TORCH_ROCM_IMAGE=""
+                ODH_TH_TORCH_CPU_IMAGE=$(extract_image odh-th-torch-cpu-py312-ci) || ODH_TH_TORCH_CPU_IMAGE=""
+                echo "ODH_TH_TORCH_CUDA_IMAGE: ${ODH_TH_TORCH_CUDA_IMAGE}"
+                echo "ODH_TH_TORCH_ROCM_IMAGE: ${ODH_TH_TORCH_ROCM_IMAGE}"
+                echo "ODH_TH_TORCH_CPU_IMAGE: ${ODH_TH_TORCH_CPU_IMAGE}"
 
-                  # Store git info for cloning DW repo later.
-                  # Prefer the trigger component's commit; fall back to any DW component.
-                  if echo "${GIT_URL}" | grep -q "distributed-workloads"; then
-                    if [ -z "${DW_GIT_COMMIT:-}" ]; then
-                      DW_GIT_COMMIT="${GIT_COMMIT}"
-                      DW_GIT_URL="${GIT_URL}"
-                    fi
-                    if [ "${COMPONENT_NAME}" = "${TRIGGER_COMPONENT}" ]; then
-                      DW_GIT_COMMIT="${GIT_COMMIT}"
-                      DW_GIT_URL="${GIT_URL}"
-                    fi
-                  fi
-
-                  echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
-                done < <(echo "$SNAPSHOT" | jq -r '.components[] | @base64')
-
+                # The PR under test lives in the distributed-workloads repo. Take the
+                # git URL from the snapshot's trigger component (identified by the
+                # PipelineRun component label): for fork PRs the annotation org/repo
+                # names the target repo, not the fork the commit is fetchable from.
+                COMPONENT_JSON=$(echo "${SNAPSHOT}" | jq -er --arg component_name "${COMPONENT_NAME}" \
+                  '.components[] | select(.name == $component_name)')
+                DW_GIT_URL=$(echo "${COMPONENT_JSON}" | jq -er '.source.git.url')
                 echo "DW_GIT_URL: ${DW_GIT_URL}"
-                echo "DW_GIT_COMMIT: ${DW_GIT_COMMIT}"
+                echo "DW_GIT_COMMIT: ${GIT_REVISION}"
 
-                # Clone the trainer repo (stable) - this has the deployment manifests
-                git clone https://github.com/opendatahub-io/trainer.git trainer_src
-                cd trainer_src
+                # Clone the trainer repo (main) - this has the deployment manifests
+                # and the integration test suite.
+                # TODO: temporary - test branch, revert to opendatahub-io/trainer main
+                git clone --branch dw-its-image-overrides https://github.com/sutaakar/training-operator.git src_code
+                cd src_code
 
-                # Inject each DW runtime image from snapshot into params.env
-                # Pattern: component name "odh-X-ci" maps to params.env key "odh-X-image"
-                while IFS= read -r row; do
-                  COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.name')
-                  IMAGE=$(echo "$row" | base64 -d | jq -r '.containerImage')
-                  GIT_URL=$(echo "$row" | base64 -d | jq -r '.source.git.url')
+                # Pre-clone the DW repo at the PR commit so test-integration-rhai tests
+                # the pipeline's revision instead of the default branch.
+                git clone "${DW_GIT_URL}" .test-data/distributed-workloads
+                git -C .test-data/distributed-workloads checkout "${GIT_REVISION}"
 
-                  if echo "${GIT_URL}" | grep -q "distributed-workloads"; then
-                    # Convert component name to params.env key: remove -ci suffix, add -image suffix
-                    PARAMS_KEY="${COMPONENT_NAME%-ci}-image"
-                    echo "Injecting ${PARAMS_KEY}=${IMAGE}"
-                    sed -i "s|${PARAMS_KEY}=.*|${PARAMS_KEY}=${IMAGE}|" manifests/rhoai/params.env
-                  fi
-                done < <(echo "$SNAPSHOT" | jq -r '.components[] | @base64')
-
-                echo "Updated params.env:"
-                cat manifests/rhoai/params.env
-
-                echo "Installing cert-manager (required by JobSet)..."
-                oc apply -f - <<EOF
-                apiVersion: v1
-                kind: Namespace
-                metadata:
-                  name: cert-manager-operator
-                ---
-                apiVersion: operators.coreos.com/v1
-                kind: OperatorGroup
-                metadata:
-                  name: cert-manager-operator
-                  namespace: cert-manager-operator
-                spec:
-                  targetNamespaces:
-                  - cert-manager-operator
-                ---
-                apiVersion: operators.coreos.com/v1alpha1
-                kind: Subscription
-                metadata:
-                  name: openshift-cert-manager-operator
-                  namespace: cert-manager-operator
-                spec:
-                  channel: stable-v1
-                  name: openshift-cert-manager-operator
-                  source: redhat-operators
-                  sourceNamespace: openshift-marketplace
-                EOF
-                echo "Waiting for cert-manager CSV to be created by OLM..."
-                for i in $(seq 1 60); do
-                  CSV=$(oc get csv -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator -o name 2>/dev/null | head -1)
-                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
-                  echo "  attempt $i/60, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
-                  -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator \
-                  --timeout=300s
-                echo "Waiting for cert-manager deployment to be created by the operator..."
-                for i in $(seq 1 30); do
-                  oc get deployment cert-manager -n cert-manager 2>/dev/null && break
-                  echo "  attempt $i/30, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=300s
-
-                echo "Installing JobSet operator (required by Kubeflow Trainer)..."
-                oc apply -f - <<EOF
-                apiVersion: v1
-                kind: Namespace
-                metadata:
-                  name: openshift-jobset-operator
-                ---
-                apiVersion: operators.coreos.com/v1
-                kind: OperatorGroup
-                metadata:
-                  name: openshift-jobset-operator
-                  namespace: openshift-jobset-operator
-                spec:
-                  targetNamespaces:
-                  - openshift-jobset-operator
-                ---
-                apiVersion: operators.coreos.com/v1alpha1
-                kind: Subscription
-                metadata:
-                  name: job-set
-                  namespace: openshift-jobset-operator
-                spec:
-                  channel: stable-v1.0
-                  name: job-set
-                  source: redhat-operators
-                  sourceNamespace: openshift-marketplace
-                EOF
-                echo "Waiting for JobSet CSV to be created by OLM..."
-                for i in $(seq 1 60); do
-                  CSV=$(oc get csv -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator -o name 2>/dev/null | head -1)
-                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
-                  echo "  attempt $i/60, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
-                  -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator \
-                  --timeout=300s
-                oc apply -f - <<EOF
-                apiVersion: operator.openshift.io/v1
-                kind: JobSetOperator
-                metadata:
-                  name: cluster
-                spec:
-                  logLevel: Normal
-                  managementState: Managed
-                  operatorLogLevel: Normal
-                EOF
-                echo "Waiting for jobsets CRD to be created by the operator..."
-                for i in $(seq 1 30); do
-                  oc get crd jobsets.jobset.x-k8s.io 2>/dev/null && break
-                  echo "  attempt $i/30, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=condition=established crd/jobsets.jobset.x-k8s.io --timeout=300s
-                oc wait --for=condition=Available jobsetoperator/cluster --timeout=300s
-
-                echo "Deploying Kubeflow Trainer with updated runtime images..."
-                make deploy-rhoai
-
-                echo "Cloning distributed-workloads repo at PR commit..."
-                echo "DW_GIT_URL: ${DW_GIT_URL}"
-                echo "DW_GIT_COMMIT: ${DW_GIT_COMMIT}"
-                cd /workspace/source
-                mkdir dw_src
-                git -C dw_src init
-                git -C dw_src fetch "${DW_GIT_URL}" "${DW_GIT_COMMIT}" --depth=1
-                git -C dw_src checkout FETCH_HEAD
-
-                cd dw_src
-                TRIGGER_IMAGE_NAME="${TRIGGER_COMPONENT%-ci}"
-                echo "Trigger component: ${TRIGGER_COMPONENT}"
-                echo "Trigger image name: ${TRIGGER_IMAGE_NAME}"
-                echo "Running TrainJob test for trigger image..."
-                mkdir -p "${ARTIFACT_DIR}"
+                echo "Running Trainer integration tests..."
                 TESTS_PASSED=true
-                TRIGGER_IMAGE_NAME="${TRIGGER_IMAGE_NAME}" \
-                go test -v -timeout 120m \
-                  -run "TestRunTrainJobWithDefaultClusterTrainingRuntimes" \
-                  ./tests/trainer/ > "${ARTIFACT_DIR}/its-tests.log" 2>&1 || TESTS_PASSED=false
-                cat "${ARTIFACT_DIR}/its-tests.log"
-                if grep -q '^--- FAIL:' "${ARTIFACT_DIR}/its-tests.log"; then
+                make -f Makefile.rhai test-integration-rhai \
+                  ARTIFACT_DIR="${ARTIFACT_DIR}" \
+                  JUNIT_REPORT="${ARTIFACT_DIR}/junit.xml" \
+                  DW_SOURCE_DIR="$(pwd)/.test-data/distributed-workloads" \
+                  ODH_TH_TORCH_CUDA_IMAGE="${ODH_TH_TORCH_CUDA_IMAGE}" \
+                  ODH_TH_TORCH_ROCM_IMAGE="${ODH_TH_TORCH_ROCM_IMAGE}" \
+                  ODH_TH_TORCH_CPU_IMAGE="${ODH_TH_TORCH_CPU_IMAGE}" \
+                  || TESTS_PASSED=false
+                # Keep the pipeline contract explicit: the target must always publish JUnit.
+                if [ ! -s "${ARTIFACT_DIR}/junit.xml" ]; then
+                  echo "Trainer integration target did not produce ${ARTIFACT_DIR}/junit.xml"
                   TESTS_PASSED=false
                 fi
                 if [ "${TESTS_PASSED}" != "true" ]; then
-                  echo "Tests failed"
                   exit 1
                 fi
 
                 echo "success" > "$STATUS_FILE"
             - name: must-gather
               onError: continue
-              image: quay.io/rhoai/rhoai-task-toolset:distributed-workloads
+              image: quay.io/rhoai/rhoai-task-toolset:trainer
+              imagePullPolicy: Always
               env:
                 - name: KUBECONFIG
                   value: /credentials/kubeconfig
@@ -521,6 +390,8 @@ spec:
                 value: $(tasks.audit-snapshot.results.git-org)
               - name: git-revision
                 value: $(tasks.audit-snapshot.results.git-revision)
+              - name: junit-report-name
+                value: /workspace/odh-ci-artifacts/test-artifacts/$(context.pipelineRun.name)/deploy-and-test/junit.xml
               - name: artifact-browser-url
                 value: $(params.artifact-browser-url)
           - name: cleanup-artifacts-from-git
