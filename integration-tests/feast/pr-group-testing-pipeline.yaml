@@ -241,6 +241,9 @@ spec:
               
               E2E_RC=0
               REGISTRY_RC=0
+              DR_API_RC=0
+              FEAST_AUTH_RC=0
+              ISOLATION_RC=0
               PREV_RC=0
               UPGRADE_RC=0
 
@@ -251,6 +254,15 @@ spec:
               echo "=== Running: registry REST API test ==="
               make install-python-dependencies-ci && \
               uv run pytest -c sdk/python/pytest.ini sdk/python/tests/integration/rest_api/test_registry_rest_api.py --integration -s --timeout=600 || REGISTRY_RC=$?
+
+              echo "=== Running: data registry integration tests ==="
+              uv run pytest -c sdk/python/pytest.ini sdk/python/tests/integration/rest_api/test_data_registry_api.py --integration -s --timeout=600 || DR_API_RC=$?
+
+              echo "=== Running: feast auth integration tests ==="
+              uv run pytest -c sdk/python/pytest.ini sdk/python/tests/integration/rest_api/test_feast_auth_api.py --integration -s --timeout=600 || FEAST_AUTH_RC=$?
+
+              echo "=== Running: cross-instance isolation tests ==="
+              uv run pytest -c sdk/python/pytest.ini sdk/python/tests/integration/rest_api/test_cross_instance_isolation.py --integration -s --timeout=600 || ISOLATION_RC=$?
 
               cd infra/feast-operator
               make undeploy IMG=${FEAST_OPERATOR_CONTROLLER_IMAGE} FS_IMG=${FEAST_FEATURE_SERVER_IMAGE} || true
@@ -266,12 +278,15 @@ spec:
 
               echo ""
               echo "=== Test Suite Results ==="
-              echo "  test-e2e:              $([ $E2E_RC      -eq 0 ] && echo PASSED || echo FAILED [rc=$E2E_RC])"
-              echo "  registry-rest-api:     $([ $REGISTRY_RC -eq 0 ] && echo PASSED || echo FAILED [rc=$REGISTRY_RC])"
-              echo "  test-previous-version: $([ $PREV_RC     -eq 0 ] && echo PASSED || echo FAILED [rc=$PREV_RC])"
-              echo "  test-upgrade:          $([ $UPGRADE_RC  -eq 0 ] && echo PASSED || echo FAILED [rc=$UPGRADE_RC])"
+              echo "  test-e2e:              $([ $E2E_RC       -eq 0 ] && echo PASSED || echo FAILED [rc=$E2E_RC])"
+              echo "  registry-rest-api:     $([ $REGISTRY_RC  -eq 0 ] && echo PASSED || echo FAILED [rc=$REGISTRY_RC])"
+              echo "  data-registry-api:     $([ $DR_API_RC    -eq 0 ] && echo PASSED || echo FAILED [rc=$DR_API_RC])"
+              echo "  feast-auth-api:        $([ $FEAST_AUTH_RC -eq 0 ] && echo PASSED || echo FAILED [rc=$FEAST_AUTH_RC])"
+              echo "  cross-isolation:       $([ $ISOLATION_RC -eq 0 ] && echo PASSED || echo FAILED [rc=$ISOLATION_RC])"
+              echo "  test-previous-version: $([ $PREV_RC      -eq 0 ] && echo PASSED || echo FAILED [rc=$PREV_RC])"
+              echo "  test-upgrade:          $([ $UPGRADE_RC   -eq 0 ] && echo PASSED || echo FAILED [rc=$UPGRADE_RC])"
 
-              if [ $E2E_RC -eq 0 ] && [ $REGISTRY_RC -eq 0 ] && [ $PREV_RC -eq 0 ] && [ $UPGRADE_RC -eq 0 ]; then
+              if [ $E2E_RC -eq 0 ] && [ $REGISTRY_RC -eq 0 ] && [ $DR_API_RC -eq 0 ] && [ $FEAST_AUTH_RC -eq 0 ] && [ $ISOLATION_RC -eq 0 ] && [ $PREV_RC -eq 0 ] && [ $UPGRADE_RC -eq 0 ]; then
                 echo "success" > "$STATUS_FILE"
               else
                 exit 1
