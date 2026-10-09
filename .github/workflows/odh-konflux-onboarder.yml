@@ -89,6 +89,7 @@ on:
           - eval-hub-contrib
           - praxis-ai-grid-operator
           - openshell-dashboard
+          - llm-d-kv-cache
       pr_target_branch:
         description: 'Target branch for the PR (e.g. main)'
         required: true
