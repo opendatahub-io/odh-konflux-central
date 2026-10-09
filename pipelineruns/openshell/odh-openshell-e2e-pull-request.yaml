@@ -39,6 +39,7 @@ spec:
       [
         {"type": "cargo", "path": "."},
         {"type": "cargo", "path": "e2e/rust"},
+        {"type": "pip", "path": "odh", "requirements_files": ["requirements.txt"], "binary": {"packages": ":all:", "arch": "x86_64,aarch64", "os": "linux", "py_version": 311, "py_impl": "cp"}},
         {"type": "rpm", "path": "deploy/konflux/e2e-odh"},
         {"type": "generic", "path": "deploy/konflux/e2e-odh", "lockfile": "generic-fetcher.yaml"}
       ]
