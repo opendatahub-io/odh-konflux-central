@@ -113,6 +113,9 @@
   "llm-d-batch-gateway-operator": {
     "odh-batch-gateway-operator-ci": "opendatahub/odh-batch-gateway-operator"
   },
+  "llm-d-kv-cache": {
+    "odh-llm-d-kv-pvc-evictor-ci": "opendatahub/odh-llm-d-kv-pvc-evictor"
+  },
   "llm-d-router": {
     "odh-llm-d-coordinator-ci": "opendatahub/odh-llm-d-coordinator",
     "odh-llm-d-router-disagg-sidecar-ci": "opendatahub/odh-llm-d-router-disagg-sidecar",
