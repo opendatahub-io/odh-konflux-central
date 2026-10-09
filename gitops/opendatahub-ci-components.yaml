@@ -90,6 +90,26 @@ metadata:
     build.appstudio.openshift.io/request: configure-pac-no-mr
     mintmaker.appstudio.redhat.com/disabled: true
     build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+  name: odh-cypress-ci
+spec:
+  application: opendatahub-builds
+  componentName: odh-cypress-ci
+  containerImage: quay.io/opendatahub/odh-cypress
+  source:
+    git:
+      context: ./
+      dockerfileUrl: scripts/ci/Dockerfile
+      revision: "main"
+      url: https://github.com/opendatahub-io/odh-dashboard
+
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    mintmaker.appstudio.redhat.com/disabled: true
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
   name: odh-data-science-pipelines-operator-controller-ci
 spec:
   application: opendatahub-builds
