@@ -41,6 +41,8 @@ spec:
         {"type": "npm", "path": "deploy/konflux/openclaw"},
         {"type": "rpm", "path": "deploy/konflux/openclaw"}
       ]
+  - name: tag-openclaw-release
+    value: "true"
   pipelineRef:
     resolver: git
     params:

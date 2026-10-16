@@ -93,6 +93,10 @@ spec:
     name: additional-tags
     type: array
     default: []
+  - description: Verify and publish the packaged OpenClaw version as an upstream release tag
+    name: tag-openclaw-release
+    type: string
+    default: "false"
   - description: Fetch all tags for the repo
     name: fetch-git-tags
     type: string
@@ -210,6 +214,77 @@ spec:
     workspaces:
     - name: basic-auth
       workspace: git-auth
+  - name: resolve-openclaw-release-tag
+    runAfter:
+    - clone-repository
+    when:
+    - input: $(params.tag-openclaw-release)
+      operator: in
+      values:
+      - "true"
+    taskSpec:
+      results:
+      - name: version
+        description: OpenClaw version with a matching upstream Git tag
+      volumes:
+      - name: source
+        emptyDir: {}
+      stepTemplate:
+        volumeMounts:
+        - name: source
+          mountPath: /var/workdir
+      steps:
+      - name: use-trusted-artifact
+        image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+        args:
+        - use
+        - $(tasks.clone-repository.results.SOURCE_ARTIFACT)=/var/workdir/source
+      - name: verify-upstream-tag
+        image: registry.access.redhat.com/ubi9/nodejs-24-minimal:9.8-1791925262@sha256:cfca5c8d4d7babc8b74f408db216c2fd4dec872f319c1579e001dcceb51d3058
+        env:
+        - name: VERSION_RESULT_PATH
+          value: $(results.version.path)
+        script: |
+          #!/usr/bin/env node
+          const fs = require('node:fs');
+
+          const root = '/var/workdir/source';
+          const input = JSON.parse(fs.readFileSync(`${root}/deploy/konflux/openclaw/package.json`, 'utf8'));
+          const lock = JSON.parse(fs.readFileSync(`${root}/deploy/konflux/openclaw/package-lock.json`, 'utf8'));
+          const dockerfile = fs.readFileSync(`${root}/deploy/docker/Dockerfile.konflux.openclaw`, 'utf8');
+          const version = input.dependencies?.openclaw;
+          const dockerfileVersion = dockerfile.match(/^ARG OPENCLAW_VERSION=(\S+)$/m)?.[1];
+
+          if (typeof version !== 'string' || !/^\d{4}\.\d{1,2}\.\d+$/.test(version)) {
+            throw new Error(`Expected a stable OpenClaw version, got ${version}`);
+          }
+          if (lock.packages?.['']?.dependencies?.openclaw !== version ||
+              lock.packages?.['node_modules/openclaw']?.version !== version ||
+              dockerfileVersion !== version) {
+            throw new Error(`OpenClaw version pins disagree with package.json (${version})`);
+          }
+
+          const tag = `v${version}`;
+          const url = `https://api.github.com/repos/openclaw/openclaw/git/ref/tags/${tag}`;
+          async function main() {
+            const response = await fetch(url, {
+              headers: {
+                Accept: 'application/vnd.github+json',
+                'User-Agent': 'odh-konflux-openclaw-tag',
+              },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!response.ok) {
+              throw new Error(`Upstream OpenClaw tag ${tag} lookup failed (HTTP ${response.status})`);
+            }
+            const upstream = await response.json();
+            if (upstream.ref !== `refs/tags/${tag}`) {
+              throw new Error(`Upstream returned an unexpected tag: ${upstream.ref}`);
+            }
+            fs.writeFileSync(process.env.VERSION_RESULT_PATH, version);
+            console.log(`Verified upstream OpenClaw tag ${tag}; image tag ${version}`);
+          }
+          main().catch(error => { console.error(error); process.exitCode = 1; });
   - name: prefetch-dependencies
     params:
     - name: input
@@ -230,6 +305,7 @@ spec:
       value: $(params.rhel-subscription-activation-key)
     runAfter:
     - clone-repository
+    - resolve-openclaw-release-tag
     taskRef:
       params:
       - name: name
@@ -567,6 +643,31 @@ spec:
       - $(params.additional-tags[*])
     runAfter:
     - build-image-index
+    taskRef:
+      params:
+      - name: name
+        value: apply-tags
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.2@sha256:e4017ec351a0891ef95989f35bd20b8c3f091fa1a3da364c4d4e975e99f3063c
+      - name: kind
+        value: task
+      resolver: bundles
+  - name: apply-openclaw-release-tag
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build-image-index.results.IMAGE_URL)
+    - name: IMAGE_DIGEST
+      value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+    - name: ADDITIONAL_TAGS
+      value:
+      - $(tasks.resolve-openclaw-release-tag.results.version)
+    runAfter:
+    - apply-tags
+    when:
+    - input: $(params.tag-openclaw-release)
+      operator: in
+      values:
+      - "true"
     taskRef:
       params:
       - name: name
