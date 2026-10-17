@@ -1,0 +1,26 @@
+# Short tokens for IntegrationTestScenario metadata.name segments (max 4 chars each).
+# One token per catalog id; alphanumeric only (hyphen separates components in the ITS name).
+abbrev:
+  workbenches: wb
+  model_registry: mr
+  model_server: msrv
+  model_runtime: mrt
+  maas_billing: maas
+  ai_pipelines: aip
+  kuberay: ray
+  mlflow: mlf
+  ogx: ogx
+  ai_safety: ais
+  ai_safety_evalhub: aiev
+  ai_safety_guardrails: agrd
+  ai_safety_lmeval: alme
+  ai_safety_trustyai_operator: taop
+  ai_safety_trustyai_service: tsvc
+  llama_stack: llam
+  dashboard_cypress: dcy
+  trainer: tr
+  distributed_workloads: dsw
+  spark_operator: sprk
+  workbench_images: wbi
+  codeflare_sdk: cf
+  platform: plat

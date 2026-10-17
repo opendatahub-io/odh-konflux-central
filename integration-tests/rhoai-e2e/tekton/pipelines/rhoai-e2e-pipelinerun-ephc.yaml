@@ -1,0 +1,32 @@
+---
+# IntegrationTestScenario wrapper for EPHC sandbox (resourceKind: pipelinerun).
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: e2e-its-ephc-smoke-
+  labels:
+    pipelines.appstudio.openshift.io/type: test
+    pac.test.appstudio.openshift.io/event-type: push
+spec:
+  timeouts:
+    pipeline: 9h0m0s
+  pipelineRef:
+    resolver: git
+    params:
+      - name: url
+        value: $(params.SCRIPTS_REPO_URL)
+      - name: revision
+        value: $(params.SCRIPTS_REPO_REVISION)
+      - name: pathInRepo
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipeline.yaml
+  workspaces:
+    - name: tests-shared
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 15Gi
+  taskRunTemplate:
+    serviceAccountName: konflux-integration-runner

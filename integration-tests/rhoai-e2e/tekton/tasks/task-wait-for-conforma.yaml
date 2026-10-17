@@ -1,0 +1,105 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: rhoai-e2e-wait-for-conforma
+  labels:
+    app.kubernetes.io/part-of: rhoai-e2e
+spec:
+  description: >-
+    Poll Enterprise Contract (conforma) PipelineRuns for the same Konflux Snapshot.
+    Emits CONFORMA_GATE=pass|skip; on skip writes WARNING TEST_OUTPUT for Konflux UI.
+  params:
+    - name: SNAPSHOT
+      type: string
+      default: ""
+    - name: PRODUCT
+      type: string
+      default: "rhoai"
+    - name: MIN_RHOAI_VERSION
+      type: string
+      default: "3.5"
+    - name: WAIT_FOR_CONFORMA
+      type: string
+      default: "true"
+    - name: CONFORMA_GATE_TIMEOUT_SEC
+      type: string
+      default: "1800"
+    - name: SNAPSHOT_NAME
+      type: string
+      description: Konflux Snapshot name from the triggering PipelineRun label (pipeline-injected).
+      default: ""
+    - name: PIPELINE_RUN_NAME
+      type: string
+      description: Parent PipelineRun name (pipeline-injected; external Tasks cannot use context in step env).
+      default: ""
+    - name: PIPELINE_NAMESPACE
+      type: string
+      description: Parent PipelineRun namespace (pipeline-injected).
+      default: ""
+    - name: SCRIPTS_REPO_URL
+      type: string
+    - name: SCRIPTS_REPO_REVISION
+      type: string
+  workspaces:
+    - name: tests-shared
+      description: Shared PVC with scripts-repo and tests-payload
+  results:
+    - name: CONFORMA_GATE
+      description: pass when conforma succeeded; skip when conforma failed or timed out
+    - name: TEST_OUTPUT
+      description: WARNING JSON when gate is skip (Konflux Test output column)
+    - name: TASK_MESSAGE
+      description: Human-readable gate outcome for Konflux Results panel
+  steps:
+    - name: wait-for-conforma
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: SNAPSHOT_NAME
+          value: $(params.SNAPSHOT_NAME)
+        - name: MIN_RHOAI_VERSION
+          value: $(params.MIN_RHOAI_VERSION)
+        - name: PRODUCT
+          value: $(params.PRODUCT)
+        - name: WAIT_FOR_CONFORMA
+          value: $(params.WAIT_FOR_CONFORMA)
+        - name: CONFORMA_GATE_TIMEOUT_SEC
+          value: $(params.CONFORMA_GATE_TIMEOUT_SEC)
+        - name: PIPELINE_RUN_NAME
+          value: $(params.PIPELINE_RUN_NAME)
+        - name: PIPELINE_NAMESPACE
+          value: $(params.PIPELINE_NAMESPACE)
+        - name: CONFORMA_GATE_PATH
+          value: $(results.CONFORMA_GATE.path)
+        - name: TEST_OUTPUT_PATH
+          value: $(results.TEST_OUTPUT.path)
+        - name: TASK_MESSAGE_PATH
+          value: $(results.TASK_MESSAGE.path)
+        - name: TESTS_PAYLOAD_DIR
+          value: $(workspaces.tests-shared.path)/tests-payload
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "steps.wait_for_conforma_gate"])
+    - name: write-konflux-task-summary
+      displayName: Write Konflux task summary
+      onError: continue
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+        - {name: TEST_OUTPUT_PATH, value: $(results.TEST_OUTPUT.path)}
+        - name: PIPELINE_TASK
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['tekton.dev/pipelineTask']
+        - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ -n "${SCRIPTS_REPO_ROOT:-}" ]] || exit 0
+        exec bash "${SCRIPTS_REPO_ROOT}/tekton/scripts/run_write_task_message.sh"

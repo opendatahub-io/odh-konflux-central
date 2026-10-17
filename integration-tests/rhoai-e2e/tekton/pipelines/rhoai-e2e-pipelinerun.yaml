@@ -1,0 +1,38 @@
+---
+# Konflux IntegrationTestScenario wrapper (resourceKind: pipelinerun).
+# Binds tests-shared PVC; Tekton v1 Pipeline workspaces declare name only.
+# ITS resolverRef.pathInRepo must point here (not rhoai-e2e-pipeline.yaml).
+# Inner pipelineRef follows SCRIPTS_REPO_* (ITS / rhoai_e2e.py --konflux-repo), not a fork URL in git.
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  # Used by Integration Service (push/component triggers). Manual ``rhoai_e2e.py``
+  # triggers create PipelineRuns directly with a dynamic generateName prefix
+  # (e.g. e2e-cli-nmanos-konfux1-smoke-nmanos-) and do not go through this template.
+  generateName: e2e-
+  labels:
+    pipelines.appstudio.openshift.io/type: test
+    pac.test.appstudio.openshift.io/event-type: push
+spec:
+  timeouts:
+    pipeline: 4h0m0s
+  pipelineRef:
+    resolver: git
+    params:
+      - name: url
+        value: $(params.SCRIPTS_REPO_URL)
+      - name: revision
+        value: $(params.SCRIPTS_REPO_REVISION)
+      - name: pathInRepo
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipeline.yaml
+  workspaces:
+    - name: tests-shared
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 15Gi
+  taskRunTemplate:
+    serviceAccountName: konflux-integration-runner
