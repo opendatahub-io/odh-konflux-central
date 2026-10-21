@@ -250,6 +250,7 @@ spec:
                 mkdir -p "${ARTIFACT_DIR}/gather-openshift"
                 oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift" || true
             - name: git-push-artifacts
+              onError: continue
               ref:
                 resolver: git
                 params:

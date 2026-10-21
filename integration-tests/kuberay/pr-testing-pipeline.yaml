@@ -377,6 +377,7 @@ spec:
                   > "${ARTIFACT_DIR}/gather-kuberay/all-test-events.txt" 2>/dev/null || true
 
             - name: git-push-artifacts
+              onError: continue
               ref:
                 resolver: git
                 params:

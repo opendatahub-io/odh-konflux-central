@@ -551,6 +551,10 @@ spec:
 
   - name: push-build-metadata
     description: Push operator build manifests to odh-build-metadata repo
+    # RHAI-12821: GitHub size quota on odh-build-metadata must not fail the
+    # early-gate PipelineRun. Image is already built; tracer 404s for new
+    # digests until quota is restored.
+    onError: continue
     runAfter:
     - apply-tags-operator
     params:

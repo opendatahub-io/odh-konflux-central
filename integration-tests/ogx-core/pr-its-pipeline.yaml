@@ -466,6 +466,7 @@ spec:
               exit "${TEST_EXIT}"
 
           - name: git-push-artifacts
+            onError: continue
             ref:
               resolver: git
               params:

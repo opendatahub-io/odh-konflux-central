@@ -125,6 +125,19 @@ spec:
         [ "$code" = "200" ]
       }
 
+      git_push() {
+        set +e
+        GIT_PUSH_OUT=$(git push "$@" 2>&1)
+        local rc=$?
+        set -e
+        printf '%s\n' "${GIT_PUSH_OUT}"
+        if printf '%s\n' "${GIT_PUSH_OUT}" | grep -q "above its size quota"; then
+          echo "WARN: odh-build-metadata is over GitHub size quota; skipping metadata publish (RHAI-12821)" >&2
+          return 2
+        fi
+        return "${rc}"
+      }
+
       publish_metadata() {
         local branch="build-meta/${OUTPUT_IMAGE_DIGEST}"
         local api="https://api.github.com/repos/${BUILD_METADATA_REPO}/merges"
@@ -132,13 +145,18 @@ spec:
         local attempt delay http_code jitter
 
         echo "Pushing metadata to main"
-        if git push origin HEAD:main; then
+        if git_push origin HEAD:main; then
           echo "Push to main succeeded"
           return 0
         fi
+        if printf '%s\n' "${GIT_PUSH_OUT:-}" | grep -q "above its size quota"; then
+          return 1
+        fi
 
         echo "main rejected the push; publishing via unique branch ${branch}"
-        git push --force origin "HEAD:refs/heads/${branch}"
+        if ! git_push --force origin "HEAD:refs/heads/${branch}"; then
+          return 1
+        fi
 
         for ((attempt=1; attempt<=max_retries; attempt++)); do
           echo "Merging ${branch} into main (attempt ${attempt}/${max_retries})"

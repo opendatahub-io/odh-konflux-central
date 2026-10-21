@@ -293,6 +293,7 @@ spec:
               echo "success" > "$STATUS_FILE"
 
           - name: git-push-artifacts
+            onError: continue
             ref:
               resolver: git
               params:
