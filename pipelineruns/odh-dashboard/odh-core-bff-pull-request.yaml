@@ -28,6 +28,13 @@ spec:
     value: distributions/core-bff/Dockerfile.workspace
   - name: path-context
     value: .
+  - name: hermetic
+    value: true
+  - name: prefetch-input
+    value: >-
+      [{"path":".","type":"pnpm"},
+      {"path":"prefetch/pnpm","type":"npm"},
+      {"path":"distributions/core-bff/bff","type":"gomod"}]
   #add these additional params
   - name: additional-tags
     value:

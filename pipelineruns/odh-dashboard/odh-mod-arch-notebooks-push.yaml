@@ -29,6 +29,15 @@ spec:
     value: packages/notebooks/Dockerfile.workspace
   - name: path-context
     value: .
+  - name: hermetic
+    value: true
+  - name: prefetch-input
+    value: >-
+      [{"path":".","type":"pnpm"},
+      {"path":"prefetch/pnpm","type":"npm"},
+      {"path":"packages/notebooks/upstream/workspaces/frontend","type":"npm"},
+      {"path":"packages/notebooks/upstream/workspaces/backend","type":"gomod"},
+      {"path":"packages/notebooks/upstream/workspaces/controller","type":"gomod"}]
   pipelineRef:
     resolver: git
     params:

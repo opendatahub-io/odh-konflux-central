@@ -10,6 +10,7 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
       == "$$TARGET_BRANCH$$" && ( "packages/eval-hub/**".pathChanged()
+      || "prefetch/pnpm/**".pathChanged()
       || ".tekton/odh-mod-arch-eval-hub-pull-request.yaml".pathChanged() || "Dockerfile.workspace".pathChanged()
       )
   creationTimestamp: null
@@ -33,6 +34,13 @@ spec:
     value: packages/eval-hub/Dockerfile.workspace
   - name: path-context
     value: .
+  - name: hermetic
+    value: true
+  - name: prefetch-input
+    value: >-
+      [{"path":".","type":"pnpm"},
+      {"path":"prefetch/pnpm","type":"npm"},
+      {"path":"packages/eval-hub/bff","type":"gomod"}]
   - name: additional-tags
     value:
     - 'odh-pr-{{revision}}'
