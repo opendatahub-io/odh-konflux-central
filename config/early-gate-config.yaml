@@ -32,6 +32,8 @@ config:
       early-gate-enabled: true
       additional-branches:
         - eg-test
+    opendatahub-db-operator:
+      early-gate-enabled: true
     opendatahub-operator:
       early-gate-enabled: true
     kubeflow:
