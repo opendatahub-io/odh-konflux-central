@@ -1,25 +1,27 @@
 ---
-# EPHC smoke slice 420-mlops+tail: mlops branch + llama_stack / distributed_workloads / workbench_images (~60m smoke).
-# Debug: --run-its e2e-ephc-ocp420-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi --konflux-app testops-playpen
+# EPHC smoke on ocp-422 FBC: mlops + llama_stack / distributed_workloads / workbench_images.
+# Debug: --run-its e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi --konflux-app testops-playpen
 apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
   labels:
     test.appstudio.openshift.io/optional: "true"
-  name: e2e-ephc-ocp420-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi
+  name: e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi
   namespace: rhoai-tenant
 spec:
-  application: rhoai-fbc-fragment-ocp-420
+  application: rhoai-fbc-fragment-ocp-422
   contexts:
-    - description: EPHC 420 mlops+tail smoke when rhoai-fbc-fragment-ocp-420 builds
-      name: component_rhoai-fbc-fragment-ocp-420
+    - description: EPHC 422 mlops+tail smoke when rhoai-fbc-fragment-ocp-422 builds
+      name: component_rhoai-fbc-fragment-ocp-422
   params:
     - name: CLUSTER_SOURCE
       value: "EPHC"
     - name: OCP_VERSION
-      value: "4.20"
+      value: "4.22"
     - name: PRODUCT
       value: "rhoai"
+    - name: FBC_STRUCTURAL
+      value: "true"
     - name: RHOAI_VERSION
       value: "unspecified (default)"
     - name: UPDATE_CHANNEL
@@ -27,7 +29,7 @@ spec:
     - name: OPERATOR_NAME
       value: "rhods-operator"
     - name: RHOAI_FBC_NAME
-      value: "rhoai-fbc-fragment-ocp-420"
+      value: "rhoai-fbc-fragment-ocp-422"
     - name: RHOAI_FBC_IMAGE
       value: "unspecified (default)"
     - name: MIN_RHOAI_VERSION
@@ -38,6 +40,10 @@ spec:
       value: "ai_pipelines,kuberay,mlflow,ogx,ai_safety,ai_safety_evalhub,ai_safety_guardrails,ai_safety_lmeval,ai_safety_trustyai_operator,ai_safety_trustyai_service,trainer,spark_operator,codeflare_sdk,llama_stack,distributed_workloads,workbench_images"
     - name: QUAY_PULL_SECRET_NAME
       value: "rhoai-external-quay-secret"
+    - name: PIPELINERUN_GENERATE_PREFIX
+      value: "e2e-its-ephc-ocp422-smoke-"
+    - name: PIPELINE_TIMEOUT
+      value: "9h0m0s"
     - name: SCRIPTS_REPO_URL
       value: https://github.com/opendatahub-io/odh-konflux-central.git
     - name: SCRIPTS_REPO_REVISION
@@ -49,6 +55,6 @@ spec:
       - name: revision
         value: main
       - name: pathInRepo
-        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-ephc.yaml
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml
     resolver: git
     resourceKind: pipelinerun

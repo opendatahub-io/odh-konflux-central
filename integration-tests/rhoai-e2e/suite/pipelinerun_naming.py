@@ -322,16 +322,11 @@ def its_profile_segment_for_name(its_profile: str) -> str:
 
 
 _ITS_PIPELINERUN_TEMPLATE_STEM = f"{_RHOAI_E2E_RESOURCE_PREFIX}-pipelinerun"
-_INTEGRATION_TEST_SCENARIO_NAME_PREFIXES = ("rhoai-e2e-", "e2e-")
-
-
 def its_profile_from_scenario_name(scenario_name: str) -> str:
-    """Use ``IntegrationTestScenario.metadata.name`` (minus ``e2e-`` / legacy ``rhoai-e2e-``) as the ITS profile."""
+    """Use ``IntegrationTestScenario.metadata.name`` (minus ``e2e-``) as the ITS profile."""
     name = (scenario_name or "").strip().lower()
-    for prefix in _INTEGRATION_TEST_SCENARIO_NAME_PREFIXES:
-        if name.startswith(prefix):
-            name = name[len(prefix) :]
-            break
+    if name.startswith("e2e-"):
+        name = name[len("e2e-") :]
     return its_profile_segment_for_name(name)
 
 
@@ -339,7 +334,8 @@ def its_profile_from_pipelinerun_template(path: str) -> str:
     """
     Derive ITS profile from ``resolverRef.pathInRepo`` basename.
 
-    ``…/rhoai-e2e-pipelinerun-ocp422.yaml`` → ``ocp422``; default wrapper → ``""``.
+    ``…/rhoai-e2e-pipelinerun.yaml`` → ``""`` (shared wrapper; use ITS ``PIPELINERUN_GENERATE_PREFIX``).
+    Legacy per-OCP files ``…-pipelinerun-ocp422.yaml`` → ``ocp422``.
     """
     stem = PurePosixPath((path or "").strip().replace("\\", "/")).stem.lower()
     template_prefix = f"{_ITS_PIPELINERUN_TEMPLATE_STEM}-"

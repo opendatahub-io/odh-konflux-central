@@ -12,8 +12,14 @@ from runners.cli.cli import make_parser, parse_cli_args
 from runners.cli.runner import RhoaiE2ERunner
 
 _ROOT = Path(__file__).resolve().parents[2]
-_RH_NIGHTLY_SNAP = _ROOT / "config" / "test-snapshot-rh-nightly.yaml"
-_RH_NIGHTLY_ITS = _ROOT / "tekton" / "its" / "its-e2e-konflux-rhoai1-ocp422.yaml"
+_OCP422_FIXTURE_SNAP = _ROOT / "config" / "test-fixture-snapshot-ocp422.yaml"
+_OCP422_EPHC_ITS = (
+    _ROOT
+    / "tekton"
+    / "its"
+    / "its-e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi.yaml"
+)
+_OCP422_EPHC_NAME = "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"
 _EPHC_SLICE_A_ITS = _ROOT / "tekton" / "its" / "its-e2e-ephc-ocp420-wb-mr-msrv-mrt-maas.yaml"
 _EPHC_SLICE_B_ITS = _ROOT / "tekton" / "its" / "its-e2e-ephc-ocp421-dcy-plat.yaml"
 _PINNED_420 = (
@@ -31,15 +37,15 @@ class RunItsManifestDefaultsTest(unittest.TestCase):
         parser = make_parser()
         args = parse_cli_args(
             parser,
-            ["--run-its", "e2e-konflux-rhoai1-ocp422"],
+            ["--run-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"],
         )
         runner = RhoaiE2ERunner(args)
-        runner.snapshot_file = _RH_NIGHTLY_SNAP
+        runner.snapshot_file = _OCP422_FIXTURE_SNAP
         return runner
 
     def test_run_its_stores_pin_but_does_not_set_image(self) -> None:
         runner = self._runner()
-        runner._apply_run_its_manifest_defaults(_RH_NIGHTLY_ITS)
+        runner._apply_run_its_manifest_defaults(_OCP422_EPHC_ITS)
         self.assertEqual(runner.args.product, "rhoai")
         self.assertEqual(runner.args.ocp_version, "4.22")
         self.assertEqual(runner.resolved_rhoai_fbc_name, "rhoai-fbc-fragment-ocp-422")
@@ -64,8 +70,8 @@ class RunItsManifestDefaultsTest(unittest.TestCase):
 
     def test_run_its_keeps_manifest_cluster_source_without_cli_override(self) -> None:
         runner = self._runner()
-        runner._apply_run_its_manifest_defaults(_RH_NIGHTLY_ITS)
-        # konflux-rhoai1 ITS uses S3 install-data (no tenant kubeconfig Secret).
+        runner._apply_run_its_manifest_defaults(_OCP422_EPHC_ITS)
+        # EPHC ITS uses CLUSTER_SOURCE=EPHC (no tenant kubeconfig Secret).
         self.assertEqual(runner.external_kubeconfig_secret, "")
 
     def test_run_its_cli_external_kubeconfig_overrides_manifest_cluster_source(self) -> None:
@@ -74,20 +80,16 @@ class RunItsManifestDefaultsTest(unittest.TestCase):
         runner = self._runner()
         runner.args.external_kubeconfig = kubeconfig
         runner.args.external_kubeconfig_path = Path(kubeconfig)
-        runner._apply_run_its_manifest_defaults(_RH_NIGHTLY_ITS)
+        runner._apply_run_its_manifest_defaults(_OCP422_EPHC_ITS)
         self.assertEqual(runner.external_kubeconfig_secret, "")
 
-    def test_run_its_keeps_test_only_product_for_external_rerun_flags(self) -> None:
+    def test_run_its_ephc_manifest_sets_product_rhoai(self) -> None:
         parser = make_parser()
         args = parse_cli_args(
             parser,
             [
                 "--run-its",
-                "e2e-konflux-rhoai1-ocp422",
-                "--install-data-cluster",
-                "konflux-rhoai1",
-                "--cleanup",
-                "false",
+                _OCP422_EPHC_NAME,
                 "--tests",
                 "smoke",
                 "--components",
@@ -95,8 +97,8 @@ class RunItsManifestDefaultsTest(unittest.TestCase):
             ],
         )
         runner = RhoaiE2ERunner(args)
-        runner._apply_run_its_manifest_defaults(_RH_NIGHTLY_ITS)
-        self.assertEqual(runner.args.product, "")
+        runner._apply_run_its_manifest_defaults(_OCP422_EPHC_ITS)
+        self.assertEqual(runner.args.product, "rhoai")
 
     def test_run_its_ephc_components_override_still_applies_manifest_product(self) -> None:
         parser = make_parser()
@@ -299,7 +301,7 @@ class ResolveRhoaiFbcLatestForComponentTest(unittest.TestCase):
 
     def test_falls_back_to_snapshot_pin_when_konflux_empty(self) -> None:
         runner = self._runner()
-        runner.snapshot_file = _RH_NIGHTLY_SNAP
+        runner.snapshot_file = _OCP422_FIXTURE_SNAP
         runner._run_its_pinned_fbcf_image = _PINNED_420
         with patch.object(runner, "get_applications", return_value=[]):
             runner._resolve_rhoai_fbc_latest_for_component("rhoai-fbc-fragment-ocp-420")
@@ -333,7 +335,7 @@ class ResolveRhoaiFbcVersionStreamTest(unittest.TestCase):
             parser,
             [
                 "--run-its",
-                "e2e-konflux-rhoai1-ocp422",
+                "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 "--product",
                 "rhoai",
                 "--rhoai-version",
@@ -386,8 +388,8 @@ class ResolveRhoaiFbcVersionStreamTest(unittest.TestCase):
 
     def test_run_its_patch_rhoai_fbc_name_after_version_stream_resolve(self) -> None:
         runner = self._runner()
-        runner._stage_its_manifest_tmp(_RH_NIGHTLY_ITS, push_context=False)
-        runner._apply_run_its_manifest_defaults(_RH_NIGHTLY_ITS)
+        runner._stage_its_manifest_tmp(_OCP422_EPHC_ITS, push_context=False)
+        runner._apply_run_its_manifest_defaults(_OCP422_EPHC_ITS)
 
         def fake_latest(
             namespace: str,
@@ -542,13 +544,37 @@ class AssertResolvedFbcMatchesRequestedVersionTest(unittest.TestCase):
             runner._assert_resolved_fbc_matches_requested_version()
         self.assertIn("does not match --rhoai-version 3.5-ea.2", str(ctx.exception))
 
+    def test_allows_cli_digest_image_when_catalog_line_unknown(self) -> None:
+        parser = make_parser()
+        digest = (
+            "quay.io/rhoai/rhoai-fbc-fragment@sha256:"
+            "95ed7d36788f2cb1180b8e0704de97cb3c59b71b9824c0bb4fed036d3d55050e"
+        )
+        args = parse_cli_args(
+            parser,
+            [
+                "--product",
+                "rhoai",
+                "--rhoai-version",
+                "3.6-ea.1",
+                "--structural",
+                "--image",
+                digest,
+            ],
+        )
+        runner = RhoaiE2ERunner(args)
+        runner.image = digest
+        runner.resolved_app = "rhoai-fbc-fragment-ocp-422"
+        runner._fbc_source_snapshot_meta = {}
+        runner._assert_resolved_fbc_matches_requested_version()
+
 
 class RunItsPostTriggerWatchTest(unittest.TestCase):
     def test_run_its_returns_post_trigger_watch_exit_code(self) -> None:
         parser = make_parser()
         args = parse_cli_args(
             parser,
-            ["--run-its", "e2e-konflux-rhoai1-ocp422"],
+            ["--run-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"],
         )
         runner = RhoaiE2ERunner(args)
         with patch.object(runner, "_stage_its_manifest_tmp"), patch.object(
@@ -568,6 +594,35 @@ class RunItsPostTriggerWatchTest(unittest.TestCase):
         ) as mock_watch:
             self.assertEqual(runner.run_integration_test_scenario(), 0)
         mock_watch.assert_called_once()
+
+
+class ClusterSourceForRunItsTest(unittest.TestCase):
+    def test_konflux_rhoai1_run_its_resolves_s3_cluster_source(self) -> None:
+        from pathlib import Path
+
+        from suite.constants import E2E_KONFLUX_RHOAI1_OCP422
+        from suite.its_registry import resolve_integration_test_scenario_manifest_path
+
+        parser = make_parser()
+        args = parse_cli_args(
+            parser,
+            ["--run-its", E2E_KONFLUX_RHOAI1_OCP422, "--product", "rhoai"],
+        )
+        runner = RhoaiE2ERunner(args)
+        manifest = resolve_integration_test_scenario_manifest_path(
+            Path(__file__).resolve().parents[2], E2E_KONFLUX_RHOAI1_OCP422
+        )
+        runner.its_file = manifest
+        runner._stage_its_manifest_tmp(manifest, push_context=False)
+        runner._apply_run_its_manifest_defaults(manifest)
+        runner._apply_run_its_cli_overrides(False)
+        self.assertEqual(
+            runner._cluster_source_for_its(False),
+            "rhoai-e2e-s3-konflux-rhoai1",
+        )
+        prefix = runner._run_its_generate_prefix(manifest, False)
+        self.assertIn("konflux-rhoai1", prefix)
+        self.assertNotIn("ephc-rhoai-smoke", prefix)
 
 
 class ClusterLabelForNamingTest(unittest.TestCase):

@@ -6,6 +6,8 @@ from suite.constants import DEFAULT_APP, DEFAULT_NAMESPACE
 import unittest
 
 from suite.snapshot_catalog_line import (
+    _iter_opm_render_documents,
+    catalog_line_from_fbc_opm_render,
     catalog_line_from_image_tag,
     catalog_line_from_operator_csv,
     catalog_line_from_prname,
@@ -15,6 +17,7 @@ from suite.snapshot_catalog_line import (
     catalog_streams_match,
     catalog_version_for_install,
     resolve_catalog_version_for_naming,
+    catalog_line_from_opm_bundle_version,
     rhoai_catalog_version_from_fbc_source,
     snapshot_matches_requested_catalog_stream,
 )
@@ -44,6 +47,32 @@ _ANNOTATIONS_35 = {
 
 
 class SnapshotCatalogLineTest(unittest.TestCase):
+    def test_iter_opm_render_documents_parses_concatenated_json(self) -> None:
+        raw = (
+            '{"schema":"olm.package","name":"rhods-operator"}\n'
+            '{"schema":"olm.bundle","name":"rhods-operator.3.6.0-ea.2"}\n'
+        )
+        docs = _iter_opm_render_documents(raw)
+        self.assertEqual(len(docs), 2)
+        self.assertEqual(docs[1]["schema"], "olm.bundle")
+
+    def test_catalog_line_from_fbc_opm_render_uses_bundle_stream(self) -> None:
+        stream = (
+            '{"schema":"olm.package","name":"rhods-operator"}\n'
+            '{"schema":"olm.bundle","name":"rhods-operator.3.6.0-ea.2"}\n'
+        )
+        with unittest.mock.patch("suite.snapshot_catalog_line.shutil.which", return_value="/usr/bin/opm"):
+            with unittest.mock.patch("suite.snapshot_catalog_line.subprocess.run") as run:
+                run.return_value = unittest.mock.Mock(returncode=0, stdout=stream, stderr="")
+                self.assertEqual(
+                    catalog_line_from_fbc_opm_render("quay.io/rhoai/rhoai-fbc-fragment@sha256:abc"),
+                    "3.6-ea.2",
+                )
+
+    def test_opm_bundle_version_to_catalog_line(self) -> None:
+        self.assertEqual(catalog_line_from_opm_bundle_version("3.6.0-ea.1"), "3.6-ea.1")
+        self.assertEqual(catalog_line_from_opm_bundle_version("3.5.0"), "3.5")
+
     def test_prname_225(self) -> None:
         self.assertEqual(
             catalog_line_from_prname("rhoai-fbc-fragment-rhoai-225-ocp-421-on-push"),

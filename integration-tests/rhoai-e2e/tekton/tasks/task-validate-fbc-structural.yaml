@@ -1,0 +1,148 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: rhoai-e2e-validate-fbc-structural
+  labels:
+    app.kubernetes.io/part-of: rhoai-e2e
+spec:
+  description: >-
+    Cluster-free Jenkins rhoai-structural-tests wrap: clone rhoai-releases,
+    make update-release --iib FBCF_IMAGE, make test when FBC_STRUCTURAL=true.
+    Pipeline onError continue: a failure does not skip EPHC or external cluster.
+  workspaces:
+    - name: tests-shared
+      description: Shared PVC with scripts-repo and tests-payload
+  params:
+    - name: FBCF_IMAGE
+      type: string
+    - name: PRODUCT
+      type: string
+      default: "rhoai"
+    - name: RHOAI_VERSION
+      type: string
+      default: ""
+    - name: SNAPSHOT
+      type: string
+      default: ""
+    - name: RHOAI_FBC_NAME
+      type: string
+      default: ""
+    - name: FBC_STRUCTURAL
+      type: string
+      default: "false"
+    - name: QUAY_PULL_SECRET_NAME
+      type: string
+      default: "rhoai-external-quay-secret"
+    - name: RHOAI_RELEASES_REPO_URL
+      type: string
+      default: "https://gitlab.cee.redhat.com/ods/rhoai-releases.git"
+    - name: RHOAI_RELEASES_REPO_REVISION
+      type: string
+      default: "master"
+    - name: SCRIPTS_REPO_URL
+      type: string
+    - name: SCRIPTS_REPO_REVISION
+      type: string
+    - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
+      type: string
+      default: "true"
+      description: >-
+        Host-scoped git sslVerify=false for gitlab.cee.redhat.com (rhoai-releases).
+        Same as install-dep-operators / install-rhoai.
+  results:
+    - name: TEST_OUTPUT
+      description: FBC structural pass/fail summary (Konflux TEST_OUTPUT JSON from JUnit)
+    - name: TASK_MESSAGE
+      description: Pass/fail/skip summary for Konflux task Results panel
+  volumes:
+    - name: quay-pull-secret
+      secret:
+        secretName: $(params.QUAY_PULL_SECRET_NAME)
+        optional: true
+  steps:
+    - name: validate-fbc-structural
+      displayName: Run rhoai-releases structural tests
+      onError: continue
+      image: quay.io/rhoai/rhoai-task-toolset:its@sha256:18b1af9b64d766478792849e49eed156464f678ef53b567a641a28444cacbfc9
+      volumeMounts:
+        - name: quay-pull-secret
+          mountPath: /var/secret/quay
+          readOnly: true
+      env:
+        - name: FBCF_IMAGE
+          value: $(params.FBCF_IMAGE)
+        - name: PRODUCT
+          value: $(params.PRODUCT)
+        - name: RHOAI_VERSION
+          value: $(params.RHOAI_VERSION)
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: COMPONENT_NAME
+          value: $(params.RHOAI_FBC_NAME)
+        - name: RHOAI_FBC_NAME
+          value: $(params.RHOAI_FBC_NAME)
+        - name: QUAY_PULL_SECRET_PATH
+          value: /var/secret/quay/.dockerconfigjson
+        - name: RHOAI_RELEASES_REPO_URL
+          value: $(params.RHOAI_RELEASES_REPO_URL)
+        - name: RHOAI_RELEASES_REPO_REVISION
+          value: $(params.RHOAI_RELEASES_REPO_REVISION)
+        - name: RHOAI_RELEASES_DIR
+          value: $(workspaces.tests-shared.path)/rhoai-releases
+        - name: TESTS_PAYLOAD_DIR
+          value: $(workspaces.tests-shared.path)/tests-payload
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+        - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
+          value: $(params.OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE)
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "steps.validate_fbc_structural"])
+    - name: summarize-structural-test-output
+      displayName: Summarize structural JUnit
+      onError: continue
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - name: TEST_OUTPUT_PATH
+          value: $(results.TEST_OUTPUT.path)
+        - name: ARTIFACT_BROWSER_BASE
+          value: "https://example.invalid"
+        - name: ARTIFACT_BROWSER_REPO_PATH
+          value: odh-ci-artifacts
+        - name: PR_NAME
+          value: structural
+        - name: ARTIFACTS_DIR
+          value: $(workspaces.tests-shared.path)/tests-payload
+        - name: NOTE_PREFIX
+          value: Structural
+        - name: JUNIT_RECURSIVE
+          value: "true"
+        - name: WRITE_ARTIFACTS_URL
+          value: "false"
+        - name: STRUCTURAL_TESTS_ONLY
+          value: "true"
+        - name: SCRIPTS_REPO_ROOT
+          value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+      script: |
+        #!/usr/bin/env python3
+        import os, sys
+        os.chdir(os.environ["SCRIPTS_REPO_ROOT"])
+        os.execvp(sys.executable, [sys.executable, "-m", "steps.summarize_test_output"])
+    - name: write-konflux-task-summary
+      displayName: Write Konflux task summary
+      onError: continue
+      image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
+      env:
+        - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+        - name: PIPELINE_TASK
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['tekton.dev/pipelineTask']
+        - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ -n "${SCRIPTS_REPO_ROOT:-}" ]] || exit 0
+        exec bash "${SCRIPTS_REPO_ROOT}/tekton/scripts/run_write_task_message.sh"

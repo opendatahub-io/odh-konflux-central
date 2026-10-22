@@ -47,10 +47,11 @@ Examples:
   %(prog)s --delete-pending-pipelines          # stop stuck/incomplete live runs
   %(prog)s --delete-pending-pipelines --dry-run
   %(prog)s --enable-its e2e-konflux-rhoai1-ocp422
+  %(prog)s --enable-its e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi
   %(prog)s --run-its e2e-ephc-ocp420-wb-mr-msrv-mrt-maas --konflux-app testops-playpen
   %(prog)s --run-its e2e-ephc-ocp421-dcy-plat --konflux-app testops-playpen
   %(prog)s --enable-its e2e-ephc-ocp421-dcy-plat
-  %(prog)s --disable-its e2e-konflux-rhoai1-ocp422
+  %(prog)s --disable-its e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi
   %(prog)s --list-supported-ocp --ocp-version 4.19
   %(prog)s --tests bvt
   %(prog)s --tests smoke --components workbenches

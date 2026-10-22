@@ -138,9 +138,9 @@ class RunnerItsAdminMixin:
             self._patch_its_cli_override_params(self.its_apply_tmp, odh_overrides)
 
     def _run_its_generate_prefix(self, manifest: Path, odh_overrides: bool) -> str:
-        cluster_source = self._cluster_source_for_its()
-        if not cluster_source:
-            cluster_source = its_manifest_param(manifest, "CLUSTER_SOURCE")
+        manifest_cluster = its_manifest_param(manifest, "CLUSTER_SOURCE")
+        # --run-its: CLUSTER_SOURCE matches ITS staging / direct PLR params (_cluster_source_for_its).
+        cluster_source = self._cluster_source_for_its(odh_overrides) or manifest_cluster
         if is_external_cluster_source(cluster_source):
             target_type = "external"
             cluster_label = (

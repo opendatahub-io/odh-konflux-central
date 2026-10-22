@@ -30,6 +30,7 @@ _PARAM_LABELS: tuple[tuple[str, str], ...] = (
     ("TEST_TAGS", "Test tags"),
     ("OLMINSTALL_TESTS_VERSION_OVERRIDE", "Tests version override"),
     ("FAIL_FAST_DISABLED_COMPONENT", "Fail fast disabled components"),
+    ("FBC_STRUCTURAL", "FBC structural tests"),
     ("TEST_GATES", "Test gates"),
     ("TESTS", "Tests"),
     ("SLACK_CHANNEL_ID", "Slack channel"),

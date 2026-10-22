@@ -131,35 +131,35 @@ def ok_cases() -> list[OkCase]:
             id="delete-dry-run",
         ),
         OkCase(
-            ["--enable-its", "e2e-konflux-rhoai1-ocp422"],
+            ["--enable-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"],
             check=lambda a: _checks(
-                a.enable_its == "e2e-konflux-rhoai1-ocp422",
+                a.enable_its == "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 not a.konflux_app_explicit,
                 a.app == "rhoai-fbc-fragment-ocp-422",
                 not a.disable_its,
             ),
-            id="enable-its-rh-nightly",
+            id="enable-its-ephc-ocp422",
         ),
         OkCase(
             [
                 "--run-its",
-                "tekton/its/its-e2e-konflux-rhoai1-ocp422.yaml",
+                "tekton/its/its-e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi.yaml",
             ],
             check=lambda a: _checks(
-                a.run_its.endswith("its-e2e-konflux-rhoai1-ocp422.yaml"),
-                a.its_scenario_name == "e2e-konflux-rhoai1-ocp422",
+                a.run_its.endswith("its-e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi.yaml"),
+                a.its_scenario_name == "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 a.app == "rhoai-fbc-fragment-ocp-422",
             ),
-            id="run-its-rh-nightly-by-path",
+            id="run-its-ephc-ocp422-by-path",
         ),
         OkCase(
             [
                 "--enable-its",
-                "tekton/its/its-e2e-konflux-rhoai1-ocp422.yaml",
+                "tekton/its/its-e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi.yaml",
             ],
             check=lambda a: _checks(
-                a.enable_its == "tekton/its/its-e2e-konflux-rhoai1-ocp422.yaml",
-                a.its_scenario_name == "e2e-konflux-rhoai1-ocp422",
+                a.enable_its == "tekton/its/its-e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi.yaml",
+                a.its_scenario_name == "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
             ),
             id="enable-its-by-rhoai-e2e-relative-path",
         ),
@@ -183,32 +183,32 @@ def ok_cases() -> list[OkCase]:
         OkCase(
             [
                 "--run-its",
-                "e2e-konflux-rhoai1-ocp422",
+                "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 "--tests",
                 "smoke",
                 "--components",
                 "dashboard_cypress",
             ],
             check=lambda a: _checks(
-                a.run_its == "e2e-konflux-rhoai1-ocp422",
+                a.run_its == "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 a.tests == "smoke",
                 a.components == "dashboard_cypress",
             ),
             id="run-its-scoped-smoke",
         ),
         OkCase(
-            ["--enable-its", "e2e-konflux-rhoai1-ocp422", "--konflux-app", DEFAULT_APP],
+            ["--enable-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi", "--konflux-app", DEFAULT_APP],
             check=lambda a: _checks(
-                a.enable_its == "e2e-konflux-rhoai1-ocp422",
+                a.enable_its == "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 a.konflux_app_explicit,
                 a.app == DEFAULT_APP,
             ),
-            id="enable-its-rh-nightly-playpen-debug",
+            id="enable-its-ephc-ocp422-playpen-debug",
         ),
         OkCase(
-            ["--disable-its", "e2e-konflux-rhoai1-ocp422"],
-            check=lambda a: _checks(a.disable_its == "e2e-konflux-rhoai1-ocp422", not a.enable_its),
-            id="disable-its-rh-nightly",
+            ["--disable-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"],
+            check=lambda a: _checks(a.disable_its == "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi", not a.enable_its),
+            id="disable-its-ephc-ocp422",
         ),
         OkCase(
             ["--list-supported-ocp"],
@@ -358,24 +358,24 @@ def err_cases() -> list[ErrCase]:
         ErrCase(["--include-unowned-stuck"], "--delete-pending-pipelines", id="include-unowned-without-delete"),
         ErrCase(["--dry-run"], "--delete-pending-pipelines", id="dry-run-without-delete"),
         ErrCase(
-            ["--enable-its", "e2e-konflux-rhoai1-ocp422", "--disable-its", "x"],
+            ["--enable-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi", "--disable-its", "x"],
             "mutually exclusive",
             id="enable-disable-its",
         ),
         ErrCase(
-            ["--enable-its", "e2e-konflux-rhoai1-ocp422", "--run-its", "e2e-konflux-rhoai1-ocp422"],
+            ["--enable-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi", "--run-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"],
             "mutually exclusive",
             id="enable-run-its",
         ),
         ErrCase(
-            ["--disable-its", "e2e-konflux-rhoai1-ocp422", "--run-its", "e2e-konflux-rhoai1-ocp422"],
+            ["--disable-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi", "--run-its", "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"],
             "cannot be used with --disable-its",
             id="run-its-with-disable",
         ),
         ErrCase(
             [
                 "--enable-its",
-                "e2e-konflux-rhoai1-ocp422",
+                "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 "--external-kubeconfig",
                 "/etc/hosts",
             ],
@@ -385,7 +385,7 @@ def err_cases() -> list[ErrCase]:
         ErrCase(
             [
                 "--enable-its",
-                "e2e-konflux-rhoai1-ocp422",
+                "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                 "--components",
                 "dashboard_cypress",
             ],

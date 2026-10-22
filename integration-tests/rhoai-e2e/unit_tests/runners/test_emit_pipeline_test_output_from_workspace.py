@@ -39,9 +39,9 @@ def test_emit_from_workspace_sidecars(tmp_path: Path, monkeypatch) -> None:
 
     assert main() == 0
     payload = json.loads(out_path.read_text(encoding="utf-8"))
-    assert payload["successes"] == 0
-    assert payload["failures"] == 0
-    assert payload["warnings"] == 0
+    assert payload["successes"] == 119
+    assert payload["failures"] == 30
+    assert payload["skipped"] == 83
     assert payload["result"] == "SUCCESS"
     assert "smoke:" in payload["note"]
     assert "bvt:" in payload["note"]

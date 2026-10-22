@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from typing import Any
 
 from suite.component_version_gate import normalize_version_for_enablement, rhoai_version_at_least
@@ -110,6 +112,82 @@ def catalog_line_from_snapshot_metadata(
     return ""
 
 
+_OPM_BUNDLE_VERSION_RE = re.compile(
+    r"^(\d+)\.(\d+)\.\d+((?:-(?:ea|rc)\.\d+)?)$",
+    re.IGNORECASE,
+)
+
+
+def catalog_line_from_opm_bundle_version(bundle_version: str) -> str:
+    """Map OLM bundle version (``3.6.0-ea.1``) to rhoai-releases catalog line (``3.6-ea.1``)."""
+    text = (bundle_version or "").strip()
+    match = _OPM_BUNDLE_VERSION_RE.match(text)
+    if not match:
+        return ""
+    return f"{match.group(1)}.{match.group(2)}{match.group(3) or ''}"
+
+
+def _iter_opm_render_documents(stdout: str) -> list[dict[str, Any]]:
+    """Parse concatenated JSON documents from ``opm render -o json`` (not a JSON array)."""
+    decoder = json.JSONDecoder()
+    idx = 0
+    text = stdout or ""
+    docs: list[dict[str, Any]] = []
+    while idx < len(text):
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+        if idx >= len(text):
+            break
+        try:
+            obj, end = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            break
+        if isinstance(obj, dict):
+            docs.append(obj)
+        idx = end
+    return docs
+
+
+def catalog_line_from_fbc_opm_render(fbcf_image: str, *, timeout_sec: int = 180) -> str:
+    """Best-effort catalog line from an FBC/OCI image via ``opm render`` (digest-only pullspecs)."""
+    image = (fbcf_image or "").strip()
+    if not image or not shutil.which("opm"):
+        return ""
+    try:
+        proc = subprocess.run(
+            ["opm", "render", image, "-o", "json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip()
+        if err:
+            print(f"WARN: opm render failed for catalog line: {err[:500]}", flush=True)
+        return ""
+    line = ""
+    for obj in _iter_opm_render_documents(proc.stdout or ""):
+        if obj.get("schema") != "olm.bundle":
+            continue
+        name = (obj.get("name") or "").strip()
+        pkg = (obj.get("package") or "").strip()
+        if not name:
+            continue
+        if pkg and name.startswith(f"{pkg}."):
+            bundle_version = name[len(pkg) + 1 :]
+        elif "." in name:
+            bundle_version = name.split(".", 1)[-1]
+        else:
+            continue
+        candidate = catalog_line_from_opm_bundle_version(bundle_version)
+        if candidate:
+            line = candidate
+    return line
+
+
 def catalog_line_from_snapshot_json(
     snapshot_raw: str,
     component_name: str = "",
@@ -171,6 +249,9 @@ def rhoai_catalog_version_from_fbc_source(
     if line:
         return line
     line = catalog_line_from_image_tag(fbc_image)
+    if line:
+        return line
+    line = catalog_line_from_fbc_opm_render(fbc_image)
     if line:
         return line
     return rhoai_catalog_line_from_konflux_app(resolved_app)

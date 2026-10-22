@@ -1,0 +1,12 @@
+---
+# Unit-test fixture only (offline FBC pin for --run-its resolve tests).
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Snapshot
+metadata:
+  generateName: ephc-ocp422-fixture-snap-
+  namespace: rhoai-tenant
+spec:
+  application: testops-playpen
+  components:
+    - name: rhoai-fbc-fragment-ocp-422
+      containerImage: quay.io/rhoai/rhoai-fbc-fragment@sha256:d9f54f26a526be21e0806a5c36b7d929b5861cffa68bcca57825fb878ecb40a2

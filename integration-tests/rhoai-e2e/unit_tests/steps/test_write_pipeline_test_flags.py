@@ -43,6 +43,7 @@ class WritePipelineTestFlagsMinimalDepsTest(unittest.TestCase):
                 "RUN_TIER1_PATH": str(results / "RUN_TIER1"),
                 "RUN_OPENDATAHUB_TESTS_PATH": str(results / "RUN_OPENDATAHUB_TESTS"),
                 "RUN_COMPONENT_TESTS_PATH": str(results / "RUN_COMPONENT_TESTS"),
+                "RUN_TEST_FINALIZE_PATH": str(results / "RUN_TEST_FINALIZE"),
                 "RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS_PATH": str(
                     results / "RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS"
                 ),

@@ -104,6 +104,25 @@ def _add_product_group(parser: CliArgumentParser) -> None:
         ),
     )
     product.add_argument(
+        "--structural",
+        action="store_true",
+        help=(
+            "Run Jenkins rhoai-structural-tests (rhoai-releases make update-release + make test) "
+            "after extract-fbcf-image. Sets FBC_STRUCTURAL=true (already true on all rhoai-e2e ITS). "
+            "Implies --product rhoai when --product is omitted. Requires --rhoai-version "
+            "(nightly RELEASE_PATH; CLI-direct snapshots often have no PAC catalog line)."
+        ),
+    )
+    product.add_argument(
+        "--structural-tests",
+        action="store_true",
+        help=(
+            "Konflux-only: create a direct PipelineRun that runs wait-for-conforma, extract-fbcf-image, "
+            "and validate-fbc-structural only (no EPHC/external cluster, operator install, or component tests). "
+            "Requires --image. Use --konflux-repo/--konflux-branch for the pipeline revision."
+        ),
+    )
+    product.add_argument(
         "--rhoai-version",
         dest="version",
         metavar="VER",
@@ -404,10 +423,7 @@ def _add_konflux_group(parser: CliArgumentParser) -> None:
     konflux.add_argument(
         "--local-its",
         action="store_true",
-        help=(
-            "With --run-its NAME: use the in-tree rhoai-e2e ITS manifest on this branch. "
-            "Default without --konflux-repo / --konflux-branch is upstream/main olminstall ITS when present."
-        ),
+        help="With --run-its NAME: use the in-tree rhoai-e2e ITS manifest on this branch.",
     )
     konflux.add_argument(
         "--konflux-ui",

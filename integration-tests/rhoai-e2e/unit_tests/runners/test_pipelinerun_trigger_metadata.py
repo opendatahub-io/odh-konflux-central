@@ -170,14 +170,8 @@ def test_build_manual_snapshot_trigger_labels(no_github_network: None) -> None:
     assert labels[LABEL_TEST_URL_REPOSITORY] == "odh-konflux-central"
 
 
-@pytest.mark.parametrize(
-    "rel_path",
-    [
-        "tekton/pipelines/rhoai-e2e-pipelinerun.yaml",
-        "tekton/pipelines/rhoai-e2e-pipelinerun-rh-nightly.yaml",
-    ],
-)
-def test_its_pipelinerun_template_has_push_event_type(rel_path: str) -> None:
+def test_its_pipelinerun_template_has_push_event_type() -> None:
+    rel_path = "tekton/pipelines/rhoai-e2e-pipelinerun.yaml"
     """Integration Service runs use this template; Konflux Activity Trigger reads PAC event-type."""
     import yaml
 

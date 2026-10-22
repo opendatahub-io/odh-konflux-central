@@ -3,34 +3,28 @@
 from __future__ import annotations
 
 import re
-import subprocess
-import tempfile
 from pathlib import Path
 
 from suite.constants import (
     E2E_EPHC_OCP420_CORE,
-    E2E_EPHC_OCP420_MLOPS_TAIL,
     E2E_EPHC_OCP421,
+    E2E_EPHC_OCP422_MLOPS_TAIL,
     E2E_KONFLUX_RHOAI1_OCP422,
 )
 from suite.errors import AppError
 
-_UPSTREAM_MAIN_ITS_GIT_REF = "upstream/main"
-_UPSTREAM_MAIN_ITS_PATH = "integration-tests/olminstall/tekton/its/its-{name}.yaml"
-
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 
-# metadata.name -> config snapshot YAML for ``--run-its NAME`` offline FBC fallback
 _ITS_RUN_ITS_SNAPSHOT_BY_NAME: dict[str, str] = {
     E2E_KONFLUX_RHOAI1_OCP422: "config/test-snapshot-rh-nightly.yaml",
 }
 
 # metadata.name -> Konflux Application when ``--konflux-app`` differs from DEFAULT_APP
 _ITS_DEFAULT_KONFLUX_APP_BY_NAME: dict[str, str] = {
-    E2E_KONFLUX_RHOAI1_OCP422: "rhoai-fbc-fragment-ocp-422",
     E2E_EPHC_OCP420_CORE: "rhoai-fbc-fragment-ocp-420",
-    E2E_EPHC_OCP420_MLOPS_TAIL: "rhoai-fbc-fragment-ocp-420",
     E2E_EPHC_OCP421: "rhoai-fbc-fragment-ocp-421",
+    E2E_EPHC_OCP422_MLOPS_TAIL: "rhoai-fbc-fragment-ocp-422",
+    E2E_KONFLUX_RHOAI1_OCP422: "rhoai-fbc-fragment-ocp-422",
 }
 
 
@@ -161,59 +155,6 @@ def resolve_integration_test_scenario_ref(rhoai_e2e_root: Path, ref: str) -> tup
     """Return (manifest path, metadata.name) for an ITS name or manifest path."""
     manifest = resolve_integration_test_scenario_manifest_path(rhoai_e2e_root, ref)
     return manifest, integration_test_scenario_name_from_manifest(manifest)
-
-
-def should_use_upstream_main_its_for_run_its(
-    *,
-    local_its: bool,
-    konflux_repo: str,
-    konflux_branch: str,
-) -> bool:
-    """Pick upstream/main olminstall ITS unless the run targets a fork branch or --local-its."""
-    if local_its:
-        return False
-    if (konflux_repo or "").strip() or (konflux_branch or "").strip():
-        return False
-    return True
-
-
-def upstream_main_its_manifest_available(scenario_name: str) -> bool:
-    """True when ``upstream/main`` has ``integration-tests/olminstall/tekton/its/its-{name}.yaml``."""
-    name = validate_integration_test_scenario_name(scenario_name)
-    rel = _UPSTREAM_MAIN_ITS_PATH.format(name=name)
-    spec = f"{_UPSTREAM_MAIN_ITS_GIT_REF}:{rel}"
-    proc = subprocess.run(
-        ["git", "show", spec],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return proc.returncode == 0 and bool((proc.stdout or "").strip())
-
-
-def materialize_upstream_main_its_manifest(scenario_name: str) -> Path:
-    """Write upstream/main olminstall ITS to a temp file for ``--run-its`` comparison runs."""
-    name = validate_integration_test_scenario_name(scenario_name)
-    rel = _UPSTREAM_MAIN_ITS_PATH.format(name=name)
-    spec = f"{_UPSTREAM_MAIN_ITS_GIT_REF}:{rel}"
-    proc = subprocess.run(
-        ["git", "show", spec],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "").strip()
-        raise AppError(
-            f"ITS {name!r} not found at {_UPSTREAM_MAIN_ITS_GIT_REF}:{rel}. "
-            f"Fetch upstream and retry (`git fetch upstream main`). {err}",
-            2,
-        )
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8")
-    tmp.write(proc.stdout)
-    tmp.flush()
-    tmp.close()
-    return Path(tmp.name)
 
 
 def _its_dir(rhoai_e2e_root: Path) -> Path:

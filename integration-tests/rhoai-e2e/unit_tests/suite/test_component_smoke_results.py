@@ -51,6 +51,7 @@ class ComponentSmokeResultsTest(unittest.TestCase):
                 ),
                 "RUN_BVT_PLACEHOLDER_ONLY_PATH": str(results / "RUN_BVT_PLACEHOLDER_ONLY"),
                 "RUN_DISTRIBUTED_WORKLOADS_TESTS_PATH": str(results / "RUN_DISTRIBUTED_WORKLOADS_TESTS"),
+                "RUN_TEST_FINALIZE_PATH": str(results / "RUN_TEST_FINALIZE"),
                 "SETUP_DEPENDENCIES_ARGS_PATH": str(results / "SETUP_DEPENDENCIES_ARGS"),
                 "SETUP_DEPENDENCIES_ARGS_WORKSPACE": str(run_config / "SETUP_DEPENDENCIES_ARGS"),
                 "COMPONENTS_CSV_PATH": str(results / "COMPONENTS_CSV"),

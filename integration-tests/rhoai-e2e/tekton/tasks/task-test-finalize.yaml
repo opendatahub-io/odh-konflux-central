@@ -38,6 +38,9 @@ spec:
       type: string
     - name: PIPELINE_RUN_NAME
       type: string
+    - name: STRUCTURAL_TESTS_ONLY
+      type: string
+      default: "false"
   workspaces:
     - name: tests-shared
   results:
@@ -77,6 +80,8 @@ spec:
           value: "true"
         - name: SCRIPTS_REPO_ROOT
           value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
+        - name: STRUCTURAL_TESTS_ONLY
+          value: $(params.STRUCTURAL_TESTS_ONLY)
       script: |
         #!/usr/bin/env python3
         import os, sys
@@ -85,6 +90,10 @@ spec:
 
     - name: write-combined-test-output
       displayName: Combine bvt and smoke summary
+      when:
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
       image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
       env:
         - name: TEST_OUTPUT_PATH
@@ -107,6 +116,10 @@ spec:
 
     - name: finalize-component-tests
       displayName: Verify test prepare ran
+      when:
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
       image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
       env:
         - name: ARTIFACTS_DIR
@@ -148,6 +161,10 @@ spec:
 
     - name: check-pipeline-test-gate
       displayName: Enforce bvt and smoke gates
+      when:
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
       image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
       env:
         - name: PIPELINE_RUN_NAME

@@ -97,6 +97,30 @@ class TriggerParamRegistryTests(unittest.TestCase):
         resolved = resolve_trigger_params(ctx, its_params={}, explicit={})
         self.assertEqual(resolved["RHOAI_VERSION"], "3.5-ea.2")
 
+    def test_rhoai_version_from_fbc_over_its_display_placeholder(self) -> None:
+        ctx = TriggerContext(
+            product="rhoai",
+            rhoai_version="",
+            tests="smoke",
+            install_dependencies=False,
+            external_kubeconfig=False,
+            image="quay.io/rhoai/rhoai-fbc-fragment@sha256:deadbeef",
+            resolved_app="rhoai-v3-5-ea-2",
+            fbc_snapshot_meta={"labels": _LABELS_35, "annotations": _ANNOTATIONS_35},
+        )
+        resolved = resolve_trigger_params(
+            ctx,
+            its_params={"RHOAI_VERSION": "unspecified (default)"},
+            explicit={},
+        )
+        self.assertEqual(resolved["RHOAI_VERSION"], "3.5-ea.2")
+        _, patch_plan = resolve_trigger_patch_plan(
+            ctx,
+            its_params={"RHOAI_VERSION": "unspecified (default)"},
+            explicit={},
+        )
+        self.assertTrue(patch_plan["RHOAI_VERSION"])
+
     def test_cluster_source_infer_ephc(self) -> None:
         ctx = _ctx(product="rhoai")
         resolved = resolve_trigger_params(ctx, its_params={}, explicit={})
@@ -120,6 +144,25 @@ class TriggerParamRegistryTests(unittest.TestCase):
             explicit={},
         )
         self.assertEqual(resolved["CLUSTER_SOURCE"], "custom-secret")
+
+    def test_cluster_source_external_secret_overrides_its_ephc(self) -> None:
+        secret = "rhoai-e2e-kubeconfig-nmanos-konflux1-nmanos"
+        ctx = _ctx(product="", external=True, external_secret=secret)
+        resolved = resolve_trigger_params(
+            ctx,
+            its_params={"CLUSTER_SOURCE": CLUSTER_SOURCE_EPHC},
+            explicit={},
+        )
+        self.assertEqual(resolved["CLUSTER_SOURCE"], secret)
+
+    def test_cluster_source_s3_its_wins_over_ephc_infer(self) -> None:
+        ctx = _ctx(product="rhoai")
+        resolved = resolve_trigger_params(
+            ctx,
+            its_params={"CLUSTER_SOURCE": "rhoai-e2e-s3-konflux-rhoai1"},
+            explicit={},
+        )
+        self.assertEqual(resolved["CLUSTER_SOURCE"], "rhoai-e2e-s3-konflux-rhoai1")
 
     def test_apply_trigger_param_resolution_from_args(self) -> None:
         import argparse
@@ -200,6 +243,57 @@ class TriggerParamRegistryTests(unittest.TestCase):
         self.assertEqual(ctx.external_secret, "")
         resolved = resolve_trigger_params(ctx, its_params={}, explicit={})
         self.assertEqual(resolved["CLUSTER_SOURCE"], CLUSTER_SOURCE_EPHC)
+
+    def test_fbc_structural_default_false(self) -> None:
+        ctx = _ctx(product="rhoai")
+        resolved = resolve_trigger_params(ctx, its_params={}, explicit={})
+        self.assertEqual(resolved["FBC_STRUCTURAL"], "false")
+
+    def test_fbc_structural_from_its_true(self) -> None:
+        ctx = _ctx(product="rhoai")
+        resolved = resolve_trigger_params(
+            ctx,
+            its_params={"FBC_STRUCTURAL": "true"},
+            explicit={},
+        )
+        self.assertEqual(resolved["FBC_STRUCTURAL"], "true")
+
+    def test_fbc_structural_from_its_patches_staged_its(self) -> None:
+        ctx = _ctx(product="rhoai")
+        _, patch_plan = resolve_trigger_patch_plan(
+            ctx,
+            its_params={"FBC_STRUCTURAL": "true"},
+            explicit={},
+        )
+        self.assertTrue(patch_plan["FBC_STRUCTURAL"])
+
+    def test_fbc_structural_cli_true(self) -> None:
+        ctx = _ctx(product="rhoai")
+        resolved = resolve_trigger_params(
+            ctx,
+            its_params={},
+            explicit={"FBC_STRUCTURAL": "true"},
+        )
+        self.assertEqual(resolved["FBC_STRUCTURAL"], "true")
+
+    def test_cli_rhoai_version_overrides_its_placeholder(self) -> None:
+        from runners.cli.cli_parser import make_parser
+        from runners.cli.cli_validate import parse_cli_args
+        from suite.trigger_param_registry import build_trigger_explicit_from_args
+
+        args = parse_cli_args(
+            make_parser(),
+            ["--structural", "--rhoai-version", "3.6-ea.1"],
+        )
+        ctx = build_trigger_context_from_args(args)
+        explicit = build_trigger_explicit_from_args(args)
+        resolved = resolve_trigger_params(
+            ctx,
+            its_params={"RHOAI_VERSION": "unspecified (default)"},
+            explicit=explicit,
+        )
+        self.assertEqual(resolved["RHOAI_VERSION"], "3.6-ea.1")
+        self.assertEqual(explicit.get("RHOAI_VERSION"), "3.6-ea.1")
 
 
 if __name__ == "__main__":

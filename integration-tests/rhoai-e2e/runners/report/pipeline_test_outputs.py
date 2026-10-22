@@ -360,15 +360,23 @@ def konflux_publish_success_test_output_json(*, note: str = "") -> str:
 
 
 def build_publish_task_test_output(payload: dict[str, object]) -> dict[str, object]:
-    """Minimal SUCCESS TEST_OUTPUT for publish-results (green DAG; stats live in gate results + note)."""
+    """SUCCESS TEST_OUTPUT for publish-results; preserve gate totals for Konflux list UI."""
     note = str(payload.get("note", "")).strip()
     timestamp = str(payload.get("timestamp", "")).strip()
+    successes = int(payload.get("successes", payload.get("passed", 0)) or 0)
+    failures = int(payload.get("failures", 0) or 0)
+    skipped = int(payload.get("skipped", 0) or 0)
+    warnings = payload.get("warnings")
+    if warnings is None:
+        warnings = konflux_list_warnings_count(skipped=skipped)
+    else:
+        warnings = int(warnings or 0)
     out: dict[str, object] = {
         "result": "SUCCESS",
-        "successes": 0,
-        "failures": 0,
-        "warnings": 0,
-        "skipped": 0,
+        "successes": successes,
+        "failures": failures,
+        "warnings": warnings,
+        "skipped": skipped,
         "note": note or "Results published",
     }
     if timestamp:

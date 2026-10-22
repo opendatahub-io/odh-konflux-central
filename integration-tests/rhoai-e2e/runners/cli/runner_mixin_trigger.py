@@ -16,6 +16,8 @@ from suite.constants import (
     ANNOTATION_RUN_OWNER,
     DEFAULT_NAMESPACE,
     DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT,
+    ITS_PARAM_PIPELINE_TIMEOUT,
+    ITS_WRAPPER_ONLY_PARAMS,
     DEFAULT_UPSTREAM_KONFLUX_GIT,
     ITS_TEST_GATES_PARAM_DEFAULT,
     KONFLUX_INTEGRATION_SERVICE_ACCOUNT,
@@ -25,7 +27,6 @@ from suite.constants import (
 from suite.its_git_pipeline_path import resolve_git_pipeline_path_from_its_resolver
 from suite.its_trigger_params import (
     is_external_cluster_source,
-    resolve_cluster_source_for_trigger,
     resolve_rhoai_version_display,
     validate_cluster_source,
 )
@@ -159,9 +160,20 @@ class RunnerTriggerMixin:
             rhoai_version_param=param,
         )
 
+    @staticmethod
+    def _snapshot_meta_catalog_line(snap_meta: dict[str, Any] | None) -> str:
+        from suite.snapshot_catalog_line import catalog_line_from_snapshot_metadata
+
+        if not isinstance(snap_meta, dict):
+            return ""
+        labels = snap_meta.get("labels") if isinstance(snap_meta.get("labels"), dict) else None
+        annotations = snap_meta.get("annotations") if isinstance(snap_meta.get("annotations"), dict) else None
+        return catalog_line_from_snapshot_metadata(labels, annotations)
+
     def _ensure_fbc_snapshot_meta_for_image(self) -> None:
         """Resolve Konflux Snapshot PAC metadata for digest-only FBC images (PLR naming / params)."""
-        if getattr(self, "_fbc_source_snapshot_meta", None):
+        existing = getattr(self, "_fbc_source_snapshot_meta", None)
+        if isinstance(existing, dict) and self._snapshot_meta_catalog_line(existing):
             return
         digest_m = re.search(r"sha256:[a-f0-9]{64}", (self.image or "").strip(), re.IGNORECASE)
         if not digest_m:
@@ -169,12 +181,18 @@ class RunnerTriggerMixin:
         digest = digest_m.group(0).lower()
         cli_image = (getattr(self.args, "image", "") or "").strip()
         fbc_name = (getattr(self, "resolved_rhoai_fbc_name", "") or "").strip()
-        # Playpen/debug triggers pass --image; scanning every rhoai-v* app is slow on busy tenants.
         if cli_image and cli_image == (self.image or "").strip():
             app_candidates = [(getattr(self, "resolved_app", "") or "").strip()]
             if fbc_name:
                 app_candidates.append(fbc_name)
-            apps = sorted({a for a in app_candidates if a})
+            apps = list(
+                dict.fromkeys(
+                    [
+                        *{a for a in app_candidates if a},
+                        *self._ordered_rhoai_version_stream_apps(),
+                    ]
+                )
+            )
         else:
             prefix = f"rhoai-v{self.args.version.replace('.', '-')}" if self.args.version else "rhoai-v"
             apps = sorted(
@@ -189,14 +207,26 @@ class RunnerTriggerMixin:
                 }
                 - {""}
             )
+        best_ts = ""
+        best_meta: dict[str, Any] | None = None
+        best_catalog = ""
+        fallback_ts = ""
+        fallback_meta: dict[str, Any] | None = None
         for app in apps:
-            _ts, _img, snap_meta = self.find_snapshot_by_image_digest(self._konflux_tenant_namespace(), app, digest)
+            ts, _img, snap_meta = self.find_snapshot_by_image_digest(self._konflux_tenant_namespace(), app, digest)
             if not snap_meta:
                 continue
-            self._fbc_source_snapshot_meta = snap_meta
+            catalog = self._snapshot_meta_catalog_line(snap_meta)
+            if catalog and ts >= best_ts:
+                best_ts, best_meta, best_catalog = ts, snap_meta, catalog
+            elif not best_catalog and ts >= fallback_ts:
+                fallback_ts, fallback_meta = ts, snap_meta
             if not self.resolved_app or self.resolved_app == app or not self.resolved_app.startswith("rhoai-v"):
-                self.resolved_app = app
-            return
+                if catalog or not self.resolved_app:
+                    self.resolved_app = app
+        chosen = best_meta if best_catalog else fallback_meta
+        if chosen:
+            self._fbc_source_snapshot_meta = chosen
 
     def _clear_registry_params_from_staged_its(self, tmp_path: Path | str) -> None:
         names = sorted(trigger_params_to_clear_on_stage())
@@ -216,7 +246,11 @@ class RunnerTriggerMixin:
             if not (getattr(self.args, "install_data_cluster", "") or "").strip():
                 secret = self._resolve_external_kubeconfig_secret()
         committed = read_committed_its_params(self.its_file)
-        its_params: dict[str, str] = {}
+        its_params: dict[str, str] = {
+            name: value
+            for name, value in committed.items()
+            if name in trigger_param_names() and (value or "").strip()
+        }
         for name in trigger_param_names():
             value = self._read_its_param(name, path=tmp_path)
             if value:
@@ -486,6 +520,9 @@ class RunnerTriggerMixin:
             observed=observed,
             app_name=self.resolved_app or "",
         ):
+            return
+        if not (observed or "").strip() and (getattr(self.args, "image", "") or "").strip():
+            # CLI --image digest has no tag; Snapshot PAC metadata is often absent.
             return
         raise AppError(
             f"Resolved FBC {self.image} (app {self.resolved_app or 'unknown'}, "
@@ -810,16 +847,39 @@ class RunnerTriggerMixin:
         print("ITS ready")
 
 
-    def _cluster_source_for_its(self) -> str:
+    def _its_params_for_cluster_resolution(self) -> dict[str, str]:
+        merged: dict[str, str] = {}
+        if getattr(self, "its_file", None):
+            merged.update(read_committed_its_params(self.its_file))
+        if getattr(self, "its_apply_tmp", None):
+            merged.update(self._read_its_params_from_tmp())
+        return merged
+
+    def _cluster_source_for_its(self, odh_overrides: bool = False) -> str:
+        """Resolve CLUSTER_SOURCE with the same precedence as ITS staging (CLI > ITS > infer)."""
         secret = (self.external_kubeconfig_secret or "").strip()
         if not secret and self._external_kubeconfig_its_override():
             if not (getattr(self.args, "install_data_cluster", "") or "").strip():
                 secret = self._resolve_external_kubeconfig_secret()
-        return resolve_cluster_source_for_trigger(
-            product=self.args.product,
+        committed: dict[str, str] = {}
+        if getattr(self, "its_file", None):
+            committed = read_committed_its_params(self.its_file)
+        explicit = build_trigger_explicit_from_args(self.args)
+        for key, value in (getattr(self.args, "trigger_explicit", {}) or {}).items():
+            if value is not None:
+                explicit[key] = value
+        ctx = build_trigger_context_from_runner(
+            self,
             external_secret=secret,
-            install_data_cluster=(getattr(self.args, "install_data_cluster", "") or "").strip(),
+            odh_overrides=odh_overrides,
+            committed_its_params=committed,
         )
+        values, _ = resolve_trigger_patch_plan(
+            ctx,
+            its_params=self._its_params_for_cluster_resolution(),
+            explicit=explicit,
+        )
+        return (values.get("CLUSTER_SOURCE") or "").strip()
 
 
     def _read_its_param(self, name: str, *, path: Path | str | None = None) -> str:
@@ -942,16 +1002,69 @@ class RunnerTriggerMixin:
                 path_in_repo = str(p.get("value", ""))
         return url or DEFAULT_UPSTREAM_KONFLUX_GIT, rev or "main", path_in_repo
 
-    def create_direct_pipelinerun(self, odh_overrides: bool) -> None:
+    def run_structural_tests_only(self) -> int:
+        """Direct PipelineRun: conforma + extract FBC + validate-fbc-structural only."""
+        from suite.constants import DEFAULT_QUAY_PULL_SECRET_NAME
+
+        if not (self.args.image or "").strip():
+            raise AppError("--structural-tests requires --image <FBC pullspec>", 2)
+        self._apply_konflux_git_inference_from_clone_or_env()
+        stub = self.script_dir / "tekton" / "its" / "its-e2e-konflux-rhoai1-ocp422.yaml"
+        self._stage_its_manifest_tmp(stub, push_context=False)
+        self._clear_registry_params_from_staged_its(self.its_apply_tmp)
+        self._yq_patch_its_konflux_git(
+            self.its_apply_tmp,
+            konflux_repo=(getattr(self.args, "konflux_repo", "") or "").strip(),
+            konflux_branch=(getattr(self.args, "konflux_branch", "") or "").strip(),
+        )
+        self.resolved_rhoai_fbc_name = self.resolved_rhoai_fbc_name or "rhoai-fbc-fragment-ocp-422"
+        self._print_effective_trigger_context()
+        odh_overrides = False
+        self.resolve_image(odh_overrides)
+        owner = (self.run_owner or "cli").split("@", 1)[0].replace("_", "-")[:20]
+        self._pipelinerun_generate_prefix = f"e2e-cli-{owner}-structural-"
+        print(f"  pipelinerun_prefix={self._pipelinerun_generate_prefix!r}")
+        self.create_direct_pipelinerun(odh_overrides, structural_tests_only=True)
+        return self._run_post_trigger_watch()
+
+    def create_direct_pipelinerun(
+        self, odh_overrides: bool, *, structural_tests_only: bool = False
+    ) -> None:
         """Create PipelineRun directly (no Snapshot/Integration Service) with dynamic generateName."""
         self._cli_direct_pipelinerun = True
         snapshot_json = self._build_snapshot_json(odh_overrides)
         self._trigger_snapshot_spec = json.loads(snapshot_json)
-        its_params = self._read_its_params_from_tmp()
-        cluster_source = self._cluster_source_for_its()
-        if cluster_source:
-            its_params["CLUSTER_SOURCE"] = cluster_source
         resolver_url, resolver_rev, resolver_path_in_repo = self._read_its_git_resolver()
+        its_params = self._read_its_params_from_tmp()
+        if structural_tests_only:
+            from suite.constants import DEFAULT_QUAY_PULL_SECRET_NAME
+
+            fbc_name = (getattr(self, "resolved_rhoai_fbc_name", "") or "").strip()
+            its_params = {
+                "PRODUCT": "rhoai",
+                "FBC_STRUCTURAL": "true",
+                "STRUCTURAL_TESTS_ONLY": "true",
+                "TEST_GATES": "",
+                "COMPONENTS": "",
+                "CLEANUP": "false",
+                "CLUSTER_SOURCE": "",
+                "RHOAI_FBC_NAME": fbc_name or "rhoai-fbc-fragment-ocp-422",
+                "QUAY_PULL_SECRET_NAME": (
+                    (getattr(self.args, "quay_pull_secret_name", "") or "").strip()
+                    or DEFAULT_QUAY_PULL_SECRET_NAME
+                ),
+                "SCRIPTS_REPO_URL": resolver_url,
+                "SCRIPTS_REPO_REVISION": resolver_rev,
+            }
+        cluster_source = self._cluster_source_for_its(odh_overrides)
+        if cluster_source and not structural_tests_only:
+            its_params["CLUSTER_SOURCE"] = cluster_source
+        catalog_version = self._catalog_version_for_naming(
+            odh_overrides,
+            rhoai_version_param=(its_params.get("RHOAI_VERSION") or "").strip(),
+        )
+        if catalog_version:
+            its_params["RHOAI_VERSION"] = catalog_version
         pipeline_git_path = resolve_git_pipeline_path_from_its_resolver(resolver_path_in_repo)
         self._cli_git_pipeline_path = pipeline_git_path
         print(
@@ -962,9 +1075,12 @@ class RunnerTriggerMixin:
 
         pr_params: list[dict[str, str]] = [{"name": "SNAPSHOT", "value": snapshot_json}]
         for pname, pvalue in its_params.items():
-            if pname == "WAIT_FOR_CONFORMA":
+            if pname == "WAIT_FOR_CONFORMA" or pname in ITS_WRAPPER_ONLY_PARAMS:
                 continue
             pr_params.append({"name": pname, "value": pvalue})
+        if catalog_version:
+            pr_params = [p for p in pr_params if p.get("name") != "RHOAI_VERSION"]
+            pr_params.append({"name": "RHOAI_VERSION", "value": catalog_version})
         # Manual CLI/--run-its: skip conforma wait (ITS auto runs use pipeline default true).
         pr_params.append({"name": "WAIT_FOR_CONFORMA", "value": "false"})
 
@@ -976,6 +1092,10 @@ class RunnerTriggerMixin:
         labels.update(self.build_rhoai_e2e_trigger_labels())
         annotations = self._build_trigger_resource_annotations()
 
+        pipeline_timeout = (its_params.get(ITS_PARAM_PIPELINE_TIMEOUT) or "").strip()
+        if not pipeline_timeout:
+            pipeline_timeout = DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT
+
         pr_obj: dict[str, Any] = {
             "apiVersion": "tekton.dev/v1",
             "kind": "PipelineRun",
@@ -985,7 +1105,7 @@ class RunnerTriggerMixin:
                 "annotations": {k: v for k, v in annotations.items() if (v or "").strip()},
             },
             "spec": {
-                "timeouts": {"pipeline": DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT},
+                "timeouts": {"pipeline": pipeline_timeout},
                 "taskRunTemplate": {
                     "serviceAccountName": KONFLUX_INTEGRATION_SERVICE_ACCOUNT,
                 },

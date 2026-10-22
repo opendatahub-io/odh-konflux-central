@@ -176,6 +176,7 @@ spec:
         unset KUBERNETES_SERVICE_HOST KUBERNETES_SERVICE_PORT KUBERNETES_PORT \
           KUBERNETES_PORT_443_TCP KUBERNETES_PORT_443_TCP_ADDR KUBERNETES_PORT_443_TCP_PORT \
           KUBERNETES_PORT_443_TCP_PROTO || true
+        export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
         echo "Running (playwright): ${RUN_COMMAND}"
         set +e
         if [ -n "${TEST_TIMEOUT_SEC:-}" ]; then

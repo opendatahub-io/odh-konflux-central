@@ -22,6 +22,8 @@ spec:
       value: "4.21"
     - name: PRODUCT
       value: "rhoai"
+    - name: FBC_STRUCTURAL
+      value: "true"
     - name: RHOAI_VERSION
       value: "unspecified (default)"
     - name: UPDATE_CHANNEL
@@ -40,6 +42,10 @@ spec:
       value: "dashboard_cypress,platform"
     - name: QUAY_PULL_SECRET_NAME
       value: "rhoai-external-quay-secret"
+    - name: PIPELINERUN_GENERATE_PREFIX
+      value: "e2e-its-ephc-ocp421-smoke-"
+    - name: PIPELINE_TIMEOUT
+      value: "9h0m0s"
     - name: SCRIPTS_REPO_URL
       value: https://github.com/opendatahub-io/odh-konflux-central.git
     - name: SCRIPTS_REPO_REVISION
@@ -51,6 +57,6 @@ spec:
       - name: revision
         value: main
       - name: pathInRepo
-        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-ephc.yaml
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml
     resolver: git
     resourceKind: pipelinerun

@@ -583,10 +583,12 @@ def main() -> int:
         run_command = prepend_kuberay_smoke_patch(run_command)
     elif filter_id == "mlflow":
         from components.mlflow.ephc_tracking import (
+            mlflow_orchestrate_env_defaults,
             prepend_mlflow_ephc_tracking,
             prepend_mlflow_run_wall_clock,
         )
 
+        env_defaults = mlflow_orchestrate_env_defaults(env_defaults)
         run_command = prepend_mlflow_ephc_tracking(run_command)
         if test_timeout_sec:
             run_command = prepend_mlflow_run_wall_clock(run_command, test_timeout_sec)

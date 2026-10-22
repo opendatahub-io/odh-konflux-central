@@ -126,6 +126,23 @@ def test_install_dependencies_validation(tmp_path: Path, parser, monkeypatch: py
         parse_cli_args(parser, ["--install-dependencies", "--tests", "smoke"])
 
 
+def test_structural_flag_implies_product_rhoai(parser) -> None:
+    args = parse_cli_args(parser, ["--structural", "--rhoai-version", "3.6-ea.1"])
+    assert args.structural is True
+    assert args.product == "rhoai"
+    assert args.version == "3.6-ea.1"
+
+
+def test_structural_requires_rhoai_version(parser) -> None:
+    with pytest.raises(AppError, match="--structural requires --rhoai-version"):
+        parse_cli_args(parser, ["--structural"])
+
+
+def test_structural_incompatible_with_watch(parser) -> None:
+    with pytest.raises(AppError, match="Trigger/install options cannot be used"):
+        parse_cli_args(parser, ["-w", "--structural", "--rhoai-version", "3.6-ea.1"])
+
+
 def test_quay_pull_secret_name_defaults_without_flag(parser) -> None:
     from suite.constants import DEFAULT_QUAY_PULL_SECRET_NAME
 

@@ -8,24 +8,20 @@ DEFAULT_APP = "testops-playpen"
 KONFLUX_INTEGRATION_SERVICE_ACCOUNT = "konflux-integration-runner"
 
 # In-tree IntegrationTestScenario metadata.name values (must match tekton/its/*.yaml).
-E2E_KONFLUX_RHOAI1_OCP422 = "e2e-konflux-rhoai1-ocp422"
 E2E_EPHC_OCP420_CORE = "e2e-ephc-ocp420-wb-mr-msrv-mrt-maas"
-E2E_EPHC_OCP420_MLOPS_TAIL = (
-    "e2e-ephc-ocp420-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"
-)
-# Back-compat alias (merged mlops + former tail ITS).
-E2E_EPHC_OCP420_MLOPS = E2E_EPHC_OCP420_MLOPS_TAIL
 E2E_EPHC_OCP421 = "e2e-ephc-ocp421-dcy-plat"
+E2E_EPHC_OCP422_MLOPS_TAIL = (
+    "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"
+)
+E2E_KONFLUX_RHOAI1_OCP422 = "e2e-konflux-rhoai1-ocp422"
 E2E_EPHC_PLAYPEN_ITS_NAMES: tuple[str, ...] = (
     E2E_EPHC_OCP420_CORE,
-    E2E_EPHC_OCP420_MLOPS_TAIL,
     E2E_EPHC_OCP421,
+    E2E_EPHC_OCP422_MLOPS_TAIL,
 )
 
-# Canonical EPHC ITS (420 core leg; see RHOAI_E2E_EPHC_PLAYPEN_ITS_NAMES for full playpen batch).
 RHOAI_E2E_EPHC_ITS_NAME = E2E_EPHC_OCP420_CORE
 RHOAI_E2E_EPHC_PLAYPEN_ITS_NAMES = E2E_EPHC_PLAYPEN_ITS_NAMES
-# External FBC ocp-422 ITS (its-e2e-konflux-rhoai1-ocp422.yaml; konflux-rhoai1 S3 install-data).
 RHOAI_E2E_KONFLUX_RHOAI1_ITS_NAME = E2E_KONFLUX_RHOAI1_OCP422
 # Obsolete IntegrationTestScenario names on testops-playpen; Konflux starts one PipelineRun per ITS
 # when a Snapshot is created for the same application. Used by ``runners/report/prune_stale_testops_its.py``
@@ -66,6 +62,8 @@ STALE_TESTOPS_PLAYPEN_ITS_NAMES: frozenset[str] = _load_stale_testops_playpen_it
 # ``rhoai``: full install path (EPHC or external + operator install).
 DEFAULT_PRODUCT = ""
 DEFAULT_QUAY_PULL_SECRET_NAME = "rhoai-external-quay-secret"
+DEFAULT_RHOAI_RELEASES_REPO_URL = "https://gitlab.cee.redhat.com/ods/rhoai-releases.git"
+DEFAULT_RHOAI_RELEASES_REPO_REVISION = "master"
 PRODUCT_INSTALL_CHOICES = frozenset({"rhoai"})
 
 
@@ -139,6 +137,16 @@ DEFAULT_ARTIFACT_BROWSER_REPO_PATH = "odh-ci-artifacts"
 # Full-matrix --components all smoke is sequential (~12-36m per test-* plus prepare).
 # tgm7k hit 6h at test-codeflare-sdk with llama_stack still queued (PipelineRunTimeout).
 DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT = "9h0m0s"
+DEFAULT_KONFLUX_RHOAI1_PIPELINE_TIMEOUT = "4h0m0s"
+RHOAI_E2E_ITS_PIPELINERUN_PATH = (
+    "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml"
+)
+# ITS-only (PipelineRun shell); not forwarded to rhoai-e2e-pipeline.yaml params.
+ITS_PARAM_PIPELINE_TIMEOUT = "PIPELINE_TIMEOUT"
+ITS_PARAM_PIPELINERUN_GENERATE_PREFIX = "PIPELINERUN_GENERATE_PREFIX"
+ITS_WRAPPER_ONLY_PARAMS: frozenset[str] = frozenset(
+    {ITS_PARAM_PIPELINE_TIMEOUT, ITS_PARAM_PIPELINERUN_GENERATE_PREFIX}
+)
 # Jenkins resource-lock parity: wait for shared external cluster before install (CLI + pipeline).
 DEFAULT_CLUSTER_IDLE_WAIT_SEC = 6 * 3600 - 300  # shared-cluster idle wait (not the PipelineRun timeout)
 DEFAULT_CLUSTER_IDLE_POLL_SEC = 60

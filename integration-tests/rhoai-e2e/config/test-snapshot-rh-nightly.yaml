@@ -2,11 +2,10 @@
 # Offline fallback for ``--run-its e2e-konflux-rhoai1-ocp422``.
 # ``rhoai_e2e.py`` resolves the latest Konflux snapshot for ``RHOAI_FBC_NAME`` from the
 # ITS manifest; this pin is used only when Konflux lookup fails (no cluster access).
-# RHOAI 3.5 EA2 stage push (2026-07), OCP 4.22 fragment (digest pin until Konflux lookup).
 apiVersion: appstudio.redhat.com/v1alpha1
 kind: Snapshot
 metadata:
-  generateName: rh-nightly-snap-
+  generateName: konflux-rhoai1-snap-
   namespace: rhoai-tenant
 spec:
   application: testops-playpen

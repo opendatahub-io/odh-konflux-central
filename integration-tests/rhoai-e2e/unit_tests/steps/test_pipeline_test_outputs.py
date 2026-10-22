@@ -286,8 +286,8 @@ class PipelineTestOutputsTest(unittest.TestCase):
             }
         )
         self.assertEqual(payload["result"], "SUCCESS")
-        self.assertEqual(payload["failures"], 0)
-        self.assertEqual(payload["warnings"], 0)
+        self.assertEqual(payload["successes"], 10)
+        self.assertEqual(payload["failures"], 2)
         self.assertIn("smoke: 83% pass rate", str(payload["note"]))
 
     def test_finalize_skips_duplicate_bvt_when_test_finalize_combined(self) -> None:

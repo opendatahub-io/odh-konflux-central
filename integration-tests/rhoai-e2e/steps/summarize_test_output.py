@@ -396,6 +396,10 @@ def write_junit_test_output(
     return note
 
 
+def _structural_tests_only() -> bool:
+    return os.environ.get("STRUCTURAL_TESTS_ONLY", "").strip().lower() in ("1", "true", "yes")
+
+
 def main() -> int:
     test_output_path = require_env("TEST_OUTPUT_PATH")
     browser_base = require_env("ARTIFACT_BROWSER_BASE")
@@ -403,11 +407,16 @@ def main() -> int:
     pr_name = require_env("PR_NAME")
     artifacts_dir = Path(os.environ.get("ARTIFACTS_DIR", "/artifacts").strip())
     note_prefix = os.environ.get("NOTE_PREFIX", "BVT").strip()
+    if _structural_tests_only():
+        from steps.tests_payload import tests_payload_results_dir
+
+        artifacts_dir = tests_payload_results_dir(artifacts_dir) / "structural"
+        note_prefix = "Structural"
     component_id = os.environ.get("COMPONENT_ID", "").strip()
     plan_raw = os.environ.get("COMPONENT_TEST_PLAN_JSON", "").strip()
     plan_path = Path(plan_raw) if plan_raw else None
     write_artifacts_url = _truthy("WRITE_ARTIFACTS_URL", default=True)
-    recursive = _truthy("JUNIT_RECURSIVE", default=False)
+    recursive = _truthy("JUNIT_RECURSIVE", default=False) or _structural_tests_only()
 
     note, output_json = _write_test_output_json(
         artifacts_dir,

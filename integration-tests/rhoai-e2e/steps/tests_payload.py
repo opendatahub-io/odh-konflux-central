@@ -25,6 +25,7 @@ _SKIP_FILE_NAMES = frozenset(
 DEFAULT_UPLOAD_PATTERNS = ("*.xml", "*.log", "*.console.log")
 AGGREGATE_TEST_OUTPUT_FILENAME = ".rhoai-e2e-smoke-test-output.json"
 BVT_AGGREGATE_TEST_OUTPUT_FILENAME = ".rhoai-e2e-bvt-test-output.json"
+STRUCTURAL_AGGREGATE_TEST_OUTPUT_FILENAME = ".rhoai-e2e-structural-test-output.json"
 
 
 def gate_test_output_sidecar_filename(note_prefix: str) -> str | None:
@@ -34,6 +35,8 @@ def gate_test_output_sidecar_filename(note_prefix: str) -> str | None:
         return BVT_AGGREGATE_TEST_OUTPUT_FILENAME
     if prefix == "COMPONENT":
         return AGGREGATE_TEST_OUTPUT_FILENAME
+    if prefix == "STRUCTURAL":
+        return STRUCTURAL_AGGREGATE_TEST_OUTPUT_FILENAME
     return None
 
 

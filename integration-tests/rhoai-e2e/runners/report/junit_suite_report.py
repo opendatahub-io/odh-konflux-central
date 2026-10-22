@@ -420,7 +420,10 @@ _GATE_SUMMARY_PLACEHOLDERS = frozenset({"", "no tests", "n/a", "(unknown)"})
 
 
 def is_gate_summary_placeholder(value: str) -> bool:
-    return (value or "").strip().lower() in _GATE_SUMMARY_PLACEHOLDERS
+    text = (value or "").strip().lower()
+    if text in _GATE_SUMMARY_PLACEHOLDERS:
+        return True
+    return text.startswith("n/a (pending") or text.startswith("n/a (not run)")
 
 
 def build_publish_results_gate_summaries(

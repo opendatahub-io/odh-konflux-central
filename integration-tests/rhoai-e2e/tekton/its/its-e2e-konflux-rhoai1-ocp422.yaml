@@ -21,6 +21,8 @@ spec:
       value: "4.22"
     - name: PRODUCT
       value: "rhoai"
+    - name: FBC_STRUCTURAL
+      value: "true"
     - name: CLEANUP
       value: "true"
     - name: RHOAI_VERSION
@@ -43,6 +45,10 @@ spec:
       value: "rhoai-external-quay-secret"
     - name: ROSA_HCP_KYVERNO_SECRET
       value: "rhoai-e2e-rosa-hcp-kyverno"
+    - name: PIPELINERUN_GENERATE_PREFIX
+      value: "e2e-its-konflux-rhoai1-smoke-"
+    - name: PIPELINE_TIMEOUT
+      value: "4h0m0s"
     - name: SCRIPTS_REPO_URL
       value: https://github.com/opendatahub-io/odh-konflux-central.git
     - name: SCRIPTS_REPO_REVISION
@@ -54,6 +60,6 @@ spec:
       - name: revision
         value: main
       - name: pathInRepo
-        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-rh-nightly.yaml
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml
     resolver: git
     resourceKind: pipelinerun

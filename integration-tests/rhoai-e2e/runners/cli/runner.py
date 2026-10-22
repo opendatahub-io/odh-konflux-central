@@ -877,6 +877,8 @@ class RhoaiE2ERunner(
 
         self.ensure_konflux_cluster()
 
+        if getattr(self.args, "structural_tests", False):
+            return self.run_structural_tests_only()
         if (self.args.run_its or "").strip():
             return self.run_integration_test_scenario()
         if (self.args.enable_its or "").strip():

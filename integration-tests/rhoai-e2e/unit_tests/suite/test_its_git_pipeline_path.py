@@ -29,10 +29,10 @@ class ItsGitPipelinePathTests(unittest.TestCase):
             "integration-tests/olminstall/tekton/pipelines/olminstall-pipeline.yaml",
         )
 
-    def test_rhoai_e2e_ephc_wrapper(self) -> None:
+    def test_rhoai_e2e_shared_pipelinerun_wrapper(self) -> None:
         self.assertEqual(
             resolve_git_pipeline_path_from_its_resolver(
-                "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-ephc.yaml"
+                "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml"
             ),
             "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipeline.yaml",
         )

@@ -7,6 +7,7 @@ import unittest
 
 from components.mlflow.ephc_tracking import (
     mlflow_ephc_incluster_tracking_shell,
+    mlflow_orchestrate_env_defaults,
     prepend_mlflow_ephc_tracking,
     prepend_mlflow_run_wall_clock,
 )
@@ -21,7 +22,8 @@ class MlflowEhcTrackingTest(unittest.TestCase):
         os.environ["CLUSTER_SOURCE"] = CLUSTER_SOURCE_EPHC
         try:
             shell = mlflow_ephc_incluster_tracking_shell()
-            self.assertEqual(shell, "export FORCE_PORT_FORWARD=true")
+            self.assertIn("FORCE_PORT_FORWARD=true", shell)
+            self.assertIn("ARTIFACTS_SERVER_GATEWAY", shell)
             self.assertNotIn("CLUSTER_SOURCE", shell)
         finally:
             os.environ.pop("CLUSTER_SOURCE", None)
@@ -70,13 +72,18 @@ class MlflowEhcTrackingTest(unittest.TestCase):
 
     def test_skips_force_port_forward_when_artifacts_gateway(self) -> None:
         import os
+        from unittest import mock
 
         os.environ["CLUSTER_SOURCE"] = CLUSTER_SOURCE_EPHC
         os.environ["ARTIFACTS_SERVER_GATEWAY"] = "true"
         try:
-            cmd = "bash mlflow-tests/images/test-run.sh -m smoke"
-            self.assertEqual(prepend_mlflow_ephc_tracking(cmd), cmd)
-            self.assertEqual(mlflow_ephc_incluster_tracking_shell(), "")
+            with mock.patch(
+                "components.mlflow.ephc_tracking.mlflow_crd_supports_artifacts_server",
+                return_value=True,
+            ):
+                cmd = "bash mlflow-tests/images/test-run.sh -m smoke"
+                self.assertEqual(prepend_mlflow_ephc_tracking(cmd), cmd)
+                self.assertEqual(mlflow_ephc_incluster_tracking_shell(), "")
         finally:
             os.environ.pop("ARTIFACTS_SERVER_GATEWAY", None)
             os.environ.pop("CLUSTER_SOURCE", None)
@@ -88,12 +95,51 @@ class MlflowEhcTrackingTest(unittest.TestCase):
         os.environ["CLUSTER_SOURCE"] = CLUSTER_SOURCE_EPHC
         os.environ.pop("ARTIFACTS_SERVER_GATEWAY", None)
         try:
-            with mock.patch(
-                "install.dsc_install.uses_aigateway_models_as_a_service",
-                return_value=True,
+            with (
+                mock.patch(
+                    "install.dsc_install.uses_aigateway_models_as_a_service",
+                    return_value=True,
+                ),
+                mock.patch(
+                    "components.mlflow.ephc_tracking.mlflow_crd_supports_artifacts_server",
+                    return_value=True,
+                ),
             ):
                 cmd = "bash mlflow-tests/images/test-run.sh -m smoke"
                 self.assertEqual(prepend_mlflow_ephc_tracking(cmd), cmd)
+        finally:
+            os.environ.pop("CLUSTER_SOURCE", None)
+
+    def test_force_port_forward_when_aigateway_without_artifacts_server_crd(self) -> None:
+        import os
+        from unittest import mock
+
+        os.environ["CLUSTER_SOURCE"] = CLUSTER_SOURCE_EPHC
+        os.environ.pop("ARTIFACTS_SERVER_GATEWAY", None)
+        try:
+            with (
+                mock.patch(
+                    "install.dsc_install.uses_aigateway_models_as_a_service",
+                    return_value=True,
+                ),
+                mock.patch(
+                    "components.mlflow.ephc_tracking.mlflow_crd_supports_artifacts_server",
+                    return_value=False,
+                ),
+            ):
+                cmd = "bash mlflow-tests/images/test-run.sh -m smoke"
+                out = prepend_mlflow_ephc_tracking(cmd)
+                self.assertIn("ARTIFACTS_SERVER=false", out)
+                self.assertIn("ARTIFACTS_SERVER_GATEWAY=false", out)
+                self.assertIn("FORCE_PORT_FORWARD=true", out)
+                env = mlflow_orchestrate_env_defaults(None)
+                self.assertEqual(
+                    env,
+                    {
+                        "ARTIFACTS_SERVER_GATEWAY": "false",
+                        "ARTIFACTS_SERVER": "false",
+                    },
+                )
         finally:
             os.environ.pop("CLUSTER_SOURCE", None)
 

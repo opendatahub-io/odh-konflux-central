@@ -39,18 +39,18 @@ class PipelineRunContextTest(unittest.TestCase):
 
     def test_rh_nightly_catalog_sync_log_lines(self) -> None:
         lines = build_pipeline_run_context_lines(
-            pipelinerun_name="e2e-its-konflux-rhoai1-smoke-2gh84",
+            pipelinerun_name="e2e-its-ephc-ocp422-smoke-2gh84",
             trigger_type=TRIGGER_TYPE_RH_NIGHTLY_AUTO,
             konflux_event="push",
             snapshot_name="rh-nightly-snap-4mh9f",
             fbc_component="rhoai-fbc-fragment-ocp-422",
             fbc_image=_FBC,
-            cluster_source="rhoai-e2e-s3-konflux-rhoai1",
+            cluster_source="EPHC",
             product="rhoai",
             test_gates="bvt,smoke",
             trigger_command=(
                 "python3 integration-tests/rhoai-e2e/rhoai_e2e.py "
-                f"--enable-its e2e-konflux-rhoai1-ocp422 --konflux-namespace {DEFAULT_NAMESPACE}"
+                f"--enable-its e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi --konflux-namespace {DEFAULT_NAMESPACE}"
             ),
         )
         text = "\n".join(lines)
@@ -65,10 +65,10 @@ class PipelineRunContextTest(unittest.TestCase):
             konflux_event="incoming",
             fbc_component="rhoai-fbc-fragment-ocp-422",
             fbc_image=_FBC,
-            cluster_source="rhoai-e2e-s3-konflux-rhoai1",
+            cluster_source="EPHC",
             product="rhoai",
             test_gates="bvt,smoke",
-            trigger_command="python3 integration-tests/rhoai-e2e/rhoai_e2e.py --run-its e2e-konflux-rhoai1-ocp422",
+            trigger_command="python3 integration-tests/rhoai-e2e/rhoai_e2e.py --run-its e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
         )
         self.assertIn("CLI direct", msg)
         self.assertIn("Incoming", msg)
@@ -80,10 +80,10 @@ class PipelineRunContextTest(unittest.TestCase):
             konflux_event="incoming",
             fbc_component="rhoai-fbc-fragment-ocp-422",
             fbc_image=_FBC,
-            cluster_source="rhoai-e2e-s3-konflux-rhoai1",
+            cluster_source="EPHC",
             product="rhoai",
             test_gates="bvt,smoke",
-            trigger_command="python3 integration-tests/rhoai-e2e/rhoai_e2e.py --run-its e2e-konflux-rhoai1-ocp422",
+            trigger_command="python3 integration-tests/rhoai-e2e/rhoai_e2e.py --run-its e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
         )
         self.assertEqual(tuple(results.keys()), TRIGGER_CONTEXT_RESULT_NAMES)
         self.assertIn("CLI direct", results["TRIGGER"])
@@ -97,7 +97,7 @@ class PipelineRunContextTest(unittest.TestCase):
             snapshot_name="rhoai-fbc-fragment-ocp-422-build-abc",
             fbc_component="rhoai-fbc-fragment-ocp-422",
             fbc_image=_FBC,
-            cluster_source="rhoai-e2e-s3-konflux-rhoai1",
+            cluster_source="EPHC",
             product="rhoai",
             test_gates="bvt,smoke",
         )
@@ -108,10 +108,10 @@ class PipelineRunContextTest(unittest.TestCase):
     def test_context_from_pipelinerun_json(self) -> None:
         prj = {
             "metadata": {
-                "name": "e2e-its-konflux-rhoai1-smoke-2gh84",
+                "name": "e2e-its-ephc-ocp422-smoke-2gh84",
                 "annotations": {
                     "rhoai-e2e.trigger-type": TRIGGER_TYPE_RH_NIGHTLY_AUTO,
-                    "rhoai-e2e.trigger-command": "python3 integration-tests/rhoai-e2e/rhoai_e2e.py --enable-its e2e-konflux-rhoai1-ocp422",
+                    "rhoai-e2e.trigger-command": "python3 integration-tests/rhoai-e2e/rhoai_e2e.py --enable-its e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi",
                     "rhoai-e2e.fbcf-image": _FBC,
                 },
                 "labels": {
@@ -124,7 +124,7 @@ class PipelineRunContextTest(unittest.TestCase):
             prj,
             snapshot_raw=_SNAPSHOT,
             fbc_component="rhoai-fbc-fragment-ocp-422",
-            cluster_source="rhoai-e2e-s3-konflux-rhoai1",
+            cluster_source="EPHC",
             product="rhoai",
             test_gates="bvt,smoke",
         )

@@ -1,21 +1,19 @@
 ---
-# Konflux IntegrationTestScenario wrapper (resourceKind: pipelinerun).
-# Binds tests-shared PVC; Tekton v1 Pipeline workspaces declare name only.
-# ITS resolverRef.pathInRepo must point here (not rhoai-e2e-pipeline.yaml).
-# Inner pipelineRef follows SCRIPTS_REPO_* (ITS / rhoai_e2e.py --konflux-repo), not a fork URL in git.
+# Shared IntegrationTestScenario PipelineRun shell (git pipelineRef, PVC, SA, timeout).
+# Tekton does not substitute ``$(params.*)`` in ``spec.timeouts.pipeline`` or ``metadata.generateName``.
+# Integration Service runs use the literal timeout below; per-ITS ``PIPELINE_TIMEOUT`` applies to
+# ``--run-its`` / CLI direct PipelineRuns (see ``create_direct_pipelinerun``). ``PIPELINERUN_GENERATE_PREFIX``
+# in each ITS documents the ``--run-its`` naming profile; Integration Service runs use ``e2e-its-smoke-`` here.
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  # Used by Integration Service (push/component triggers). Manual ``rhoai_e2e.py``
-  # triggers create PipelineRuns directly with a dynamic generateName prefix
-  # (e.g. e2e-cli-nmanos-konfux1-smoke-nmanos-) and do not go through this template.
-  generateName: e2e-
+  generateName: e2e-its-smoke-
   labels:
     pipelines.appstudio.openshift.io/type: test
     pac.test.appstudio.openshift.io/event-type: push
 spec:
   timeouts:
-    pipeline: 4h0m0s
+    pipeline: 9h0m0s
   pipelineRef:
     resolver: git
     params:

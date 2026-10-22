@@ -18,6 +18,7 @@ names:
   # 2026-10-18: mlops+tail merged into e2e-ephc-ocp420-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi
   - e2e-ephc-ocp420-aip-ray-mlf-ogx-ais-tr-sprk-cf
   - e2e-ephc-ocp420-llam-dsw-wbi
+  - e2e-ephc-ocp420-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi
   - odh-olminstall-testops
   - odh-olminstall-testops-rh-nightly
   - odh-olminstall-smoke-testops

@@ -45,6 +45,7 @@ EXTRA_RESULT_KEYS = (
     "RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS",
     "RUN_BVT_PLACEHOLDER_ONLY",
     "RUN_DISTRIBUTED_WORKLOADS_TESTS",
+    "RUN_TEST_FINALIZE",
 )
 
 
@@ -146,26 +147,50 @@ def main() -> int:
 
     try:
         catalog = load_tests_catalog(cfg)
-        csv = validate_and_normalize_tests_csv(tests_raw or None, catalog)
-        selected = parse_tests_selection(csv, catalog)
-        flags = compute_pipeline_result_flags(selected, catalog)
-
-        components_csv = ""
-        setup_deps_args = ""
-        needs_smoke_maas_deps = False
-        product = os.environ.get("PRODUCT", "").strip().lower()
-        cluster_source = os.environ.get("CLUSTER_SOURCE", "").strip()
-        snapshot_only = _snapshot_only_no_cluster(product=product, cluster_source=cluster_source)
-        installs_product = product_installs_operator(product)
-        install_dependencies = os.environ.get("INSTALL_DEPENDENCIES", "").strip().lower() in (
+        structural_only = os.environ.get("STRUCTURAL_TESTS_ONLY", "").strip().lower() in (
             "1",
             "true",
             "yes",
         )
-        comp_catalog = load_components_smoke_catalog(comp_cfg)
-        selected_component_ids: frozenset[str] = frozenset()
+        if structural_only:
+            csv = ""
+            selected: frozenset[str] = frozenset()
+            flags = compute_pipeline_result_flags(selected, catalog)
+            for key in list(flags):
+                flags[key] = False
+            for key in EXTRA_RESULT_KEYS:
+                flags[key] = False
+            components_csv = ""
+            setup_deps_args = ""
+            selected_component_ids = frozenset()
+            smoke_aws_secret = DEFAULT_SMOKE_AWS_SECRET
+            flags["RUN_TEST_FINALIZE"] = True
+            print(
+                "STRUCTURAL_TESTS_ONLY=true: skipping BVT/smoke/tier1, cluster install, and component tests",
+                flush=True,
+            )
+        else:
+            csv = validate_and_normalize_tests_csv(tests_raw or None, catalog)
+            selected = parse_tests_selection(csv, catalog)
+            flags = compute_pipeline_result_flags(selected, catalog)
 
-        if selected & {"smoke", "tier1"}:
+        comp_catalog = load_components_smoke_catalog(comp_cfg)
+        if not structural_only:
+            components_csv = ""
+            setup_deps_args = ""
+            needs_smoke_maas_deps = False
+            product = os.environ.get("PRODUCT", "").strip().lower()
+            cluster_source = os.environ.get("CLUSTER_SOURCE", "").strip()
+            snapshot_only = _snapshot_only_no_cluster(product=product, cluster_source=cluster_source)
+            installs_product = product_installs_operator(product)
+            install_dependencies = os.environ.get("INSTALL_DEPENDENCIES", "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            selected_component_ids: frozenset[str] = frozenset()
+
+        if not structural_only and selected & {"smoke", "tier1"}:
             components_csv = resolve_components_csv(
                 components_raw or None,
                 tests_catalog=catalog,
@@ -183,11 +208,14 @@ def main() -> int:
                 )
             elif needs_smoke_maas_deps:
                 setup_deps_args = merged or DEFAULT_SETUP_DEPENDENCIES_ARGS
-        elif installs_product:
+        elif not structural_only and installs_product:
             setup_deps_args = DEFAULT_SETUP_DEPENDENCIES_ARGS
 
-        run_component_tests = flags.get("RUN_SMOKE", False) or flags.get("RUN_TIER1", False)
-        if snapshot_only:
+        if structural_only:
+            run_component_tests = False
+        else:
+            run_component_tests = flags.get("RUN_SMOKE", False) or flags.get("RUN_TIER1", False)
+        if not structural_only and snapshot_only:
             if run_component_tests:
                 print(
                     "INFO snapshot-only (test-only PRODUCT, no CLUSTER_SOURCE): "
@@ -202,29 +230,31 @@ def main() -> int:
             selected_component_ids = frozenset()
             needs_smoke_maas_deps = False
 
-        run_dep_operators = installs_product or (
-            run_component_tests and (install_dependencies or needs_smoke_maas_deps)
-        )
-        flags["RUN_MINIMAL_DEPS"] = run_dep_operators
-        flags["RUN_INSTALL_DEP_OPERATORS"] = run_dep_operators
+        if not structural_only:
+            run_dep_operators = installs_product or (
+                run_component_tests and (install_dependencies or needs_smoke_maas_deps)
+            )
+            flags["RUN_MINIMAL_DEPS"] = run_dep_operators
+            flags["RUN_INSTALL_DEP_OPERATORS"] = run_dep_operators
 
-        flags["RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS"] = (
-            run_component_tests
-            and (install_dependencies or needs_smoke_maas_deps)
-            and not installs_product
-        )
-        flags["RUN_COMPONENT_TESTS"] = run_component_tests
-        flags["RUN_OPENDATAHUB_TESTS"] = flags.get("RUN_BVT", False) or run_component_tests
-        flags["RUN_BVT_PLACEHOLDER_ONLY"] = snapshot_only and bool(flags.get("RUN_BVT", False))
-        flags["RUN_DISTRIBUTED_WORKLOADS_TESTS"] = run_component_tests and bool(
-            selected_component_ids & _DISTRIBUTED_WORKLOADS_COMPONENTS
-        )
+            flags["RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS"] = (
+                run_component_tests
+                and (install_dependencies or needs_smoke_maas_deps)
+                and not installs_product
+            )
+            flags["RUN_COMPONENT_TESTS"] = run_component_tests
+            flags["RUN_OPENDATAHUB_TESTS"] = flags.get("RUN_BVT", False) or run_component_tests
+            flags["RUN_BVT_PLACEHOLDER_ONLY"] = snapshot_only and bool(flags.get("RUN_BVT", False))
+            flags["RUN_DISTRIBUTED_WORKLOADS_TESTS"] = run_component_tests and bool(
+                selected_component_ids & _DISTRIBUTED_WORKLOADS_COMPONENTS
+            )
+            flags["RUN_TEST_FINALIZE"] = run_component_tests
 
-        smoke_aws_secret = resolve_shift_left_env_secret(
-            comp_catalog,
-            selected_ids=selected_component_ids,
-            explicit="",
-        ) or DEFAULT_SMOKE_AWS_SECRET
+            smoke_aws_secret = resolve_shift_left_env_secret(
+                comp_catalog,
+                selected_ids=selected_component_ids,
+                explicit="",
+            ) or DEFAULT_SMOKE_AWS_SECRET
 
     except AppError as exc:
         print(

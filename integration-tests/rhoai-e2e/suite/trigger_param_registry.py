@@ -22,10 +22,12 @@ from suite.constants import (
 )
 from suite.its_registry import its_manifest_param
 from suite.its_trigger_params import (
+    CLUSTER_SOURCE_EPHC,
     ocp_install_prefix,
     resolve_cluster_source_for_trigger,
     resolve_version_display_params,
 )
+from suite.pipelinerun_naming import version_placeholder
 from suite.snapshot_catalog_line import rhoai_catalog_version_from_fbc_source
 
 PatchPolicy = Literal["always", "when_non_empty", "override_only"]
@@ -85,6 +87,7 @@ class TriggerContext:
     konflux_repo: str = ""
     konflux_branch: str = ""
     install_data_cluster: str = ""
+    structural: bool = False
 
 
 InferRule = tuple[str, Callable[[TriggerContext], bool], Callable[[TriggerContext], str | None]]
@@ -190,7 +193,38 @@ def _version_display_cached(
     return display["RHOAI_VERSION"], display["OCP_VERSION"], display["RHOAI_FBC_IMAGE"]
 
 
+def _usable_rhoai_version(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text or text.lower() in {"n/a", "unspecified"}:
+        return ""
+    if "unspecified" in text.lower():
+        return ""
+    return text
+
+
+def _its_param_overrides_infer(name: str, value: str, ctx: TriggerContext | None = None) -> bool:
+    """True when a committed ITS value should win over trigger-time inference."""
+    text = (value or "").strip()
+    if not text:
+        return False
+    if name == "CLUSTER_SOURCE" and text == CLUSTER_SOURCE_EPHC:
+        if ctx and (ctx.external_secret or "").strip():
+            return False
+    if name == "RHOAI_VERSION":
+        return bool(_usable_rhoai_version(text))
+    if name == "RHOAI_FBC_IMAGE":
+        if text.lower() in {"n/a", "unspecified"}:
+            return False
+        return not version_placeholder(text)
+    if name == "OCP_VERSION":
+        return bool(ocp_install_prefix(text))
+    return True
+
+
 def _rhoai_catalog_version(ctx: TriggerContext) -> str:
+    explicit = _usable_rhoai_version(ctx.rhoai_version)
+    if explicit:
+        return explicit
     return rhoai_catalog_version_from_fbc_source(
         fbc_image=_fbc_image_for_display(ctx),
         fbc_snapshot_meta=dict(ctx.fbc_snapshot_meta) if ctx.fbc_snapshot_meta else None,
@@ -299,11 +333,18 @@ TRIGGER_PARAMS: tuple[TriggerParam, ...] = (
         "",
         infer=(
             (
+                "CLI --rhoai-version",
+                lambda c: bool(_usable_rhoai_version(c.rhoai_version)),
+                lambda c: _usable_rhoai_version(c.rhoai_version),
+            ),
+            (
                 "FBC catalog line (snapshot metadata / image / Konflux app)",
                 lambda c: True,
                 _rhoai_catalog_version,
             ),
         ),
+        cli_when=lambda a: _arg_set(a, "version"),
+        cli_value=lambda a: _arg_str(a, "version"),
     ),
     TriggerParam(
         "OCP_VERSION",
@@ -384,6 +425,17 @@ TRIGGER_PARAMS: tuple[TriggerParam, ...] = (
         patch="when_non_empty",
         cli_when=lambda a: _arg_set(a, "ocp_channel"),
         cli_value=lambda a: _arg_str(a, "ocp_channel"),
+    ),
+    TriggerParam(
+        "FBC_STRUCTURAL",
+        "false",
+        infer=(("--structural", lambda c: c.structural, lambda c: "true"),),
+        patch="override_only",
+        patch_when=lambda c, v, e: (v or "").strip().lower() == "true"
+        or c.structural
+        or name_in_explicit("FBC_STRUCTURAL", e),
+        cli_when=lambda a: bool(getattr(a, "structural", False)),
+        cli_value=lambda a: "true",
     ),
     TriggerParam(
         "INSTALL_DEPENDENCIES",
@@ -551,7 +603,8 @@ def trigger_param_names_phase1() -> frozenset[str]:
 
 
 def trigger_params_to_clear_on_stage() -> frozenset[str]:
-    return trigger_param_names() | _LEGACY_ITS_PARAM_ALIASES
+    # ITS manifests pin FBC_STRUCTURAL=true; keep it when staging for --run-its re-patch.
+    return (trigger_param_names() | _LEGACY_ITS_PARAM_ALIASES) - frozenset({"FBC_STRUCTURAL"})
 
 
 def _infer(spec: TriggerParam, ctx: TriggerContext) -> str | None:
@@ -598,8 +651,13 @@ def resolve_trigger_params(
         if name_in_explicit(spec.name, explicit):
             result[spec.name] = str(explicit[spec.name])
             continue
+        if spec.name == "RHOAI_FBC_NAME" and (ctx.resolved_rhoai_fbc_name or "").strip():
+            inferred = _infer(spec, ctx)
+            if inferred is not None:
+                result[spec.name] = inferred
+                continue
         its_val = (its_params.get(spec.name) or "").strip()
-        if its_val:
+        if its_val and _its_param_overrides_infer(spec.name, its_val, ctx):
             result[spec.name] = its_val
             continue
         inferred = _infer(spec, ctx)
@@ -659,6 +717,7 @@ def build_trigger_context_from_args(
         rhoai_version=(getattr(args, "version", "") or "").strip(),
         tests=(getattr(args, "tests", "") or "").strip(),
         install_dependencies=bool(getattr(args, "install_dependencies", False)),
+        structural=bool(getattr(args, "structural", False)),
         external_kubeconfig=has_external,
         external_secret=secret,
         install_data_cluster=install_data,

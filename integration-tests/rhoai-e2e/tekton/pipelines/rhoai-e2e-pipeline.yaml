@@ -177,6 +177,31 @@ spec:
       type: string
       default: "3.5"
 
+    - name: FBC_STRUCTURAL
+      description: |
+        When "true", run Jenkins rhoai-structural-tests (rhoai-releases make update-release + make test)
+        after extract-fbcf-image and before EPHC/external cluster. rhoai-e2e ITS set this to true;
+        CLI --structural also sets it. Pipeline default remains false for CLI without --run-its.
+      type: string
+      default: "false"
+
+    - name: STRUCTURAL_TESTS_ONLY
+      description: |
+        When "true", run only parse/wait-for-conforma/extract-fbcf-image/validate-fbc-structural
+        (no EPHC provision, external cluster, operator install, or component tests). CLI --structural-tests.
+      type: string
+      default: "false"
+
+    - name: RHOAI_RELEASES_REPO_URL
+      description: rhoai-releases git URL for FBC structural tests (Jenkins rhoai-structural-tests).
+      type: string
+      default: "https://gitlab.cee.redhat.com/ods/rhoai-releases.git"
+
+    - name: RHOAI_RELEASES_REPO_REVISION
+      description: Branch/tag/SHA of rhoai-releases for FBC structural tests.
+      type: string
+      default: "master"
+
     - name: COMPONENTS
       description: |
         Comma-separated component ids from rhoai-e2e-components-smoke.yaml (smoke phase only).
@@ -336,8 +361,8 @@ spec:
 
   results:
     - name: TEST_OUTPUT
-      description: Overall test result from test-finalize (bvt/smoke gates); publish-results stays green
-      value: $(tasks.test-finalize.results.TEST_OUTPUT)
+      description: Overall test result from test-finalize or publish-results (structural-only)
+      value: $(finally.publish-results.results.TEST_OUTPUT)
 
     - name: FBCF_IMAGE
       description: FBCF image that was tested
@@ -467,6 +492,8 @@ spec:
 
           - name: RUN_COMPONENT_TESTS
             description: '"true" when per-component smoke and/or tier1 tasks should run'
+          - name: RUN_TEST_FINALIZE
+            description: '"true" when test-finalize should run (component smoke or structural-only)'
           - name: RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS
             description: '"true" when INSTALL_DEPENDENCIES moves component cluster prep into install-dep-operators (test-only + smoke/tier1)'
           - name: RUN_BVT_PLACEHOLDER_ONLY
@@ -598,6 +625,8 @@ spec:
                 value: $(results.SMOKE_AWS_SECRET.path)
               - name: RUN_COMPONENT_TESTS_PATH
                 value: $(results.RUN_COMPONENT_TESTS.path)
+              - name: RUN_TEST_FINALIZE_PATH
+                value: $(results.RUN_TEST_FINALIZE.path)
               - name: RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS_PATH
                 value: $(results.RUN_COMPONENT_CLUSTER_PREP_IN_DEP_OPERATORS.path)
               - name: RUN_BVT_PLACEHOLDER_ONLY_PATH
@@ -610,6 +639,8 @@ spec:
                 value: $(params.PRODUCT)
               - name: INSTALL_DEPENDENCIES
                 value: $(params.INSTALL_DEPENDENCIES)
+              - name: STRUCTURAL_TESTS_ONLY
+                value: $(params.STRUCTURAL_TESTS_ONLY)
               - name: SECRET_SOURCE
                 value: $(params.SECRET_SOURCE)
               - name: SECRET_SOURCE_WORKSPACE
@@ -822,17 +853,77 @@ spec:
         - name: SCRIPTS_REPO_REVISION
           value: $(params.SCRIPTS_REPO_REVISION)
 
+    - name: validate-fbc-structural
+      onError: continue
+      displayName: "Setup — FBC structural tests"
+      description: >-
+        Jenkins rhoai-structural-tests wrap (rhoai-releases make update-release + make test).
+        Runs when FBC_STRUCTURAL=true (rhoai-e2e ITS default, or CLI --structural).
+        onError continue so a red catalog does not skip EPHC or external cluster.
+      runAfter:
+        - extract-fbcf-image
+      workspaces:
+        - name: tests-shared
+          workspace: tests-shared
+      when:
+        - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
+          operator: in
+          values: ["pass"]
+        - input: "$(params.PRODUCT)"
+          operator: in
+          values: ["rhoai"]
+        - input: "$(params.FBC_STRUCTURAL)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: $(params.SCRIPTS_REPO_URL)
+          - name: revision
+            value: $(params.SCRIPTS_REPO_REVISION)
+          - name: pathInRepo
+            value: integration-tests/rhoai-e2e/tekton/tasks/task-validate-fbc-structural.yaml
+      params:
+        - name: FBCF_IMAGE
+          value: $(tasks.extract-fbcf-image.results.FBCF_IMAGE)
+        - name: PRODUCT
+          value: $(params.PRODUCT)
+        - name: RHOAI_VERSION
+          value: $(params.RHOAI_VERSION)
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: RHOAI_FBC_NAME
+          value: $(params.RHOAI_FBC_NAME)
+        - name: FBC_STRUCTURAL
+          value: $(params.FBC_STRUCTURAL)
+        - name: QUAY_PULL_SECRET_NAME
+          value: $(params.QUAY_PULL_SECRET_NAME)
+        - name: RHOAI_RELEASES_REPO_URL
+          value: $(params.RHOAI_RELEASES_REPO_URL)
+        - name: RHOAI_RELEASES_REPO_REVISION
+          value: $(params.RHOAI_RELEASES_REPO_REVISION)
+        - name: SCRIPTS_REPO_URL
+          value: $(params.SCRIPTS_REPO_URL)
+        - name: SCRIPTS_REPO_REVISION
+          value: $(params.SCRIPTS_REPO_REVISION)
+        - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
+          value: "true"
+
     - name: resolve-oci-releases
       displayName: "Cluster — resolve OpenShift CI release"
       description: >-
         Resolve OCP minor and ci-operator releases JSON for provision-ephemeral-cluster
         from OCP_VERSION_PREFIX or RHOAI_FBC_NAME, and OCP_RELEASE_CHANNEL.
       runAfter:
-        - extract-fbcf-image
+        - validate-fbc-structural
       when:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
           values: ["pass"]
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
         - input: "$(params.CLUSTER_SOURCE)"
           operator: in
           values: ["", "EPHC"]
@@ -931,6 +1022,9 @@ spec:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
           values: ["pass"]
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
         - input: "$(params.CLUSTER_SOURCE)"
           operator: in
           values: ["", "EPHC"]
@@ -975,6 +1069,9 @@ spec:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
           values: ["pass"]
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
         - input: "$(params.CLUSTER_SOURCE)"
           operator: in
           values: ["", "EPHC"]
@@ -1092,12 +1189,15 @@ spec:
         Wait for exclusive access to a shared external cluster, then validate the secret
         and record a short cluster label for reports.
       runAfter:
-        - extract-fbcf-image
+        - validate-fbc-structural
         - wait-for-conforma
       when:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
           values: ["pass"]
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
         - input: "$(params.CLUSTER_SOURCE)"
           operator: notin
           values: ["", "EPHC"]
@@ -1751,6 +1851,9 @@ spec:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
           values: ["pass"]
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
         - input: "$(params.PRODUCT)-$(params.CLUSTER_SOURCE)"
           operator: notin
           values: ["-"]
@@ -3840,8 +3943,8 @@ spec:
         Workbench container image Playwright browser smoke tests.
 
         - Test framework: Playwright browser tests.
-        - Image: quay.io/opendatahub/workbench-images-tests:latest.
-        - Smoke command: pnpm exec playwright test --grep @smoke.
+        - Image: quay.io/opendatahub/workbench-images-tests@sha256:7b26449656034994a9cc54492aaea4176429ce716cb098ab2d61503eac048bf0.
+        - Smoke command: ./node_modules/.bin/playwright test --grep @smoke.
         - Timeouts: smoke 10m, tier1 45m.
       timeout: 69m0s
       workspaces:
@@ -4026,12 +4129,14 @@ spec:
       description: >-
         Runs after all component test tasks. Combines JUnit into one smoke TEST_OUTPUT,
         verifies test prepare set up the shared workspace, and enforces bvt/smoke gates.
+        Structural-only runs summarize rhoai-releases JUnit after validate-fbc-structural.
         Artifact upload happens later in publish-results.
       timeout: 30m0s
       workspaces:
         - name: tests-shared
           workspace: tests-shared
       runAfter:
+        - validate-fbc-structural
         - opendatahub-tests-prepare
         - bvt-health-checks
         - test-platform
@@ -4039,7 +4144,7 @@ spec:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
           values: ["pass"]
-        - input: "$(tasks.parse-pipeline-tests.results.RUN_COMPONENT_TESTS)"
+        - input: "$(tasks.parse-pipeline-tests.results.RUN_TEST_FINALIZE)"
           operator: in
           values: ["true"]
       taskRef:
@@ -4072,6 +4177,8 @@ spec:
           value: $(params.TEST_GATES)
         - name: PIPELINE_RUN_NAME
           value: $(context.pipelineRun.name)
+        - name: STRUCTURAL_TESTS_ONLY
+          value: $(params.STRUCTURAL_TESTS_ONLY)
 
 
   finally:
@@ -4084,6 +4191,9 @@ spec:
         - input: "$(tasks.wait-for-conforma.results.CONFORMA_GATE)"
           operator: in
           values: ["pass"]
+        - input: "$(params.STRUCTURAL_TESTS_ONLY)"
+          operator: notin
+          values: ["true"]
         - input: "$(tasks.status)"
           operator: in
           values: ["Succeeded", "Failed", "Completed"]
@@ -4283,6 +4393,8 @@ spec:
           value: $(tasks.wait-for-conforma.results.CONFORMA_GATE)
         - name: PRODUCT
           value: $(params.PRODUCT)
+        - name: STRUCTURAL_TESTS_ONLY
+          value: $(params.STRUCTURAL_TESTS_ONLY)
       workspaces:
         - name: tests-shared
           workspace: tests-shared
@@ -4335,6 +4447,9 @@ spec:
           - name: PRODUCT
             type: string
             default: "rhoai"
+          - name: STRUCTURAL_TESTS_ONLY
+            type: string
+            default: "false"
         workspaces:
           - name: tests-shared
             description: Shared PVC with scripts-repo (cloned by parse-pipeline-tests)
@@ -4388,6 +4503,9 @@ spec:
               fi
               if [ ! -s "$(results.SMOKE_GATE.path)" ]; then
                 printf '%s' "N/A (not run)" > "$(results.SMOKE_GATE.path)"
+              fi
+              if [ ! -s "$(results.TESTS_SUMMARY.path)" ]; then
+                printf '%s' "N/A (pending gate summaries)" > "$(results.TESTS_SUMMARY.path)"
               fi
 
           - name: upload-tests-payload
@@ -4507,6 +4625,10 @@ spec:
                 value: $(workspaces.tests-shared.path)/tests-payload/.rhoai-e2e-bvt-test-output.json
               - name: CONFORMA_SKIP_TEST_OUTPUT_PATH
                 value: $(workspaces.tests-shared.path)/tests-payload/.rhoai-e2e-conforma-skip-test-output.json
+              - name: STRUCTURAL_TEST_OUTPUT_PATH
+                value: $(workspaces.tests-shared.path)/tests-payload/.rhoai-e2e-structural-test-output.json
+              - name: STRUCTURAL_TESTS_ONLY
+                value: $(params.STRUCTURAL_TESTS_ONLY)
               - name: SCRIPTS_REPO_ROOT
                 value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
             script: |
@@ -4677,6 +4799,8 @@ spec:
             displayName: Fail hollow green when gates skipped
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
+              - name: STRUCTURAL_TESTS_ONLY
+                value: $(params.STRUCTURAL_TESTS_ONLY)
               - name: TEST_GATES
                 value: $(params.TEST_GATES)
               - name: PRODUCT

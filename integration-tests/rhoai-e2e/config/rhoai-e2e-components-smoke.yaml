@@ -746,12 +746,12 @@ components:
       artifactPrefix: workbench-images-smoke
       runner:
         type: playwright
-        image: quay.io/opendatahub/workbench-images-tests:latest
+        image: quay.io/opendatahub/workbench-images-tests@sha256:7b26449656034994a9cc54492aaea4176429ce716cb098ab2d61503eac048bf0
         workingDir: /home/pwuser/tests/browser
         resultsDir: /home/pwuser/tests/browser/results
         phaseCommands:
-          smoke: "pnpm exec playwright test --grep @smoke"
-          tier1: "pnpm exec playwright test --grep @tier1"
+          smoke: "./node_modules/.bin/playwright test --grep @smoke"
+          tier1: "./node_modules/.bin/playwright test --grep @tier1"
       componentTestTimeoutByGate:
         smoke: 10m
         tier1: 45m

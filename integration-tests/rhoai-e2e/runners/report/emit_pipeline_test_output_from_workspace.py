@@ -28,6 +28,7 @@ from runners.report.check_requested_gates_ran import (
 )
 from runners.report.pipeline_test_outputs import (
     build_finalize_test_output_from_taskruns,
+    gates_from_test_gates_csv,
     konflux_failure_test_output_json,
     publish_results_test_output_json,
 )
@@ -53,6 +54,22 @@ def main() -> int:
         write_result(result_path, conforma_skip_raw.strip())
         print(
             f"Wrote pipeline TEST_OUTPUT from conforma skip sidecar ({len(conforma_skip_raw)} chars)"
+        )
+        return 0
+
+    structural_path = os.environ.get("STRUCTURAL_TEST_OUTPUT_PATH", "").strip()
+    structural_only = os.environ.get("STRUCTURAL_TESTS_ONLY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    structural_raw = read_gate_sidecar(structural_path) if structural_path else ""
+    if structural_raw.lstrip().startswith("{") and (
+        structural_only or not gates_from_test_gates_csv(test_gates)
+    ):
+        write_result(result_path, structural_raw.strip())
+        print(
+            f"Wrote pipeline TEST_OUTPUT from structural sidecar ({len(structural_raw)} chars)"
         )
         return 0
 

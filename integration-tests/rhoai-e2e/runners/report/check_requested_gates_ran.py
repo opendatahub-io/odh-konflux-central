@@ -353,6 +353,14 @@ def collect_hollow_green_failures(
 
 
 def main() -> int:
+    structural_only = os.environ.get("STRUCTURAL_TESTS_ONLY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if structural_only:
+        print("STRUCTURAL_TESTS_ONLY=true: skipping hollow-green gate check")
+        return 0
     if intentional_conforma_e2e_skip():
         print(
             "CONFORMA_GATE=skip below MIN_RHOAI_VERSION - e2e intentionally not run; "

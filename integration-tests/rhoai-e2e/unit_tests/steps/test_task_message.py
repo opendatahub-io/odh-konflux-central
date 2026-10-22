@@ -462,7 +462,7 @@ def test_publish_results_pipeline_results_reference_publish_task() -> None:
     assert "TEST_OUTPUT" in names
     assert "TESTS_SUMMARY" in names
     plr_results = {r["name"]: r["value"] for r in doc["spec"]["results"]}
-    assert plr_results["TEST_OUTPUT"] == "$(tasks.test-finalize.results.TEST_OUTPUT)"
+    assert plr_results["TEST_OUTPUT"] == "$(finally.publish-results.results.TEST_OUTPUT)"
     assert plr_results["TESTS_SUMMARY"] == "$(finally.publish-results.results.TESTS_SUMMARY)"
     assert plr_results["BVT_GATE"] == "$(finally.publish-results.results.BVT_GATE)"
     assert plr_results["SMOKE_GATE"] == "$(finally.publish-results.results.SMOKE_GATE)"
@@ -498,7 +498,7 @@ def test_publish_results_declares_compact_tekton_results() -> None:
     assert "OPENSHIFT_VERSION.path" in seed["script"]
     assert "BVT_GATE.path" in seed["script"]
     assert "SMOKE_GATE.path" in seed["script"]
-    assert "TESTS_SUMMARY.path" not in seed["script"]
+    assert "TESTS_SUMMARY.path" in seed["script"]
     assert "TIER1_GATE.path" not in seed["script"]
 
 def test_publish_results_writes_summary_before_gate_check() -> None:

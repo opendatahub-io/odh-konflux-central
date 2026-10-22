@@ -215,13 +215,27 @@ class TestPipelinerunNaming(unittest.TestCase):
         )
         self.assertEqual(prefix, "e2e-cli-nmanos-konflux-rhoai1-3.5ea2-smoke-")
 
+    def test_s3_konflux_rhoai1_not_ephc_cluster_token(self) -> None:
+        prefix = build_rhoai_e2e_generate_prefix(
+            product="rhoai",
+            version="3.5",
+            cluster_source="rhoai-e2e-s3-konflux-rhoai1",
+            cluster_label="konflux-rhoai1",
+            target_type="external",
+            tests_csv="bvt,smoke",
+            enabled_catalog_count=16,
+            run_owner="nmanos",
+        )
+        self.assertIn("konflux-rhoai1", prefix)
+        self.assertNotIn("-ephc-", prefix)
+
     def test_its_profile_omits_redundant_product_token(self) -> None:
         prefix = build_rhoai_e2e_its_generate_prefix(
-            its_profile="konflux-rhoai1-ocp422",
+            its_profile="ocp422",
             version="3.5-ea.2",
             tests_csv="bvt,smoke",
         )
-        self.assertEqual(prefix, "e2e-its-konflux-rhoai1-ocp42-3.5ea2-smoke-")
+        self.assertEqual(prefix, "e2e-its-ocp422-rhoai-3.5ea2-smoke-")
 
     def test_overflow_drops_version_before_cluster(self) -> None:
         prefix = build_rhoai_e2e_generate_prefix(
@@ -291,29 +305,25 @@ class TestPipelinerunNaming(unittest.TestCase):
             "ephc-ocp421-dcy-plat",
         )
         self.assertEqual(
-            its_profile_from_scenario_name("e2e-konflux-rhoai1-ocp422"),
-            "konflux-rhoai1-ocp42",
+            its_profile_from_scenario_name(
+                "e2e-ephc-ocp422-aip-ray-mlf-ogx-ais-tr-sprk-cf-llam-dsw-wbi"
+            ),
+            "ephc-ocp422-aip-ray",
         )
         self.assertEqual(its_profile_from_scenario_name(""), "")
 
     def test_its_profile_from_pipelinerun_template(self) -> None:
         self.assertEqual(
             its_profile_from_pipelinerun_template(
-                "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-ephc.yaml"
-            ),
-            "ephc",
-        )
-        self.assertEqual(
-            its_profile_from_pipelinerun_template(
-                "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-rh-nightly.yaml"
-            ),
-            "rh-nightly",
-        )
-        self.assertEqual(
-            its_profile_from_pipelinerun_template(
                 "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml"
             ),
             "",
+        )
+        self.assertEqual(
+            its_profile_from_pipelinerun_template(
+                "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-ocp420.yaml"
+            ),
+            "ocp420",
         )
 
     def test_its_generate_prefix_with_version(self) -> None:

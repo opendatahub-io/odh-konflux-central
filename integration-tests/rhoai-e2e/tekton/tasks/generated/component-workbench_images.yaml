@@ -9,8 +9,8 @@ spec:
     Workbench container image Playwright browser smoke tests.
 
     - Test framework: Playwright browser tests.
-    - Image: quay.io/opendatahub/workbench-images-tests:latest.
-    - Smoke command: pnpm exec playwright test --grep @smoke.
+    - Image: quay.io/opendatahub/workbench-images-tests@sha256:7b26449656034994a9cc54492aaea4176429ce716cb098ab2d61503eac048bf0.
+    - Smoke command: ./node_modules/.bin/playwright test --grep @smoke.
     - Timeouts: smoke 10m, tier1 45m.
   params:
   - name: COMPONENT_ID
@@ -149,15 +149,16 @@ spec:
       )\"\n    [ \"$key\" = \"AWS_CA_BUNDLE\" ] && continue\n    if [ -z \"${!key:-}\" ]; then\n      export \"$key=$(tr -d\
       \ '\\n' < \"$f\")\"\n    fi\n  done\nfi\nexport KUBECONFIG=\"${WORKING_DIR}/.kube/config\"\nunset KUBERNETES_SERVICE_HOST\
       \ KUBERNETES_SERVICE_PORT KUBERNETES_PORT \\\n  KUBERNETES_PORT_443_TCP KUBERNETES_PORT_443_TCP_ADDR KUBERNETES_PORT_443_TCP_PORT\
-      \ \\\n  KUBERNETES_PORT_443_TCP_PROTO || true\necho \"Running (playwright): ${RUN_COMMAND}\"\nset +e\nif [ -n \"${TEST_TIMEOUT_SEC:-}\"\
-      \ ]; then\n  timeout \"${TEST_TIMEOUT_SEC}s\" bash -c \"${RUN_COMMAND}\"\nelse\n  eval \"${RUN_COMMAND}\"\nfi\nec=$?\n\
-      set -e\nfound=\nwhile IFS= read -r -d '' f; do\n  cp \"$f\" \"${ARTIFACTS}/${ARTIFACT_PREFIX}.xml\"\n  found=1\n  break\n\
-      done < <(find \"$RESULTS_DIR\" -name '*unit*.xml' -print0 2>/dev/null || true)\nif [ -z \"$found\" ]; then\n  while\
-      \ IFS= read -r -d '' f; do\n    cp \"$f\" \"${ARTIFACTS}/${ARTIFACT_PREFIX}.xml\"\n    found=1\n    break\n  done <\
-      \ <(find \"$RESULTS_DIR\" -name 'junit.xml' -print0 2>/dev/null || true)\nfi\nif [ -z \"$found\" ]; then\n  if [ \"\
-      $ec\" -ne 0 ]; then\n    echo \"WARN: no JUnit under ${RESULTS_DIR}; writing synthetic failure\" >&2\n    PFX=\"${ARTIFACT_PREFIX:-${COMPONENT_ID}-smoke}\"\
-      \n    printf '<?xml version=\"1.0\" encoding=\"utf-8\"?>\\n<testsuite name=\"%s\" tests=\"1\" failures=\"1\" errors=\"\
-      0\" skipped=\"0\" time=\"0\">\\n  <testcase classname=\"%s\" name=\"execution_failure\" time=\"0\">\\n    <failure message=\"\
+      \ \\\n  KUBERNETES_PORT_443_TCP_PROTO || true\nexport PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}\"\
+      \necho \"Running (playwright): ${RUN_COMMAND}\"\nset +e\nif [ -n \"${TEST_TIMEOUT_SEC:-}\" ]; then\n  timeout \"${TEST_TIMEOUT_SEC}s\"\
+      \ bash -c \"${RUN_COMMAND}\"\nelse\n  eval \"${RUN_COMMAND}\"\nfi\nec=$?\nset -e\nfound=\nwhile IFS= read -r -d '' f;\
+      \ do\n  cp \"$f\" \"${ARTIFACTS}/${ARTIFACT_PREFIX}.xml\"\n  found=1\n  break\ndone < <(find \"$RESULTS_DIR\" -name\
+      \ '*unit*.xml' -print0 2>/dev/null || true)\nif [ -z \"$found\" ]; then\n  while IFS= read -r -d '' f; do\n    cp \"\
+      $f\" \"${ARTIFACTS}/${ARTIFACT_PREFIX}.xml\"\n    found=1\n    break\n  done < <(find \"$RESULTS_DIR\" -name 'junit.xml'\
+      \ -print0 2>/dev/null || true)\nfi\nif [ -z \"$found\" ]; then\n  if [ \"$ec\" -ne 0 ]; then\n    echo \"WARN: no JUnit\
+      \ under ${RESULTS_DIR}; writing synthetic failure\" >&2\n    PFX=\"${ARTIFACT_PREFIX:-${COMPONENT_ID}-smoke}\"\n   \
+      \ printf '<?xml version=\"1.0\" encoding=\"utf-8\"?>\\n<testsuite name=\"%s\" tests=\"1\" failures=\"1\" errors=\"0\"\
+      \ skipped=\"0\" time=\"0\">\\n  <testcase classname=\"%s\" name=\"execution_failure\" time=\"0\">\\n    <failure message=\"\
       Component tests failed with exit %s (no JUnit produced)\">\\n      Check console logs for details.\\n    </failure>\\\
       n  </testcase>\\n</testsuite>\\n' \"${COMPONENT_ID}\" \"${COMPONENT_ID}\" \"$ec\" > \"${ARTIFACTS}/${PFX}.xml\"\n  else\n\
       \    echo \"WARN: no JUnit under ${RESULTS_DIR}\" >&2\n  fi\nfi\necho \"$ec\" > \"${ARTIFACTS}/component-test.exit\"\
