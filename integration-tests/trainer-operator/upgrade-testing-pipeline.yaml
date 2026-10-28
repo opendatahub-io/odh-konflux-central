@@ -330,7 +330,10 @@ spec:
                 echo "============================================="
                 echo "  Phase 3: Upgrade to Stream version (new build)"
                 echo "============================================="
-                git checkout "${GIT_COMMIT}"
+                # `make deploy` runs the `manifests` controller-gen target, which rewrites
+                # config/crd/bases/*.yaml and leaves the worktree dirty. Discard that
+                # generated noise before switching to the Stream revision.
+                git checkout -f "${GIT_COMMIT}"
                 make deploy IMG="${STREAM_IMAGE}"
 
                 echo "Waiting for trainer-operator deployment (Stream) to be available..."
