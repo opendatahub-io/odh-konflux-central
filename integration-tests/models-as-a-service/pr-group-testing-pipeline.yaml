@@ -287,6 +287,12 @@ spec:
               echo ""
               set -x
 
+              export OPERATOR_TYPE=rhoai
+              export DEPLOYMENT_NAMESPACE=redhat-ods-applications
+              export APPLICATIONS_NAMESPACE=redhat-ods-applications
+              export OPERATOR_NAMESPACE=redhat-ods-operator
+              export MAAS_SUBSCRIPTION_NAMESPACE=redhat-ods-applications
+
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
               echo "success" > "$STATUS_FILE"
@@ -307,6 +313,10 @@ spec:
               set -euxo pipefail
               TLS_STATUS="/test-status/tls-scanner-status"
               echo "failed" > "${TLS_STATUS}"
+              if [[ ! -f ./test/e2e/scripts/run_tls_pqc_scan.sh ]]; then
+                echo "❌ run_tls_pqc_scan.sh missing on this branch; merge opendatahub-io/models-as-a-service#1782 or rebase" >&2
+                exit 1
+              fi
               mkdir -p "${ARTIFACT_DIR}/tls-scanner"
               export ARTIFACT_DIR="${ARTIFACT_DIR}/tls-scanner"
               export NAMESPACE=default
