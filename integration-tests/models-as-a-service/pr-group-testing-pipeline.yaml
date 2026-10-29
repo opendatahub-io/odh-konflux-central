@@ -304,6 +304,8 @@ spec:
                 value: /credentials/kubeconfig
               - name: ARTIFACT_DIR
                 value: /workspace/artifacts-dir
+              - name: KONFLUX_CENTRAL_REF
+                value: $(params.konflux-integration-ref)
             workingDir: /workspace/source
             volumeMounts:
               - name: credentials
