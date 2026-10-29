@@ -54,6 +54,12 @@ spec:
       type: string
       default: hosted-mgmt2
       description: Hosted management cluster used to provision the ephemeral cluster.
+    - name: konflux-integration-ref
+      type: string
+      default: main
+      description: >
+        Git ref on opendatahub-io/odh-konflux-central for integration-tests/models-as-a-service/tls-pqc-scan.sh.
+        Set to your odh-konflux-central PR branch until tls-pqc-scan.sh is on main.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -308,14 +314,16 @@ spec:
               set -euxo pipefail
               TLS_STATUS="/test-status/tls-scanner-status"
               echo "failed" > "${TLS_STATUS}"
-              if [[ ! -f ./test/e2e/scripts/run_tls_pqc_scan.sh ]]; then
-                echo "❌ run_tls_pqc_scan.sh missing on this branch; merge opendatahub-io/models-as-a-service#1782 or rebase" >&2
-                exit 1
-              fi
+
+              KONFLUX_GIT="${KONFLUX_CENTRAL_GIT:-https://github.com/opendatahub-io/odh-konflux-central.git}"
+              KONFLUX_REF="${KONFLUX_CENTRAL_REF:-main}"
+              rm -rf /tmp/odh-konflux-central
+              git clone --depth 1 --branch "${KONFLUX_REF}" "${KONFLUX_GIT}" /tmp/odh-konflux-central
+
               mkdir -p "${ARTIFACT_DIR}/tls-scanner"
               export ARTIFACT_DIR="${ARTIFACT_DIR}/tls-scanner"
-              export NAMESPACE=default
-              ./test/e2e/scripts/run_tls_pqc_scan.sh
+              bash /tmp/odh-konflux-central/integration-tests/models-as-a-service/tls-pqc-scan.sh
+
               echo "success" > "${TLS_STATUS}"
           - name: must-gather
             onError: continue
