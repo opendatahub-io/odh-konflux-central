@@ -287,8 +287,11 @@ spec:
               echo ""
               set -x
 
-              export DEPLOYMENT_NAMESPACE="${DEPLOYMENT_NAMESPACE:-opendatahub}"
-              export MAAS_SUBSCRIPTION_NAMESPACE="${MAAS_SUBSCRIPTION_NAMESPACE:-models-as-a-service}"
+              export OPERATOR_TYPE=odh
+              export DEPLOYMENT_NAMESPACE=opendatahub
+              export APPLICATIONS_NAMESPACE=opendatahub
+              export OPERATOR_NAMESPACE=openshift-operators
+              export MAAS_SUBSCRIPTION_NAMESPACE=models-as-a-service
 
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
