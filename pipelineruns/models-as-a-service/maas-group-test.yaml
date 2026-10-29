@@ -24,6 +24,8 @@ spec:
   # Until odh-konflux-central#752 merges: clone integration scripts from this ref (same as pipelineRef.revision below).
   - name: konflux-integration-ref
     value: maas-tls-scanner-group-test
+  - name: konflux-integration-url
+    value: https://github.com/somya-bhatnagar/odh-konflux-central.git
   pipelineRef:
     resolver: git
     params:

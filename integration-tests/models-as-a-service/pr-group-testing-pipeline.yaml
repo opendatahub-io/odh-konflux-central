@@ -58,8 +58,12 @@ spec:
       type: string
       default: main
       description: >
-        Git ref on opendatahub-io/odh-konflux-central for integration-tests/models-as-a-service/tls-pqc-scan.sh.
-        Set to your odh-konflux-central PR branch until tls-pqc-scan.sh is on main.
+        Git ref on odh-konflux-central for integration-tests/models-as-a-service/tls-pqc-scan.sh.
+        Set to your PR branch until tls-pqc-scan.sh is on main.
+    - name: konflux-integration-url
+      type: string
+      default: https://github.com/opendatahub-io/odh-konflux-central.git
+      description: Git URL of the odh-konflux-central repo that provides tls-pqc-scan.sh.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -306,6 +310,8 @@ spec:
                 value: /workspace/artifacts-dir
               - name: KONFLUX_CENTRAL_REF
                 value: $(params.konflux-integration-ref)
+              - name: KONFLUX_CENTRAL_GIT
+                value: $(params.konflux-integration-url)
             workingDir: /workspace/source
             volumeMounts:
               - name: credentials

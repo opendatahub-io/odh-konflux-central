@@ -28,6 +28,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `rhoai-must-gather-tag` | Tag for `registry.redhat.io/rhoai/odh-must-gather-rhel9:<tag>` used by the must-gather step (default `v3.5.0`). Ignored when `rhoai-must-gather-image` is set. |
 | `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
 | `konflux-integration-ref` | Git ref on `odh-konflux-central` for `integration-tests/models-as-a-service/tls-pqc-scan.sh` (default `main`). |
+| `konflux-integration-url` | Git URL of `odh-konflux-central` to clone for `tls-pqc-scan.sh` (default upstream repo). Set to a fork URL when testing a PR branch that is not on upstream yet. |
 
 **Workspaces**
 
