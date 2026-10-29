@@ -21,13 +21,17 @@ spec:
   params:
   - name: group-components
     value: '{ "odh-maas-api-ci": "opendatahub/maas-api", "odh-maas-controller-ci": "opendatahub/maas-controller", "odh-maas-discovery-ci": "opendatahub/odh-maas-discovery" }'
+  # Until odh-konflux-central#752 merges: clone integration scripts from this ref (same as pipelineRef.revision below).
+  - name: konflux-integration-ref
+    value: maas-tls-scanner-group-test
   pipelineRef:
     resolver: git
     params:
     - name: url
-      value: https://github.com/opendatahub-io/odh-konflux-central.git
+      # Fork for TLS scanner group-test dev (revert to opendatahub-io/odh-konflux-central + main before merging #752).
+      value: https://github.com/somya-bhatnagar/odh-konflux-central.git
     - name: revision
-      value: main
+      value: maas-tls-scanner-group-test
     - name: pathInRepo
       value: integration-tests/models-as-a-service/pr-group-testing-pipeline.yaml
   taskRunTemplate:
