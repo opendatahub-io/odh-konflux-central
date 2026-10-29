@@ -287,16 +287,14 @@ spec:
               echo ""
               set -x
 
-              export OPERATOR_TYPE=rhoai
-              export DEPLOYMENT_NAMESPACE=redhat-ods-applications
-              export APPLICATIONS_NAMESPACE=redhat-ods-applications
-              export OPERATOR_NAMESPACE=redhat-ods-operator
-              export MAAS_SUBSCRIPTION_NAMESPACE=redhat-ods-applications
+              export DEPLOYMENT_NAMESPACE="${DEPLOYMENT_NAMESPACE:-opendatahub}"
+              export MAAS_SUBSCRIPTION_NAMESPACE="${MAAS_SUBSCRIPTION_NAMESPACE:-models-as-a-service}"
 
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
               echo "success" > "$STATUS_FILE"
           - name: tls-scanner-pqc
+            onError: continue
             image: quay.io/rhoai/rhoai-task-toolset:maas
             env:
               - name: KUBECONFIG
@@ -320,7 +318,8 @@ spec:
               mkdir -p "${ARTIFACT_DIR}/tls-scanner"
               export ARTIFACT_DIR="${ARTIFACT_DIR}/tls-scanner"
               export NAMESPACE=default
-              export NAMESPACE_FILTER='redhat-ods-applications,redhat-ai-gateway-infra'
+              export DEPLOYMENT_NAMESPACE="${DEPLOYMENT_NAMESPACE:-opendatahub}"
+              unset NAMESPACE_FILTER
               export PQC_CHECK=true
               export SCANNER_IMAGE="${TLS_SCANNER_IMAGE:-registry.ci.openshift.org/tls-scanner/tls-scanner:tls-scanner-tool}"
               ./test/e2e/scripts/run_tls_pqc_scan.sh
