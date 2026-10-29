@@ -174,7 +174,7 @@ spec:
         - name: env
           value: '{"COMPUTE_NODE_TYPE":"$(params.compute-node-type)","HYPERSHIFT_NODE_COUNT":"$(params.hypershift-node-count)","HOSTED_MANAGEMENT_CLUSTER":"$(params.hosted-management-cluster)"}'
     - name: e2e-maas-openshift
-      timeout: 1h30m
+      timeout: 2h30m
       workspaces:
       - name: basic-auth
         workspace: git-auth
