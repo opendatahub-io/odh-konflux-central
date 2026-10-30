@@ -44,13 +44,13 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 
 ### TLS / PQC scanning (RHOAI upstream CI)
 
-Konflux **`/group-test` does not run the TLS scanner.** Per [RHOAIENG-95827](https://redhat.atlassian.net/browse/RHOAIENG-95827) and [RHOAIENG-96886](https://redhat.atlassian.net/browse/RHOAIENG-96886), MaaS enables **`tls-scanner-run`** in **`openshift/release`** on the RHOAI E2E job (same pattern as [opendatahub-operator #82555](https://github.com/openshift/release/pull/82555)):
+Konflux **`/group-test` does not run the TLS scanner.** Per [RHOAIENG-95827](https://redhat.atlassian.net/browse/RHOAIENG-95827) and [RHOAIENG-96886](https://redhat.atlassian.net/browse/RHOAIENG-96886), MaaS enables **`tls-scanner-run`** in **`openshift/release`** on the RHOAI E2E job:
 
 - Add **`tls-scanner-tool`** to `base_images`
 - Set **`PQC_CHECK=true`** and **`SCAN_NAMESPACE`** to the component Kubernetes namespaces
 - Append **`- ref: tls-scanner-run`** after the e2e step
 
-See `ci-operator/config/opendatahub-io/models-as-a-service/opendatahub-io-models-as-a-service-main.yaml` in [openshift/release](https://github.com/openshift/release) (presubmit **`rhoai-e2e-tls-scan`**) and the [tls-scanner-run](https://steps.ci.openshift.org/reference/tls-scanner-run) step reference.
+Follow the same ci-operator pattern as [opendatahub-operator #82555](https://github.com/openshift/release/pull/82555) (operator RHOAI e2e job—not MaaS-specific). MaaS wiring is tracked in [openshift/release #87925](https://github.com/openshift/release/pull/87925): `ci-operator/config/opendatahub-io/models-as-a-service/opendatahub-io-models-as-a-service-main.yaml`, presubmit **`rhoai-e2e-tls-scan`** (not on `openshift/release` `main` until that PR merges). Step reference: [tls-scanner-run](https://steps.ci.openshift.org/reference/tls-scanner-run).
 
 ### `Dockerfile.maas`
 
