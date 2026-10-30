@@ -17,6 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCANNER_CPU_LIMIT="${TLS_SCANNER_CPU_LIMIT:-4}"
 SCANNER_MEM_REQUEST="${TLS_SCANNER_MEM_REQUEST:-1Gi}"
 SCANNER_MEM_LIMIT="${TLS_SCANNER_MEM_LIMIT:-4Gi}"
+SCANNER_INGRESS_POLICY_NAME="${TLS_SCANNER_INGRESS_POLICY_NAME:-allow-maas-tls-scanner-e2e}"
+TLS_SCANNER_NS_LABEL="${TLS_SCANNER_NS_LABEL:-maas.opendatahub.io/tls-scanner=true}"
 
 if [[ -z "${ARTIFACT_DIR:-}" ]]; then
   echo "ARTIFACT_DIR must be set" >&2
@@ -25,7 +27,74 @@ fi
 mkdir -p "${ARTIFACT_DIR}"
 SCANNER_ARTIFACT_DIR="$(cd "${ARTIFACT_DIR}" && pwd -P)"
 
+build_scanner_ingress_ports_yaml() {
+  local port trimmed
+  local out=""
+  IFS=',' read -ra _ports <<< "${TLS_SCAN_PORT_ALLOWLIST}"
+  for port in "${_ports[@]}"; do
+    trimmed="${port#"${port%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    [[ -z "${trimmed}" ]] && continue
+    out="${out}
+        - protocol: TCP
+          port: ${trimmed}"
+  done
+  if [[ -z "${out}" ]]; then
+    echo "TLS_SCAN_PORT_ALLOWLIST must list at least one port" >&2
+    exit 1
+  fi
+  printf '%s\n' "${out}"
+}
+
+remove_scanner_ingress_policies() {
+  local ns trimmed
+  IFS=',' read -ra _scan_ns <<< "${SCAN_NAMESPACE}"
+  for ns in "${_scan_ns[@]}"; do
+    trimmed="${ns#"${ns%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    [[ -z "${trimmed}" ]] && continue
+    oc delete networkpolicy "${SCANNER_INGRESS_POLICY_NAME}" -n "${trimmed}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  done
+}
+
+apply_scanner_ingress_policies() {
+  local ns trimmed ports_yaml
+  ports_yaml="$(build_scanner_ingress_ports_yaml)"
+  IFS=',' read -ra _scan_ns <<< "${SCAN_NAMESPACE}"
+  for ns in "${_scan_ns[@]}"; do
+    trimmed="${ns#"${ns%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    [[ -z "${trimmed}" ]] && continue
+    if ! oc get namespace "${trimmed}" >/dev/null 2>&1; then
+      echo "Skip scanner ingress NetworkPolicy: namespace ${trimmed} not found" >&2
+      continue
+    fi
+    echo "Applying additive ingress NetworkPolicy ${SCANNER_INGRESS_POLICY_NAME} in ${trimmed} for tls-scanner probes"
+    # shellcheck disable=SC2086
+    oc apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${SCANNER_INGRESS_POLICY_NAME}
+  labels:
+    app.kubernetes.io/managed-by: maas-group-test
+    app.kubernetes.io/part-of: models-as-a-service
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          ${TLS_SCANNER_NS_LABEL%%=*}: "${TLS_SCANNER_NS_LABEL#*=}"
+    ports:${ports_yaml}
+EOF
+  done
+}
+
 cleanup() {
+  remove_scanner_ingress_policies
   oc delete namespace "${SCANNER_NAMESPACE}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -40,6 +109,9 @@ echo "Image: ${SCANNER_IMAGE}"
 
 oc delete namespace "${SCANNER_NAMESPACE}" --ignore-not-found --wait=true --timeout=120s || true
 oc create namespace "${SCANNER_NAMESPACE}"
+oc label namespace "${SCANNER_NAMESPACE}" "${TLS_SCANNER_NS_LABEL}" --overwrite
+
+apply_scanner_ingress_policies
 
 if oc get secret pull-secret -n openshift-config >/dev/null 2>&1; then
   oc get secret pull-secret -n openshift-config -o yaml \

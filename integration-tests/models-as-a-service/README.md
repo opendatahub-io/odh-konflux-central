@@ -42,7 +42,7 @@ After the in-cluster scan, [`validate-tls-pqc-results.py`](validate-tls-pqc-resu
 | `TLS_SCAN_NAMESPACE` | `opendatahub,odh-ai-gateway-infra` | Passed to tls-scanner `--namespace-filter`. |
 | `TLS_COMPONENT_FILTER` | `maas-api,maas-controller,ai-gateway-operator,ai-gateway-controller` | Passed to tls-scanner `--component-filter`. |
 
-If validation fails with connection errors on `8443`, check **NetworkPolicies**: the scanner pod runs in `tls-scanner-maas-e2e` and must be able to reach MaaS workloads on HTTPS ports.
+If validation fails with connection errors on `8443`, confirm the additive **`allow-maas-tls-scanner-e2e`** NetworkPolicy was applied in each scan namespace (the script labels the scanner namespace with `maas.opendatahub.io/tls-scanner=true` and allows ingress on **`TLS_SCAN_PORT_ALLOWLIST`** ports from that label). ODH default-deny ingress otherwise blocks probes from `tls-scanner-maas-e2e`.
 
 **Workspaces**
 
