@@ -19,6 +19,9 @@ SCANNER_MEM_REQUEST="${TLS_SCANNER_MEM_REQUEST:-1Gi}"
 SCANNER_MEM_LIMIT="${TLS_SCANNER_MEM_LIMIT:-4Gi}"
 SCANNER_INGRESS_POLICY_NAME="${TLS_SCANNER_INGRESS_POLICY_NAME:-allow-maas-tls-scanner-e2e}"
 TLS_SCANNER_NS_LABEL="${TLS_SCANNER_NS_LABEL:-maas.opendatahub.io/tls-scanner=true}"
+# service: probe Kubernetes Services (matches e2e curl paths); pods: legacy --all-pods discovery.
+TLS_SCAN_MODE="${TLS_SCAN_MODE:-service}"
+TLS_SCAN_SERVICE_TARGETS="${TLS_SCAN_SERVICE_TARGETS:-}"
 
 if [[ -z "${ARTIFACT_DIR:-}" ]]; then
   echo "ARTIFACT_DIR must be set" >&2
@@ -59,6 +62,7 @@ remove_scanner_ingress_policies() {
 
 apply_scanner_ingress_policies() {
   local ns trimmed ports_yaml
+  remove_scanner_ingress_policies
   ports_yaml="$(build_scanner_ingress_ports_yaml)"
   IFS=',' read -ra _scan_ns <<< "${SCAN_NAMESPACE}"
   for ns in "${_scan_ns[@]}"; do
@@ -105,6 +109,7 @@ echo "Scan namespaces: ${SCAN_NAMESPACE}"
 echo "Component filter: ${COMPONENT_FILTER}"
 echo "Port allowlist (post-validation): ${TLS_SCAN_PORT_ALLOWLIST}"
 echo "Required components: ${TLS_REQUIRED_COMPONENTS}"
+echo "Scan mode: ${TLS_SCAN_MODE}"
 echo "Image: ${SCANNER_IMAGE}"
 
 oc delete namespace "${SCANNER_NAMESPACE}" --ignore-not-found --wait=true --timeout=120s || true
@@ -124,8 +129,20 @@ oc adm policy add-cluster-role-to-user cluster-admin -z default -n "${SCANNER_NA
 echo "Waiting for RBAC to propagate..."
 sleep 10
 
-SCANNER_ARGS="--all-pods --namespace-filter ${SCAN_NAMESPACE}"
-SCANNER_ARGS="${SCANNER_ARGS} --component-filter=${COMPONENT_FILTER} --pqc-check"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+SCAN_TARGETS_META="${SCANNER_ARTIFACT_DIR}/scan-targets.meta.json"
+
+if [[ "${TLS_SCAN_MODE}" == "service" ]]; then
+  SCANNER_TARGET_ARG="$(python3 "${SCRIPT_DIR}/resolve_tls_scan_targets.py" --write-meta "${SCAN_TARGETS_META}")"
+  echo "TLS scan service targets: ${SCANNER_TARGET_ARG}"
+  SCANNER_ARGS="--targets ${SCANNER_TARGET_ARG} --pqc-check"
+elif [[ "${TLS_SCAN_MODE}" == "pods" ]]; then
+  SCANNER_ARGS="--all-pods --namespace-filter ${SCAN_NAMESPACE}"
+  SCANNER_ARGS="${SCANNER_ARGS} --component-filter=${COMPONENT_FILTER} --pqc-check"
+else
+  echo "Invalid TLS_SCAN_MODE=${TLS_SCAN_MODE} (want service or pods)" >&2
+  exit 1
+fi
 
 cat <<EOF | oc apply -f -
 apiVersion: v1

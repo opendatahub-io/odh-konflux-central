@@ -41,8 +41,12 @@ After the in-cluster scan, [`validate-tls-pqc-results.py`](validate-tls-pqc-resu
 | `TLS_REQUIRE_PQC` | `true` | Require `tls13_supported` and `mlkem_supported` on passing ports. |
 | `TLS_SCAN_NAMESPACE` | `opendatahub,odh-ai-gateway-infra` | Passed to tls-scanner `--namespace-filter`. |
 | `TLS_COMPONENT_FILTER` | `maas-api,maas-controller,ai-gateway-operator,ai-gateway-controller` | Passed to tls-scanner `--component-filter`. |
+| `TLS_SCAN_MODE` | `service` | `service` uses `--targets` on Kubernetes Services (default). `pods` uses legacy `--all-pods` discovery. |
+| `TLS_SCAN_SERVICE_TARGETS` | *(see defaults in `maas_tls_scan_lib.py`)* | Comma-separated `component:namespace/service:port` entries; filtered by `TLS_SCAN_PORT_ALLOWLIST` and optional `oc get svc` discovery. |
 
-If validation fails with connection errors on `8443`, confirm the additive **`allow-maas-tls-scanner-e2e`** NetworkPolicy was applied in each scan namespace (the script labels the scanner namespace with `maas.opendatahub.io/tls-scanner=true` and allows ingress on **`TLS_SCAN_PORT_ALLOWLIST`** ports from that label). ODH default-deny ingress otherwise blocks probes from `tls-scanner-maas-e2e`.
+**Unit tests:** from this directory, `python3 -m unittest test_maas_tls_scan_lib.py`.
+
+If validation fails with connection errors on `8443`, confirm the additive **`allow-maas-tls-scanner-e2e`** NetworkPolicy was applied in each scan namespace (the script labels the scanner namespace with `maas.opendatahub.io/tls-scanner=true`, **deletes/recreates** the policy each run, and allows ingress on **`TLS_SCAN_PORT_ALLOWLIST`** ports from that label). In **`service`** mode, targets use in-cluster Service DNS (same path as e2e `curl` to `maas-api…:8443`).
 
 **Workspaces**
 
