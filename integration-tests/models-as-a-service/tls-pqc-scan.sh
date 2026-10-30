@@ -8,7 +8,12 @@ SCANNER_IMAGE="${TLS_SCANNER_IMAGE:-registry.ci.openshift.org/tls-scanner/tls-sc
 # ODH group-test: controller in opendatahub, maas-api in odh-ai-gateway-infra.
 SCAN_NAMESPACE="${TLS_SCAN_NAMESPACE:-opendatahub,odh-ai-gateway-infra}"
 COMPONENT_FILTER="${TLS_COMPONENT_FILTER:-maas-api,maas-controller,ai-gateway-operator,ai-gateway-controller}"
+# Metrics/webhook ports are declared on pods but often reject TLS probes; validate allowlisted ports only.
+TLS_SCAN_PORT_ALLOWLIST="${TLS_SCAN_PORT_ALLOWLIST:-443,8443}"
+TLS_REQUIRED_COMPONENTS="${TLS_REQUIRED_COMPONENTS:-maas-api,maas-controller}"
+TLS_REQUIRE_PQC="${TLS_REQUIRE_PQC:-true}"
 SCANNER_CPU_REQUEST="${TLS_SCANNER_CPU_REQUEST:-500m}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCANNER_CPU_LIMIT="${TLS_SCANNER_CPU_LIMIT:-4}"
 SCANNER_MEM_REQUEST="${TLS_SCANNER_MEM_REQUEST:-1Gi}"
 SCANNER_MEM_LIMIT="${TLS_SCANNER_MEM_LIMIT:-4Gi}"
@@ -29,6 +34,8 @@ echo "=== TLS PQC scan (Konflux) ==="
 echo "Scanner namespace: ${SCANNER_NAMESPACE}"
 echo "Scan namespaces: ${SCAN_NAMESPACE}"
 echo "Component filter: ${COMPONENT_FILTER}"
+echo "Port allowlist (post-validation): ${TLS_SCAN_PORT_ALLOWLIST}"
+echo "Required components: ${TLS_REQUIRED_COMPONENTS}"
 echo "Image: ${SCANNER_IMAGE}"
 
 oc delete namespace "${SCANNER_NAMESPACE}" --ignore-not-found --wait=true --timeout=120s || true
@@ -136,8 +143,14 @@ done
 
 pod_exit="$(oc get pod/tls-scanner -n "${SCANNER_NAMESPACE}" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")"
 if [[ -n "${pod_exit}" && "${pod_exit}" != "0" ]]; then
-  echo "TLS scanner exited with code ${pod_exit}" >&2
+  echo "TLS scanner pod exited with code ${pod_exit}" >&2
   exit "${pod_exit}"
+fi
+
+export TLS_SCAN_PORT_ALLOWLIST TLS_REQUIRED_COMPONENTS TLS_REQUIRE_PQC
+if ! python3 "${SCRIPT_DIR}/validate-tls-pqc-results.py"; then
+  echo "TLS/PQC artifact validation failed (see above)" >&2
+  exit 1
 fi
 
 echo "TLS PQC scan artifacts: ${SCANNER_ARTIFACT_DIR}"

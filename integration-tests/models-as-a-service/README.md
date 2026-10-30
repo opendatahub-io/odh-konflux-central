@@ -30,6 +30,20 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `konflux-integration-ref` | Git ref on `odh-konflux-central` for `integration-tests/models-as-a-service/tls-pqc-scan.sh` (default `main`). |
 | `konflux-integration-url` | Git URL of `odh-konflux-central` to clone for `tls-pqc-scan.sh` (default upstream repo). Set to a fork URL when testing a PR branch that is not on upstream yet. |
 
+**TLS scanner (`tls-pqc-scan.sh`)**
+
+After the in-cluster scan, [`validate-tls-pqc-results.py`](validate-tls-pqc-results.py) re-checks `results.json` so a vacuous upstream `PQC COMPLIANCE CHECK: PASSED` (e.g. when probes fail with `SkipUnscannable`) does not mark the step green.
+
+| Environment variable | Default | Role |
+| --- | --- | --- |
+| `TLS_SCAN_PORT_ALLOWLIST` | `443,8443` | Only these container ports count toward pass/fail (skips metrics/webhook ports such as 9090/9443). |
+| `TLS_REQUIRED_COMPONENTS` | `maas-api,maas-controller` | Each listed OpenShift component must have at least one successful probe on an allowlisted port. |
+| `TLS_REQUIRE_PQC` | `true` | Require `tls13_supported` and `mlkem_supported` on passing ports. |
+| `TLS_SCAN_NAMESPACE` | `opendatahub,odh-ai-gateway-infra` | Passed to tls-scanner `--namespace-filter`. |
+| `TLS_COMPONENT_FILTER` | `maas-api,maas-controller,ai-gateway-operator,ai-gateway-controller` | Passed to tls-scanner `--component-filter`. |
+
+If validation fails with connection errors on `8443`, check **NetworkPolicies**: the scanner pod runs in `tls-scanner-maas-e2e` and must be able to reach MaaS workloads on HTTPS ports.
+
 **Workspaces**
 
 - **`git-auth`** — required for `generate-snapshot` (clone/pull private metadata as configured in the `PipelineRun`).
