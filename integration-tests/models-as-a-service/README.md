@@ -50,7 +50,7 @@ Konflux **`/group-test` does not run the TLS scanner.** Per [RHOAIENG-95827](htt
 - Set **`PQC_CHECK=true`** and **`SCAN_NAMESPACE`** to the component Kubernetes namespaces
 - Append **`- ref: tls-scanner-run`** after the e2e step
 
-Follow the same ci-operator pattern as [opendatahub-operator #82555](https://github.com/openshift/release/pull/82555) (operator RHOAI e2e job—not MaaS-specific). MaaS wiring is tracked in [openshift/release #87925](https://github.com/openshift/release/pull/87925): `ci-operator/config/opendatahub-io/models-as-a-service/opendatahub-io-models-as-a-service-main.yaml`, presubmit **`rhoai-e2e-tls-scan`** (not on `openshift/release` `main` until that PR merges). Step reference: [tls-scanner-run](https://steps.ci.openshift.org/reference/tls-scanner-run).
+Follow the same ci-operator pattern as [opendatahub-operator #82555](https://github.com/openshift/release/pull/82555) (operator RHOAI e2e job—not MaaS-specific). MaaS wiring is tracked in [openshift/release #88081](https://github.com/openshift/release/pull/88081): `ci-operator/config/opendatahub-io/models-as-a-service/opendatahub-io-models-as-a-service-main.yaml`, presubmit **`e2e-tls-scan`** with default **ODH** `prow_run_smoke_test.sh` (not on `openshift/release` `main` until that PR merges). Step reference: [tls-scanner-run](https://steps.ci.openshift.org/reference/tls-scanner-run).
 
 ### `Dockerfile.maas`
 
