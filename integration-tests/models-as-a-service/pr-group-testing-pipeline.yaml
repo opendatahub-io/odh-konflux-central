@@ -54,16 +54,6 @@ spec:
       type: string
       default: hosted-mgmt2
       description: Hosted management cluster used to provision the ephemeral cluster.
-    - name: konflux-integration-ref
-      type: string
-      default: main
-      description: >
-        Git ref on odh-konflux-central for integration-tests/models-as-a-service/tls-pqc-scan.sh.
-        Set to your PR branch until tls-pqc-scan.sh is on main.
-    - name: konflux-integration-url
-      type: string
-      default: https://github.com/opendatahub-io/odh-konflux-central.git
-      description: Git URL of the odh-konflux-central repo that provides tls-pqc-scan.sh.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -300,39 +290,6 @@ spec:
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
               echo "success" > "$STATUS_FILE"
-          - name: tls-scanner-pqc
-            onError: continue
-            image: quay.io/rhoai/rhoai-task-toolset:maas
-            env:
-              - name: KUBECONFIG
-                value: /credentials/kubeconfig
-              - name: ARTIFACT_DIR
-                value: /workspace/artifacts-dir
-              - name: KONFLUX_CENTRAL_REF
-                value: $(params.konflux-integration-ref)
-              - name: KONFLUX_CENTRAL_GIT
-                value: $(params.konflux-integration-url)
-            workingDir: /workspace/source
-            volumeMounts:
-              - name: credentials
-                mountPath: /credentials
-              - name: test-status
-                mountPath: /test-status
-            script: |
-              set -euxo pipefail
-              TLS_STATUS="/test-status/tls-scanner-status"
-              echo "failed" > "${TLS_STATUS}"
-
-              KONFLUX_GIT="${KONFLUX_CENTRAL_GIT:-https://github.com/opendatahub-io/odh-konflux-central.git}"
-              KONFLUX_REF="${KONFLUX_CENTRAL_REF:-main}"
-              rm -rf /tmp/odh-konflux-central
-              git clone --depth 1 --branch "${KONFLUX_REF}" "${KONFLUX_GIT}" /tmp/odh-konflux-central
-
-              mkdir -p "${ARTIFACT_DIR}/tls-scanner"
-              export ARTIFACT_DIR="${ARTIFACT_DIR}/tls-scanner"
-              bash /tmp/odh-konflux-central/integration-tests/models-as-a-service/tls-pqc-scan.sh
-
-              echo "success" > "${TLS_STATUS}"
           - name: must-gather
             onError: continue
             image: quay.io/rhoai/rhoai-task-toolset:maas
@@ -459,16 +416,11 @@ spec:
                 mountPath: /test-status
             script: |
               STATUS_FILE="/test-status/deploy-and-e2e-status"
-              TLS_STATUS="/test-status/tls-scanner-status"
               if ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
                 echo "❌ Failing pipeline because deploy-and-e2e step failed"
                 exit 1
               fi
-              if ! [ -f "$TLS_STATUS" ] || [ "$(cat "$TLS_STATUS")" != "success" ]; then
-                echo "❌ Failing pipeline because tls-scanner-pqc step failed"
-                exit 1
-              fi
-              echo "✅ deploy-and-e2e and tls-scanner-pqc steps succeeded"
+              echo "✅ deploy-and-e2e step succeeded"
 
   finally:
   - name: push-ci-artifacts-and-update-pr

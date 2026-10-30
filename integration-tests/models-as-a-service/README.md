@@ -27,26 +27,6 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `artifact-browser-url` | Base URL passed into the PR comment stepaction for browsing published artifacts. |
 | `rhoai-must-gather-tag` | Tag for `registry.redhat.io/rhoai/odh-must-gather-rhel9:<tag>` used by the must-gather step (default `v3.5.0`). Ignored when `rhoai-must-gather-image` is set. |
 | `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
-| `konflux-integration-ref` | Git ref on `odh-konflux-central` for `integration-tests/models-as-a-service/tls-pqc-scan.sh` (default `main`). |
-| `konflux-integration-url` | Git URL of `odh-konflux-central` to clone for `tls-pqc-scan.sh` (default upstream repo). Set to a fork URL when testing a PR branch that is not on upstream yet. |
-
-**TLS scanner (`tls-pqc-scan.sh`)**
-
-After the in-cluster scan, [`validate-tls-pqc-results.py`](validate-tls-pqc-results.py) re-checks `results.json` so a vacuous upstream `PQC COMPLIANCE CHECK: PASSED` (e.g. when probes fail with `SkipUnscannable`) does not mark the step green.
-
-| Environment variable | Default | Role |
-| --- | --- | --- |
-| `TLS_SCAN_PORT_ALLOWLIST` | `443,8443` | Only these container ports count toward pass/fail (skips metrics/webhook ports such as 9090/9443). |
-| `TLS_REQUIRED_COMPONENTS` | `maas-api,maas-controller` | Each listed OpenShift component must have at least one successful probe on an allowlisted port. |
-| `TLS_REQUIRE_PQC` | `true` | Require `tls13_supported` and `mlkem_supported` on passing ports. |
-| `TLS_SCAN_NAMESPACE` | `opendatahub,odh-ai-gateway-infra` | Passed to tls-scanner `--namespace-filter`. |
-| `TLS_COMPONENT_FILTER` | `maas-api,maas-controller,ai-gateway-operator,ai-gateway-controller` | Passed to tls-scanner `--component-filter`. |
-| `TLS_SCAN_MODE` | `service` | `service` uses `--targets` on Kubernetes Services (default). `pods` uses legacy `--all-pods` discovery. |
-| `TLS_SCAN_SERVICE_TARGETS` | *(see defaults in `maas_tls_scan_lib.py`)* | Comma-separated `component:namespace/service:port` entries; filtered by `TLS_SCAN_PORT_ALLOWLIST` and optional `oc get svc` discovery. |
-
-**Unit tests:** from this directory, `python3 -m unittest test_maas_tls_scan_lib.py`.
-
-If validation fails with connection errors on `8443`, confirm the additive **`allow-maas-tls-scanner-e2e`** NetworkPolicy was applied in each scan namespace (the script labels the scanner namespace with `maas.opendatahub.io/tls-scanner=true`, **deletes/recreates** the policy each run, and allows ingress on **`TLS_SCAN_PORT_ALLOWLIST`** ports from that label). In **`service`** mode, targets use in-cluster Service DNS (same path as e2e `curl` to `maas-api…:8443`).
 
 **Workspaces**
 
@@ -57,10 +37,20 @@ If validation fails with connection errors on `8443`, confirm the additive **`al
 1. **`generate-snapshot`** — builds a **composite snapshot** JSON listing images and git metadata for every component in `group-components` (rhoai-konflux `generate-snapshot-for-group-testing` task).
 2. **`audit-snapshot`** — verifies each component row has non-empty image, `git.commit`, and `git.url`; writes PR fields from PAC annotations/labels (`pipelinesascode.tekton.dev/sender`, `pull-request`, `url-repository`, `url-org`, `sha`, …).
 3. **`provision-eaas-space`** / **`provision-cluster`** — EaaS space + Hypershift cluster (`m5.2xlarge`), same build-definitions stepactions as other ODH integration tests.
-4. **`e2e-maas-openshift`** (timeout **1h30m**) — fetch kubeconfig, **clone** `models-as-a-service` using PAC **source-repo-url** and **source-branch**, export `MAAS_API_IMAGE` / `MAAS_CONTROLLER_IMAGE` from the composite snapshot via `jq`, run `./test/e2e/scripts/prow_run_smoke_test.sh`. **`ARTIFACT_DIR`** holds junit/html and must-gather output. The e2e step uses **`onError: continue`** so later steps still run; a **`deploy-and-e2e-status`** file (`success` / `failed`) plus **`fail-if-needed`** re-assert failure after **`git-push-artifacts`**. **`tls-scanner-pqc`** runs [`tls-pqc-scan.sh`](tls-pqc-scan.sh) (TLS + PQC on ODH MaaS namespaces) and records **`tls-scanner-status`**; `fail-if-needed` fails the run if either e2e or scanner status is not `success`.
+4. **`e2e-maas-openshift`** (timeout **1h30m**) — fetch kubeconfig, **clone** `models-as-a-service` using PAC **source-repo-url** and **source-branch**, export `MAAS_API_IMAGE` / `MAAS_CONTROLLER_IMAGE` from the composite snapshot via `jq`, run `./test/e2e/scripts/prow_run_smoke_test.sh`. **`ARTIFACT_DIR`** holds junit/html and must-gather output. The e2e step uses **`onError: continue`** so later steps still run; a **`deploy-and-e2e-status`** file (`success` / `failed`) plus **`fail-if-needed`** re-assert failure after **`git-push-artifacts`**.
 5. **`must-gather`** — plain OpenShift must-gather first, then official RHOAI must-gather (`registry.redhat.io/rhoai/odh-must-gather-rhel9` + `rhoai-must-gather-tag`, default `v3.5.0`) for **`aigateway`** (MaaS CRs / Kuadrant TRLPs) and **`kserve`** (LLMInferenceService), under `ARTIFACT_DIR` (also `onError: continue`). Each gather continues on failure so one broken plugin cannot skip the others. RHOAI gather commands export ODH namespaces (`OPERATOR_NAMESPACE=openshift-operators`, `APPLICATIONS_NAMESPACE` / `MONITORING_NAMESPACE` / `NOTEBOOK_NAMESPACE=opendatahub`) so must-gather does not early-exit looking for `rhods-operator`.
 6. **`git-push-artifacts`** — stages `ARTIFACT_DIR` into `opendatahub-io/odh-build-metadata` branch `ci-artifacts` under `test-artifacts/<pipelinerun-name>` (`secure-git-push` stepaction).
 7. **`finally` → `push-ci-artifacts-and-update-pr`** — sparse-clone that path, **push OCI** (`secure-push-oci` + `odh-registry-secret`), **comment on the PR** (`pull-request-comment`, inputs from `audit-snapshot` results and `$(tasks.status)`), **delete** the transient directory under `test-artifacts/` (`cleanup-git-repo`).
+
+### TLS / PQC scanning (RHOAI upstream CI)
+
+Konflux **`/group-test` does not run the TLS scanner.** Per [RHOAIENG-95827](https://redhat.atlassian.net/browse/RHOAIENG-95827) and [RHOAIENG-96886](https://redhat.atlassian.net/browse/RHOAIENG-96886), MaaS enables **`tls-scanner-run`** in **`openshift/release`** on the RHOAI E2E job (same pattern as [opendatahub-operator #82555](https://github.com/openshift/release/pull/82555)):
+
+- Add **`tls-scanner-tool`** to `base_images`
+- Set **`PQC_CHECK=true`** and **`SCAN_NAMESPACE`** to the component Kubernetes namespaces
+- Append **`- ref: tls-scanner-run`** after the e2e step
+
+See `ci-operator/config/opendatahub-io/models-as-a-service/opendatahub-io-models-as-a-service-main.yaml` in [openshift/release](https://github.com/openshift/release) (presubmit **`rhoai-e2e-tls-scan`**) and the [tls-scanner-run](https://steps.ci.openshift.org/reference/tls-scanner-run) step reference.
 
 ### `Dockerfile.maas`
 
