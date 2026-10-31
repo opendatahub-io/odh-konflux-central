@@ -339,15 +339,20 @@ spec:
               MG_ODH_ENV="export OPERATOR_NAMESPACE=openshift-operators; export APPLICATIONS_NAMESPACE=opendatahub; export MONITORING_NAMESPACE=opendatahub; export NOTEBOOK_NAMESPACE=opendatahub"
 
               # --- Run both gathers in parallel with a hard timeout each ---
-              GATHER_TIMEOUT="30m"
+              # The timeout runs INSIDE the gather pod, around /usr/bin/gather,
+              # so a hung collector terminates and oc still copies whatever was
+              # already collected. The outer timeout is only a backstop in case
+              # oc itself hangs (e.g. dead cluster API).
+              GATHER_TIMEOUT="25m"
               GATHER_PIDS=()
               GATHER_NAMES=()
 
               # Default OpenShift must-gather (infra-level data)
               mkdir -p "${ARTIFACT_DIR}/gather-openshift"
               (
-                timeout "${GATHER_TIMEOUT}" oc adm must-gather \
-                  --dest-dir "${ARTIFACT_DIR}/gather-openshift"
+                timeout 30m oc adm must-gather \
+                  --dest-dir "${ARTIFACT_DIR}/gather-openshift" -- \
+                  "timeout ${GATHER_TIMEOUT} /usr/bin/gather || echo 'gather timed out or failed; copying partial data'"
               ) &
               GATHER_PIDS+=($!)
               GATHER_NAMES+=("openshift")
@@ -357,10 +362,10 @@ spec:
               # avoiding the duplicate namespace/log collection and saving space.
               mkdir -p "${ARTIFACT_DIR}/gather-rhoai"
               (
-                timeout "${GATHER_TIMEOUT}" oc adm must-gather \
+                timeout 30m oc adm must-gather \
                   --image="${RHOAI_MUST_GATHER_IMAGE}" \
                   --dest-dir "${ARTIFACT_DIR}/gather-rhoai" -- \
-                  "${MG_ODH_ENV}; /usr/bin/gather"
+                  "${MG_ODH_ENV}; timeout ${GATHER_TIMEOUT} /usr/bin/gather || echo 'gather timed out or failed; copying partial data'"
               ) &
               GATHER_PIDS+=($!)
               GATHER_NAMES+=("rhoai")
