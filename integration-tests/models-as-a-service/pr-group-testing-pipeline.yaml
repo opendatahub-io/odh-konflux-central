@@ -338,41 +338,37 @@ spec:
               # Setting these env vars skips that probe (must-gather image unchanged).
               MG_ODH_ENV="export OPERATOR_NAMESPACE=openshift-operators; export APPLICATIONS_NAMESPACE=opendatahub; export MONITORING_NAMESPACE=opendatahub; export NOTEBOOK_NAMESPACE=opendatahub"
 
-              # --- Run all three gathers in parallel ---
-              # Each gather writes to its own destination directory and runs as a
-              # background job so all three execute simultaneously, reducing wall-clock
-              # time from ~25 min (sequential) to ~10 min (longest single gather).
+              # --- Run both gathers in parallel with a hard timeout each ---
+              # The timeout runs INSIDE the gather pod, around /usr/bin/gather,
+              # so a hung collector terminates and oc still copies whatever was
+              # already collected. The outer timeout is only a backstop in case
+              # oc itself hangs (e.g. dead cluster API).
+              GATHER_TIMEOUT="25m"
               GATHER_PIDS=()
               GATHER_NAMES=()
 
+              # Default OpenShift must-gather (infra-level data)
               mkdir -p "${ARTIFACT_DIR}/gather-openshift"
               (
-                oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift"
+                timeout 30m oc adm must-gather \
+                  --dest-dir "${ARTIFACT_DIR}/gather-openshift" -- \
+                  "timeout ${GATHER_TIMEOUT} /usr/bin/gather || echo 'gather timed out or failed; copying partial data'"
               ) &
               GATHER_PIDS+=($!)
               GATHER_NAMES+=("openshift")
 
-              # aigateway-must-gather (MaaS CRs: aitenants, configs,
-              # maasauthpolicies, maasmodelrefs, maassubscriptions, maastenantconfigs,
-              # tenants, kuadrant TRLPs/RLPs, inference ExternalModel/Provider, etc.)
-              mkdir -p "${ARTIFACT_DIR}/gather-aigateway"
+              # Single RHOAI must-gather without COMPONENT (defaults to "all"):
+              # combines the previous aigateway and kserve runs into one pod,
+              # avoiding the duplicate namespace/log collection and saving space.
+              mkdir -p "${ARTIFACT_DIR}/gather-rhoai"
               (
-                oc adm must-gather --image="${RHOAI_MUST_GATHER_IMAGE}" \
-                  --dest-dir "${ARTIFACT_DIR}/gather-aigateway" -- \
-                  "${MG_ODH_ENV}; export COMPONENT=aigateway; /usr/bin/gather"
+                timeout 30m oc adm must-gather \
+                  --image="${RHOAI_MUST_GATHER_IMAGE}" \
+                  --dest-dir "${ARTIFACT_DIR}/gather-rhoai" -- \
+                  "${MG_ODH_ENV}; timeout ${GATHER_TIMEOUT} /usr/bin/gather || echo 'gather timed out or failed; copying partial data'"
               ) &
               GATHER_PIDS+=($!)
-              GATHER_NAMES+=("aigateway")
-
-              # kserve-must-gather (LLMInferenceService / llmisvc and related serving CRs)
-              mkdir -p "${ARTIFACT_DIR}/gather-kserve"
-              (
-                oc adm must-gather --image="${RHOAI_MUST_GATHER_IMAGE}" \
-                  --dest-dir "${ARTIFACT_DIR}/gather-kserve" -- \
-                  "${MG_ODH_ENV}; export COMPONENT=kserve; /usr/bin/gather"
-              ) &
-              GATHER_PIDS+=($!)
-              GATHER_NAMES+=("kserve")
+              GATHER_NAMES+=("rhoai")
 
               # Wait for all gathers and report results
               FAILED=0
