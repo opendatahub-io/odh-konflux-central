@@ -338,41 +338,27 @@ spec:
               # Setting these env vars skips that probe (must-gather image unchanged).
               MG_ODH_ENV="export OPERATOR_NAMESPACE=openshift-operators; export APPLICATIONS_NAMESPACE=opendatahub; export MONITORING_NAMESPACE=opendatahub; export NOTEBOOK_NAMESPACE=opendatahub"
 
-              # --- Run both gathers in parallel ---
-              # Each gather writes to its own destination directory and runs as a
-              # background job so both execute simultaneously. A hard timeout bounds
-              # each gather so a hung gather pod can never stall the pipeline
-              # (previously a hung gather waited ~70 min for oc's context deadline).
-              # --since=6h bounds log volume to the test window.
+              # --- Run both gathers in parallel with a hard timeout each ---
               GATHER_TIMEOUT="30m"
               GATHER_PIDS=()
               GATHER_NAMES=()
 
-              # Default OpenShift must-gather (infra-level data: nodes,
-              # clusteroperators, monitoring, istio, ingress controllers, etc.)
+              # Default OpenShift must-gather (infra-level data)
               mkdir -p "${ARTIFACT_DIR}/gather-openshift"
               (
                 timeout "${GATHER_TIMEOUT}" oc adm must-gather \
-                  --since=6h \
                   --dest-dir "${ARTIFACT_DIR}/gather-openshift"
               ) &
               GATHER_PIDS+=($!)
               GATHER_NAMES+=("openshift")
 
-              # RHOAI must-gather, single invocation without COMPONENT.
-              # The image's gather script defaults to "all" and internally runs
-              # every component collector (aigateway: aitenants, configs,
-              # maasauthpolicies, maasmodelrefs, maassubscriptions,
-              # maastenantconfigs, tenants, kuadrant TRLPs/RLPs, inference
-              # ExternalModel/Provider; kserve: LLMInferenceService / llmisvc and
-              # related serving CRs) in parallel. Previously we ran two invocations
-              # (COMPONENT=aigateway and COMPONENT=kserve) that each re-collected
-              # the same ~155 MB of namespace dumps and pod logs.
+              # Single RHOAI must-gather without COMPONENT (defaults to "all"):
+              # combines the previous aigateway and kserve runs into one pod,
+              # avoiding the duplicate namespace/log collection and saving space.
               mkdir -p "${ARTIFACT_DIR}/gather-rhoai"
               (
                 timeout "${GATHER_TIMEOUT}" oc adm must-gather \
                   --image="${RHOAI_MUST_GATHER_IMAGE}" \
-                  --since=6h \
                   --dest-dir "${ARTIFACT_DIR}/gather-rhoai" -- \
                   "${MG_ODH_ENV}; /usr/bin/gather"
               ) &
