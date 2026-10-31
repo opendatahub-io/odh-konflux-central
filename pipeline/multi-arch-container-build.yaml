@@ -300,6 +300,7 @@ spec:
             fi
           done
   - name: prefetch-dependencies
+    retries: 2
     params:
     - name: input
       value: $(params.prefetch-input)
