@@ -1,4 +1,37 @@
 ---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: e2e-its-e2e-ephc-ocp420-wb-mr-msrv-mrt-maas-
+  labels:
+    pipelines.appstudio.openshift.io/type: test
+    pac.test.appstudio.openshift.io/event-type: push
+spec:
+  timeouts:
+    pipeline: 9h0m0s
+  pipelineRef:
+    resolver: git
+    params:
+      - name: url
+        value: $(params.SCRIPTS_REPO_URL)
+      - name: revision
+        value: $(params.SCRIPTS_REPO_REVISION)
+      - name: pathInRepo
+        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipeline.yaml
+  workspaces:
+    - name: tests-shared
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 15Gi
+  taskRunTemplate:
+    serviceAccountName: konflux-integration-runner
+---
+# Colocated manifest: document 1 = PipelineRun shell (Integration Service resolver reads
+# the first document). document 2 = IntegrationTestScenario (`--enable-its` / `--run-its`).
 # EPHC smoke slice 420-core: model path + MaaS (~2h guest budget after install).
 # Debug: --run-its e2e-ephc-ocp420-wb-mr-msrv-mrt-maas --konflux-app testops-playpen
 apiVersion: appstudio.redhat.com/v1beta2
@@ -41,7 +74,7 @@ spec:
     - name: QUAY_PULL_SECRET_NAME
       value: "rhoai-external-quay-secret"
     - name: PIPELINERUN_GENERATE_PREFIX
-      value: "e2e-its-ephc-ocp420-smoke-"
+      value: "e2e-its-e2e-ephc-ocp420-wb-mr-msrv-mrt-maas-"
     - name: PIPELINE_TIMEOUT
       value: "9h0m0s"
     - name: SCRIPTS_REPO_URL
@@ -55,6 +88,6 @@ spec:
       - name: revision
         value: main
       - name: pathInRepo
-        value: integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml
+        value: integration-tests/rhoai-e2e/tekton/its/its-e2e-ephc-ocp420-wb-mr-msrv-mrt-maas.yaml
     resolver: git
     resourceKind: pipelinerun

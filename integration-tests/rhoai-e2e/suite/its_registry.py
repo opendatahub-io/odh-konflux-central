@@ -161,20 +161,85 @@ def _its_dir(rhoai_e2e_root: Path) -> Path:
     return rhoai_e2e_root / "tekton" / "its"
 
 
-def _load_manifest_doc(path: Path) -> dict:
+def _load_manifest_docs(path: Path) -> list[dict]:
     try:
         import yaml
     except ImportError as exc:
         raise AppError("PyYAML is required to read ITS manifests.", 1) from exc
     try:
-        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise AppError(f"Cannot read ITS manifest {path}: {exc}", 1) from exc
+    try:
+        docs = list(yaml.safe_load_all(raw))
     except yaml.YAMLError as exc:
         raise AppError(f"Invalid YAML in ITS manifest {path}: {exc}", 1) from exc
-    if not isinstance(doc, dict):
-        raise AppError(f"ITS manifest {path} is empty or not a mapping.", 1)
-    return doc
+    out: list[dict] = []
+    for doc in docs:
+        if isinstance(doc, dict):
+            out.append(doc)
+    return out
+
+
+def _load_manifest_doc(path: Path) -> dict:
+    for doc in _load_manifest_docs(path):
+        if doc.get("kind") == "IntegrationTestScenario":
+            return doc
+    raise AppError(
+        f"ITS manifest {path} has no IntegrationTestScenario document.",
+        1,
+    )
+
+
+def load_colocated_pipelinerun_shell(path: Path) -> dict:
+    """Return document 1 (PipelineRun shell) from a colocated ITS manifest."""
+    for doc in _load_manifest_docs(path):
+        if doc.get("kind") == "PipelineRun":
+            return doc
+    raise AppError(f"ITS manifest {path} has no PipelineRun shell document.", 1)
+
+
+def pipelinerun_shell_git_pipeline_path(shell: dict) -> str:
+    """Return ``pipelineRef.params.pathInRepo`` from a colocated PipelineRun shell document."""
+    if shell.get("kind") != "PipelineRun":
+        return ""
+    spec = shell.get("spec")
+    if not isinstance(spec, dict):
+        return ""
+    pipeline_ref = spec.get("pipelineRef")
+    if not isinstance(pipeline_ref, dict):
+        return ""
+    params = pipeline_ref.get("params")
+    if not isinstance(params, list):
+        return ""
+    for param in params:
+        if isinstance(param, dict) and param.get("name") == "pathInRepo":
+            return str(param.get("value", "")).strip().lstrip("/")
+    return ""
+
+
+def load_colocated_pipelinerun_shell_from_text(raw_yaml: str) -> dict:
+    """Parse colocated manifest text and return the PipelineRun shell document."""
+    try:
+        import yaml
+    except ImportError as exc:
+        raise AppError("PyYAML is required to read ITS manifests.", 1) from exc
+    try:
+        docs = list(yaml.safe_load_all(raw_yaml))
+    except yaml.YAMLError as exc:
+        raise AppError(f"Invalid YAML in colocated ITS manifest: {exc}", 1) from exc
+    for doc in docs:
+        if isinstance(doc, dict) and doc.get("kind") == "PipelineRun":
+            return doc
+    raise AppError("Colocated ITS manifest has no PipelineRun shell document.", 1)
+
+
+def write_integration_test_scenario_apply_manifest(*, source: Path, dest: Path) -> None:
+    """Write only the IntegrationTestScenario doc for ``oc apply`` (skip colocated PipelineRun shell)."""
+    import yaml
+
+    doc = _load_manifest_doc(source)
+    dest.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
 
 def integration_test_scenario_default_konflux_app(name: str) -> str:
@@ -212,7 +277,7 @@ def list_integration_test_scenario_manifests(rhoai_e2e_root: Path) -> dict[str, 
     its_dir = _its_dir(rhoai_e2e_root)
     if not its_dir.is_dir():
         return out
-    for path in sorted(its_dir.glob("*.yaml")):
+    for path in sorted(its_dir.glob("its-*.yaml")):
         doc = _load_manifest_doc(path)
         if doc.get("kind") != "IntegrationTestScenario":
             continue

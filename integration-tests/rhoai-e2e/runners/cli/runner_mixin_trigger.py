@@ -38,7 +38,12 @@ from suite.trigger_param_registry import (
     trigger_param_names,
     trigger_params_to_clear_on_stage,
 )
-from suite.its_registry import integration_test_scenario_application
+from suite.its_registry import (
+    _load_manifest_doc,
+    integration_test_scenario_application,
+    konflux_repo_root,
+    write_integration_test_scenario_apply_manifest,
+)
 from suite.rhoai_fbc_ocp import rhoai_fbc_name_from_ocp_minor, rhoai_fbc_name_from_rhoai_version
 from k8s.cluster_ocp_version import cluster_ocp_minor_from_kubeconfig
 from suite.pipelinerun_naming import build_rhoai_e2e_generate_prefix, default_pipelinerun_generate_prefix, is_rhoai_e2e_pipelinerun_name
@@ -782,13 +787,20 @@ class RunnerTriggerMixin:
                 "yq is required to patch the ITS (PRODUCT, --konflux-repo, --rhoai-channel, etc.)."
             )
 
-        tmp = tempfile.NamedTemporaryFile(delete=False)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml")
         tmp.close()
         self.its_apply_tmp = tmp.name
+        write_integration_test_scenario_apply_manifest(
+            source=Path(self.its_file),
+            dest=Path(self.its_apply_tmp),
+        )
         del_names = sorted(trigger_params_to_clear_on_stage())
         expr = " or ".join(f'.name == "{n}"' for n in del_names)
-        proc = run_cmd(["yq", "e", f"del(.spec.params[] | select({expr}))", str(self.its_file)], capture=True, check=True)
-        Path(self.its_apply_tmp).write_text(proc.stdout, encoding="utf-8")
+        run_cmd(
+            ["yq", "e", f"del(.spec.params[] | select({expr}))", "-i", self.its_apply_tmp],
+            capture=True,
+            check=True,
+        )
 
         cluster_source, version_display, rhoai_fbc_name, update_channel = (
             self._patch_its_cli_override_params(self.its_apply_tmp, odh_overrides)
@@ -958,17 +970,18 @@ class RunnerTriggerMixin:
         """Read ITS params from the yq-patched tmp file as {name: value}."""
         if not self.its_apply_tmp:
             return {}
-        proc = run_cmd(
-            ["yq", "e", "-o=json", ".spec.params", self.its_apply_tmp],
-            capture=True, check=True,
-        )
-        try:
-            params = json.loads(proc.stdout)
-        except (ValueError, TypeError):
+        doc = _load_manifest_doc(Path(self.its_apply_tmp))
+        spec = doc.get("spec")
+        if not isinstance(spec, dict):
             return {}
+        params = spec.get("params")
         if not isinstance(params, list):
             return {}
-        return {p["name"]: str(p.get("value", "")) for p in params if isinstance(p, dict) and "name" in p}
+        return {
+            str(p["name"]): str(p.get("value", ""))
+            for p in params
+            if isinstance(p, dict) and "name" in p
+        }
 
 
     def _read_its_resolver_ref(self) -> tuple[str, str]:
@@ -983,15 +996,12 @@ class RunnerTriggerMixin:
         url = ""
         rev = ""
         path_in_repo = ""
-        proc = run_cmd(
-            ["yq", "e", "-o=json", ".spec.resolverRef.params", self.its_apply_tmp],
-            capture=True, check=True,
-        )
-        try:
-            params = json.loads(proc.stdout)
-        except (ValueError, TypeError):
-            params = []
-        for p in (params if isinstance(params, list) else []):
+        doc = _load_manifest_doc(Path(self.its_apply_tmp))
+        spec = doc.get("spec")
+        resolver = spec.get("resolverRef") if isinstance(spec, dict) else None
+        raw_params = resolver.get("params") if isinstance(resolver, dict) else None
+        params = raw_params if isinstance(raw_params, list) else []
+        for p in params:
             if not isinstance(p, dict):
                 continue
             if p.get("name") == "url":
@@ -1066,7 +1076,12 @@ class RunnerTriggerMixin:
         )
         if catalog_version:
             its_params["RHOAI_VERSION"] = catalog_version
-        pipeline_git_path = resolve_git_pipeline_path_from_its_resolver(resolver_path_in_repo)
+        pipeline_git_path = resolve_git_pipeline_path_from_its_resolver(
+            resolver_path_in_repo,
+            git_url=resolver_url,
+            git_revision=resolver_rev,
+            local_repo_root=konflux_repo_root(self.script_dir),
+        )
         self._cli_git_pipeline_path = pipeline_git_path
         print(
             f"  pipelineRef git: {resolver_url} @ {resolver_rev} path={pipeline_git_path}",

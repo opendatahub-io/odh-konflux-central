@@ -55,7 +55,7 @@ _STEP_ALLOWED_KEYS = frozenset(
 def _tekton_yaml_paths() -> list[Path]:
     paths = [
         _PIPELINE,
-        _TEKTON_DIR / "pipelines" / "rhoai-e2e-pipelinerun.yaml",
+        *_TEKTON_DIR.glob("pipelines/rhoai-e2e-pipelinerun*.yaml"),
         *_TASKS_DIR.glob("*.yaml"),
     ]
     return sorted(p for p in paths if p.is_file())

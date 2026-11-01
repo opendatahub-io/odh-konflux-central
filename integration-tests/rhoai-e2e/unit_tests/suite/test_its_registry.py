@@ -12,8 +12,10 @@ from suite.constants import (
     E2E_KONFLUX_RHOAI1_OCP422,
     ITS_PARAM_PIPELINE_TIMEOUT,
     ITS_PARAM_PIPELINERUN_GENERATE_PREFIX,
-    RHOAI_E2E_ITS_PIPELINERUN_KONFLUX_4H_PATH,
-    RHOAI_E2E_ITS_PIPELINERUN_PATH,
+)
+from suite.its_manifest_paths import (
+    integration_test_scenario_generate_prefix,
+    integration_test_scenario_pipelinerun_wrapper_path,
 )
 from pathlib import Path
 
@@ -24,7 +26,9 @@ from suite.its_registry import (
     integration_test_scenario_application,
     integration_test_scenario_default_konflux_app,
     list_integration_test_scenario_manifests,
+    load_colocated_pipelinerun_shell,
     looks_like_its_manifest_path,
+    _load_manifest_doc,
     resolve_integration_test_scenario_manifest,
     resolve_integration_test_scenario_manifest_path,
     resolve_integration_test_scenario_ref,
@@ -245,18 +249,17 @@ def test_resolve_ephc_fbc_slice_a_on_420_b_on_421() -> None:
     )
 
 
-def test_shared_pipelinerun_wrapper_uses_its_timeout_param() -> None:
-    path = _ROOT / "tekton" / "pipelines" / "rhoai-e2e-pipelinerun.yaml"
-    text = path.read_text(encoding="utf-8")
-    assert "generateName: e2e-its-smoke-" in text
-    assert "pipeline: 9h0m0s" in text
-
-
-def test_konflux_its_pipelinerun_wrapper_uses_four_hour_timeout() -> None:
-    path = _ROOT / "tekton" / "pipelines" / "rhoai-e2e-pipelinerun-konflux-4h.yaml"
-    text = path.read_text(encoding="utf-8")
-    assert "generateName: e2e-its-smoke-" in text
-    assert "pipeline: 4h0m0s" in text
+def test_its_colocated_pipelinerun_shell_matches_prefix_param() -> None:
+    manifests = list_integration_test_scenario_manifests(_ROOT)
+    for name, manifest in manifests.items():
+        expected = integration_test_scenario_generate_prefix(name)
+        prefix = its_manifest_param(manifest, ITS_PARAM_PIPELINERUN_GENERATE_PREFIX)
+        assert prefix == expected, name
+        shell = load_colocated_pipelinerun_shell(manifest)
+        assert shell["metadata"]["generateName"] == expected, name
+        timeout = its_manifest_param(manifest, ITS_PARAM_PIPELINE_TIMEOUT)
+        assert shell["spec"]["timeouts"]["pipeline"] == timeout, name
+        assert len(expected) <= 58, name
 
 
 def test_all_its_enable_fbc_structural() -> None:
@@ -266,34 +269,29 @@ def test_all_its_enable_fbc_structural() -> None:
         assert its_manifest_param(manifest, "FBC_STRUCTURAL") == "true", name
 
 
-def test_its_manifests_point_at_shared_pipelinerun_wrapper() -> None:
-    import yaml
-
+def test_its_manifests_point_at_pipelinerun_wrapper() -> None:
     manifests = list_integration_test_scenario_manifests(_ROOT)
     assert manifests
     for name, manifest in manifests.items():
-        doc = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        doc = _load_manifest_doc(manifest)
         resolver = (doc.get("spec") or {}).get("resolverRef") or {}
         params = {p["name"]: p["value"] for p in (resolver.get("params") or []) if isinstance(p, dict)}
-        expected = (
-            RHOAI_E2E_ITS_PIPELINERUN_KONFLUX_4H_PATH
-            if name == E2E_KONFLUX_RHOAI1_OCP422
-            else RHOAI_E2E_ITS_PIPELINERUN_PATH
-        )
-        assert params.get("pathInRepo") == expected
+        expected = integration_test_scenario_pipelinerun_wrapper_path(name)
+        assert params.get("pathInRepo") == expected, name
 
 
 @pytest.mark.parametrize(
-    ("its_name", "expected_prefix", "expected_timeout"),
+    ("its_name", "expected_timeout"),
     [
-        (E2E_EPHC_OCP420_CORE, "e2e-its-ephc-ocp420-smoke-", DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT),
-        (E2E_EPHC_OCP421, "e2e-its-ephc-ocp421-smoke-", DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT),
-        (_EPHC_OCP422_NAME, "e2e-its-ephc-ocp422-smoke-", DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT),
-        (E2E_KONFLUX_RHOAI1_OCP422, "e2e-its-konflux-rhoai1-smoke-", DEFAULT_KONFLUX_RHOAI1_PIPELINE_TIMEOUT),
+        (E2E_EPHC_OCP420_CORE, DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT),
+        (E2E_EPHC_OCP421, DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT),
+        (_EPHC_OCP422_NAME, DEFAULT_RHOAI_E2E_PIPELINE_TIMEOUT),
+        (E2E_KONFLUX_RHOAI1_OCP422, DEFAULT_KONFLUX_RHOAI1_PIPELINE_TIMEOUT),
     ],
 )
-def test_its_wrapper_params(its_name: str, expected_prefix: str, expected_timeout: str) -> None:
+def test_its_wrapper_params(its_name: str, expected_timeout: str) -> None:
     manifest = resolve_integration_test_scenario_manifest(_ROOT, its_name)
+    expected_prefix = integration_test_scenario_generate_prefix(its_name)
     assert its_manifest_param(manifest, ITS_PARAM_PIPELINERUN_GENERATE_PREFIX) == expected_prefix
     assert its_manifest_param(manifest, ITS_PARAM_PIPELINE_TIMEOUT) == expected_timeout
 

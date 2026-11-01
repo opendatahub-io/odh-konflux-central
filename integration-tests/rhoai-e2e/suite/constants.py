@@ -141,9 +141,6 @@ DEFAULT_KONFLUX_RHOAI1_PIPELINE_TIMEOUT = "4h0m0s"
 RHOAI_E2E_ITS_PIPELINERUN_PATH = (
     "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun.yaml"
 )
-RHOAI_E2E_ITS_PIPELINERUN_KONFLUX_4H_PATH = (
-    "integration-tests/rhoai-e2e/tekton/pipelines/rhoai-e2e-pipelinerun-konflux-4h.yaml"
-)
 # ITS-only (PipelineRun shell); not forwarded to rhoai-e2e-pipeline.yaml params.
 ITS_PARAM_PIPELINE_TIMEOUT = "PIPELINE_TIMEOUT"
 ITS_PARAM_PIPELINERUN_GENERATE_PREFIX = "PIPELINERUN_GENERATE_PREFIX"
