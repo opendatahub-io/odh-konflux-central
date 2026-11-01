@@ -1,9 +1,6 @@
 ---
-# Shared IntegrationTestScenario PipelineRun shell (git pipelineRef, PVC, SA, timeout).
+# Legacy shared shell (unused by in-tree ITS; scenarios use document 2 in tekton/its/its-*.yaml).
 # Tekton does not substitute ``$(params.*)`` in ``spec.timeouts.pipeline`` or ``metadata.generateName``.
-# Integration Service runs use the literal timeout below; per-ITS ``PIPELINE_TIMEOUT`` applies to
-# ``--run-its`` / CLI direct PipelineRuns (see ``create_direct_pipelinerun``). ``PIPELINERUN_GENERATE_PREFIX``
-# in each ITS documents the ``--run-its`` naming profile; Integration Service runs use ``e2e-its-smoke-`` here.
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:

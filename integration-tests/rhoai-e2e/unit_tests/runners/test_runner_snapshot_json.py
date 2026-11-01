@@ -5,6 +5,7 @@ from __future__ import annotations
 from suite.constants import DEFAULT_APP, DEFAULT_NAMESPACE
 import json
 import unittest
+from pathlib import Path
 
 from runners.cli.cli import make_parser, parse_cli_args
 from runners.cli.runner import RhoaiE2ERunner
@@ -40,4 +41,24 @@ class BuildSnapshotJsonTest(unittest.TestCase):
         runner = self._runner([])
         spec = json.loads(runner._build_snapshot_json(odh_overrides=True))
         self.assertEqual(spec["components"][0]["name"], "odh-operator-catalog")
+
+    def test_read_its_params_from_colocated_manifest(self) -> None:
+        manifest = (
+            Path(__file__).resolve().parents[2]
+            / "tekton/its/its-e2e-ephc-ocp420-wb-mr-msrv-mrt-maas.yaml"
+        )
+        runner = self._runner(
+            [
+                "--run-its",
+                "e2e-ephc-ocp420-wb-mr-msrv-mrt-maas",
+                "--konflux-app",
+                "testops-playpen",
+            ]
+        )
+        runner._stage_its_manifest_tmp(manifest, push_context=False)
+        params = runner._read_its_params_from_tmp()
+        self.assertEqual(params.get("RHOAI_FBC_NAME"), "rhoai-fbc-fragment-ocp-420")
+        self.assertEqual(params.get("CLUSTER_SOURCE"), "EPHC")
+        url, rev, path_in_repo = runner._read_its_git_resolver()
+        self.assertIn("its-e2e-ephc-ocp420-wb-mr-msrv-mrt-maas.yaml", path_in_repo)
 

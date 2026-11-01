@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -13,6 +12,7 @@ from suite.errors import AppError
 from suite.its_registry import (
     integration_test_scenario_application,
     its_manifest_param,
+    write_integration_test_scenario_apply_manifest,
 )
 from suite.its_trigger_params import (
     CLUSTER_SOURCE_EPHC,
@@ -182,7 +182,7 @@ class RunnerItsAdminMixin:
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
         tmp_path = Path(tmp.name)
         tmp.close()
-        shutil.copyfile(manifest, tmp_path)
+        write_integration_test_scenario_apply_manifest(source=manifest, dest=tmp_path)
         if push_context:
             run_cmd(
                 [
@@ -245,7 +245,7 @@ class RunnerItsAdminMixin:
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
             tmp_path = Path(tmp.name)
             tmp.close()
-            shutil.copyfile(manifest, tmp_path)
+            write_integration_test_scenario_apply_manifest(source=manifest, dest=tmp_path)
             if patch_application:
                 self._yq_set_its_application(tmp_path, patch_application)
             self._yq_patch_its_konflux_git(
@@ -261,13 +261,21 @@ class RunnerItsAdminMixin:
             f"Applying IntegrationTestScenario {name!r} to namespace {self.args.namespace!r} "
             f"(application {apply_app!r})..."
         )
+        apply_only = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+        apply_only_path = Path(apply_only.name)
+        apply_only.close()
         try:
+            write_integration_test_scenario_apply_manifest(
+                source=apply_path,
+                dest=apply_only_path,
+            )
             proc = run_cmd(
-                ["oc", "apply", "-n", self.args.namespace, "-f", str(apply_path)],
+                ["oc", "apply", "-n", self.args.namespace, "-f", str(apply_only_path)],
                 capture=True,
                 check=False,
             )
         finally:
+            apply_only_path.unlink(missing_ok=True)
             if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
         filtered = filter_warning_lines(f"{proc.stdout}\n{proc.stderr}")
