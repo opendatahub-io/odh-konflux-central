@@ -334,6 +334,9 @@ spec:
                 # config/crd/bases/*.yaml and leaves the worktree dirty. Discard that
                 # generated noise before switching to the Stream revision.
                 git checkout -f "${GIT_COMMIT}"
+                # The Stream revision is the Trainer monorepo, where the operator lives
+                # in rhoai/operator instead of the repository root.
+                cd rhoai/operator
                 make deploy IMG="${STREAM_IMAGE}"
 
                 echo "Waiting for trainer-operator deployment (Stream) to be available..."

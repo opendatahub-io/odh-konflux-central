@@ -1,0 +1,123 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: resolve-built-images
+spec:
+  description: >-
+    Resolves the pull request images of every component built from the
+    repository under test. A snapshot entry is fresh only for the component
+    that triggered it, so components are matched by git revision (the
+    triggering component) or by git URL (its siblings, whose snapshot digests
+    may be stale) and their odh-pr-<sha> tags are resolved from the registry.
+    Deciding which of the images the tests consume is up to the consumer.
+    No cluster access is needed.
+  params:
+    - name: SNAPSHOT
+      description: Snapshot of the application.
+      type: string
+    - name: git-revision
+      description: Pull request commit the tested components are built from.
+      type: string
+    - name: repo-url
+      description: Repository the tested components are built from.
+      type: string
+  results:
+    - name: images
+      description: JSON array of the pull request image references resolved for this repository.
+  steps:
+    - name: resolve-images
+      image: quay.io/rhoai/rhoai-task-toolset:trainer
+      imagePullPolicy: Always
+      env:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: GIT_REVISION
+          value: $(params.git-revision)
+        - name: REPO_URL
+          value: $(params.repo-url)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        IMAGES_FILE="$(results.images.path)"
+        echo "[]" > "${IMAGES_FILE}"
+
+        if [[ -z "${GIT_REVISION}" || -z "${REPO_URL}" ]]; then
+          echo "git-revision and repo-url are required; cannot identify the sibling components."
+          exit 1
+        fi
+
+        # A snapshot entry is fresh only for the component that triggered it;
+        # every sibling carries the digest and revision of its last completed
+        # build. The triggering component is therefore matched by git
+        # revision, and the siblings by the git URL of the repository under
+        # test (the triggering component itself may point to a fork).
+        # Temporary workaround: the trainer-operator component is still built
+        # from its original repository, so its snapshot entry carries that
+        # URL. TODO: drop once the component is rebuilt from the trainer
+        # repository.
+        LEGACY_REPO_URL='https://github.com/opendatahub-io/trainer-operator'
+        COMPONENTS=$(printf '%s' "${SNAPSHOT}" | jq -c --arg rev "${GIT_REVISION}" --arg repo "${REPO_URL}" --arg legacy "${LEGACY_REPO_URL}" '
+          [ .components[]
+            | select(.source.git.revision == $rev or .source.git.url == $repo or .source.git.url == $legacy)
+            | { name: .name,
+                repo: (.containerImage | sub("@.*$"; "")),
+                revision: .source.git.revision,
+                image: .containerImage } ]')
+        echo "Components built from ${REPO_URL}: $(printf '%s' "${COMPONENTS}" | jq -r '[.[].name] | join(", ")')"
+        if [[ "$(printf '%s' "${COMPONENTS}" | jq 'length')" -eq 0 ]]; then
+          echo "No component of ${REPO_URL} found in the snapshot (neither by git revision ${GIT_REVISION} nor by git URL)." >&2
+          exit 1
+        fi
+
+        # Every component built from this repository pushes an odh-pr-<sha>
+        # tag, regardless of which component triggered this run. The registry,
+        # not the build PipelineRun (which Tekton GC may have deleted), is the
+        # authoritative signal: a present tag means the build succeeded.
+        tag_exists() {
+          local repo="$1"
+          local tag="odh-pr-${GIT_REVISION}"
+          local url="https://quay.io/v2/${repo#quay.io/}/manifests/${tag}"
+          local code attempt
+
+          for attempt in 1 2 3; do
+            if ! code=$(curl -sS -o /dev/null -w "%{http_code}" -I \
+                -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" \
+                "${url}"); then
+              code="000"
+            fi
+            case "${code}" in
+              200) return 0 ;;
+              404) return 1 ;;
+            esac
+            echo "Registry query for ${repo} tag ${tag} returned HTTP ${code} (attempt ${attempt})." >&2
+            sleep 10
+          done
+          echo "Cannot determine whether ${repo}:${tag} exists (last HTTP ${code})." >&2
+          exit 1
+        }
+
+        # A snapshot entry already built at this commit is used as is;
+        # otherwise the component's odh-pr-<sha> tag is used when it exists.
+        unresolved=()
+        while IFS=$'\t' read -r name repo revision; do
+          if [[ "${revision}" == "${GIT_REVISION}" ]]; then
+            image=$(printf '%s' "${COMPONENTS}" | jq -r --arg n "${name}" '.[] | select(.name == $n) | .image')
+          else
+            if ! tag_exists "${repo}"; then
+              unresolved+=("${name}")
+              continue
+            fi
+            image="${repo}:odh-pr-${GIT_REVISION}"
+          fi
+          echo "Component ${name}: ${image}"
+          jq -c --arg i "${image}" '. += [$i]' "${IMAGES_FILE}" > "${IMAGES_FILE}.tmp"
+          mv "${IMAGES_FILE}.tmp" "${IMAGES_FILE}"
+        done < <(printf '%s' "${COMPONENTS}" | jq -r '.[] | [.name, .repo, .revision] | @tsv')
+
+        # Unresolved components were not rebuilt for this pull request, so the
+        # operator default image stays in place for them.
+        if (( ${#unresolved[@]} > 0 )); then
+          echo "No odh-pr-${GIT_REVISION} image found (operator default applies) for: ${unresolved[*]}"
+        fi
+        echo "Resolved images: $(cat "${IMAGES_FILE}")"
