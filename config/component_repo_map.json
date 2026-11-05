@@ -163,9 +163,7 @@
     "odh-pipeline-runtime-minimal-cpu-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-minimal-cpu-py312-ubi9",
     "odh-pipeline-runtime-pytorch-cuda-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-pytorch-cuda-py312-ubi9",
     "odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312-ci": "opendatahub/odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312-ubi9",
-    "odh-pipeline-runtime-pytorch-rocm-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-pytorch-rocm-py312-ubi9",
     "odh-pipeline-runtime-tensorflow-cuda-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-tensorflow-cuda-py312-ubi9",
-    "odh-pipeline-runtime-tensorflow-rocm-py312-ubi9-ci": "opendatahub/odh-pipeline-runtime-tensorflow-rocm-py312-ubi9",
     "odh-workbench-codeserver-baseline-cpu-py312-c9s-ci": "opendatahub/odh-workbench-codeserver-baseline-cpu-py312-c9s",
     "odh-workbench-codeserver-datascience-cpu-py312-ubi9-ci": "opendatahub/odh-workbench-codeserver-datascience-cpu-py312-ubi9",
     "odh-workbench-codeserver-minimal-cpu-py312-ci": "opendatahub/odh-workbench-codeserver-minimal-cpu-py312",
@@ -175,9 +173,7 @@
     "odh-workbench-jupyter-minimal-rocm-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-minimal-rocm-py312-ubi9",
     "odh-workbench-jupyter-pytorch-cuda-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-pytorch-cuda-py312-ubi9",
     "odh-workbench-jupyter-pytorch-llmcompressor-cuda-ci": "opendatahub/odh-workbench-jupyter-pytorch-llmcompressor-cuda-py312-ubi9",
-    "odh-workbench-jupyter-pytorch-rocm-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-pytorch-rocm-py312-ubi9",
-    "odh-workbench-jupyter-tensorflow-cuda-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-tensorflow-cuda-py312-ubi9",
-    "odh-workbench-jupyter-tensorflow-rocm-py312-ci": "opendatahub/odh-workbench-jupyter-tensorflow-rocm-py312-ubi9"
+    "odh-workbench-jupyter-tensorflow-cuda-py312-ubi9-ci": "opendatahub/odh-workbench-jupyter-tensorflow-cuda-py312-ubi9"
   },
   "odh-dashboard": {
     "mod-arch-maas": "opendatahub/mod-arch-maas",
@@ -203,7 +199,8 @@
     "odh-model-registry-operator-ci": "opendatahub/model-registry-operator"
   },
   "odh-observability": {
-    "odh-observability-ci": "opendatahub/odh-observability"
+    "odh-observability-ci": "opendatahub/odh-observability",
+    "odh-observability-e2e-ci": "opendatahub/odh-observability-e2e"
   },
   "ogx-distribution": {
     "odh-ogx-core-ci": "opendatahub/odh-ogx-core"
