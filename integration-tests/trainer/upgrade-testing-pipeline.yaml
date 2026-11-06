@@ -324,6 +324,10 @@ spec:
                   ARTIFACT_DIR="${ARTIFACT_DIR}" \
                   TEST_IMAGES="${TEST_IMAGES}" || POST_UPGRADE_RC=$?
 
+                # Best-effort merged JUnit report for the pull request comment.
+                make -f Makefile.rhai merge-dw-upgrade-junit \
+                  ARTIFACT_DIR="${ARTIFACT_DIR}" || true
+
                 echo ""
                 echo "============================================="
                 echo "  Upgrade Test Suite Results"
@@ -485,6 +489,8 @@ spec:
                 value: $(tasks.audit-snapshot.results.git-org)
               - name: git-revision
                 value: $(tasks.audit-snapshot.results.git-revision)
+              - name: junit-report-name
+                value: /workspace/odh-ci-artifacts/test-artifacts/$(context.pipelineRun.name)/upgrade-test/junit.xml
               - name: artifact-browser-url
                 value: $(params.artifact-browser-url)
           - name: cleanup-artifacts-from-git
