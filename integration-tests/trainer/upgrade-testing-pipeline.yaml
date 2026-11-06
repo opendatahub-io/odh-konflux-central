@@ -8,22 +8,21 @@ metadata:
     pipelinesascode.tekton.dev/on-target-branch: "[main]"
 spec:
   timeouts:
-    pipeline: 1h30m
+    pipeline: 3h
+    tasks: 2h40m
+    finally: 20m
   pipelineSpec:
     description: |
       An upgrade integration test which provisions an ephemeral Hypershift cluster, deploys the
-      current Lake version (odh-stable) of the trainer-operator, runs pre-upgrade validation,
-      upgrades to the Stream version from a Konflux snapshot, and runs post-upgrade e2e tests.
+      current Lake version (odh-stable) of Trainer through the trainer-operator, runs the
+      pre-upgrade distributed-workloads Trainer suite, upgrades to the Stream version from a
+      Konflux snapshot, and runs the post-upgrade suite. The deployment and test logic lives
+      in the test-upgrade-pre-rhai and test-upgrade-post-rhai targets of Makefile.rhai in the
+      trainer repository.
     params:
       - description: Snapshot of the application
         name: SNAPSHOT
         type: string
-      - name: LAKE_IMAGE
-        type: string
-        default: 'quay.io/opendatahub/odh-trainer-operator:odh-stable'
-        description: >-
-          The Lake (current stable) version image to upgrade FROM. Defaults to
-          the odh-stable tag in Quay, which is built from the stable branch.
       - name: oci-artifacts-repo
         default: 'quay.io/opendatahub/odh-ci-artifacts'
         description: The OCI container used to store all test artifacts.
@@ -61,6 +60,8 @@ spec:
           - name: git-repo
           - name: git-org
           - name: git-revision
+          - name: event-type
+          - name: source-url
           steps:
             - name: audit-snapshot
               image: quay.io/konflux-ci/konflux-test:stable
@@ -88,11 +89,16 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
+                - name: EVENT_TYPE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['pac.test.appstudio.openshift.io/event-type']
               script: |
                 #!/bin/bash
                 set -e
                 echo "SNAPSHOT=${SNAPSHOT}"
 
+                # Parse JSON and iterate through each component
                 while IFS= read -r row; do
                     COMPONENT_NAME=$(echo "$row" | base64 -d | jq -r '.name')
                     IMAGE=$(echo "$row" | base64 -d | jq -r '.containerImage')
@@ -108,10 +114,81 @@ spec:
                 echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
                 echo -n "${GIT_ORG}" > "$(results.git-org.path)"
                 echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
+                echo -n "${EVENT_TYPE}" > "$(results.event-type.path)"
+                # The component built for this commit names the repository its
+                # sources live in; for a pull request that is the fork, where
+                # the head commit is only present.
+                SOURCE_URL=$(echo "$SNAPSHOT" | jq -r \
+                  --arg rev "${GIT_REVISION}" \
+                  'first(.components[] | select(.source.git.revision == $rev) | .source.git.url)')
+                if [[ -z "${SOURCE_URL}" ]]; then
+                  echo "No snapshot component is built from commit ${GIT_REVISION}; cannot determine the repository to clone." >&2
+                  exit 1
+                fi
+                echo "SOURCE_URL=${SOURCE_URL}"
+                echo -n "${SOURCE_URL}" > "$(results.source-url.path)"
 
+      # Nothing can be tested before every component built from this commit is
+      # done, and a failed build must stop the run before a cluster is created.
+      - name: wait-for-builds
+        timeout: 45m
+        runAfter:
+          - audit-snapshot
+        when:
+          - input: $(tasks.audit-snapshot.results.event-type)
+            operator: notin
+            values: ["push"]
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/opendatahub-io/odh-konflux-central.git
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: integration-tests/trainer/tasks/wait-for-builds.yaml
+        params:
+          - name: git-revision
+            value: $(tasks.audit-snapshot.results.git-revision)
+      # Map the build tags of the components under test to the image references
+      # the deployment consumes.
+      - name: resolve-built-images
+        runAfter:
+          - wait-for-builds
+        when:
+          - input: $(tasks.audit-snapshot.results.event-type)
+            operator: notin
+            values: ["push"]
+          - input: $(tasks.wait-for-builds.results.should-run)
+            operator: in
+            values: ["true"]
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/opendatahub-io/odh-konflux-central.git
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: integration-tests/trainer/tasks/resolve-built-images.yaml
+        params:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+          - name: git-revision
+            value: $(tasks.audit-snapshot.results.git-revision)
+          - name: repo-url
+            value: https://github.com/$(tasks.audit-snapshot.results.git-org)/$(tasks.audit-snapshot.results.git-repo)
       - name: provision-cluster
         runAfter:
           - audit-snapshot
+          - resolve-built-images
+        when:
+          - input: $(tasks.audit-snapshot.results.event-type)
+            operator: notin
+            values: ["push"]
+          - input: $(tasks.wait-for-builds.results.should-run)
+            operator: in
+            values: ["true"]
         taskRef:
           resolver: git
           params:
@@ -138,15 +215,31 @@ spec:
           - name: env
             value: '{"COMPUTE_NODE_TYPE":"$(params.compute-node-type)","HYPERSHIFT_NODE_COUNT":"$(params.hypershift-node-count)","HOSTED_MANAGEMENT_CLUSTER":"$(params.hosted-management-cluster)"}'
       - name: upgrade-test
-        timeout: 1h10m
+        timeout: 1h30m
         runAfter:
           - provision-cluster
+        when:
+          - input: $(tasks.wait-for-builds.results.should-run)
+            operator: in
+            values: ["true"]
         params:
           - name: clusterCredentialsSecretRef
             value: $(tasks.provision-cluster.results.secretRef)
+          - name: resolvedImages
+            value: $(tasks.resolve-built-images.results.images)
+          - name: gitRevision
+            value: $(tasks.audit-snapshot.results.git-revision)
+          - name: repoUrl
+            value: $(tasks.audit-snapshot.results.source-url)
         taskSpec:
           params:
             - name: clusterCredentialsSecretRef
+              type: string
+            - name: resolvedImages
+              type: string
+            - name: gitRevision
+              type: string
+            - name: repoUrl
               type: string
           volumes:
             - name: credentials
@@ -157,6 +250,7 @@ spec:
           steps:
             - name: upgrade-and-e2e
               image: quay.io/rhoai/rhoai-task-toolset:trainer
+              imagePullPolicy: Always
               onError: continue
               computeResources:
                 requests:
@@ -168,10 +262,12 @@ spec:
               env:
                 - name: KUBECONFIG
                   value: /credentials/kubeconfig
-                - name: SNAPSHOT
-                  value: $(params.SNAPSHOT)
-                - name: LAKE_IMAGE
-                  value: $(params.LAKE_IMAGE)
+                - name: GIT_COMMIT
+                  value: $(params.gitRevision)
+                - name: SOURCE_URL
+                  value: $(params.repoUrl)
+                - name: TEST_IMAGES
+                  value: $(params.resolvedImages)
                 - name: ARTIFACT_DIR
                   value: /workspace/artifacts-dir
               workingDir: /workspace/source
@@ -188,183 +284,53 @@ spec:
                 oc whoami
                 oc get pods -A
 
-                echo "SNAPSHOT=${SNAPSHOT}"
-                COMPONENT_NAME=odh-trainer-operator-ci
-                COMPONENT_JSON=$(echo "${SNAPSHOT}" | jq -er --arg component_name "${COMPONENT_NAME}" '.components[] | select(.name == $component_name)')
-                STREAM_IMAGE=$(echo "${COMPONENT_JSON}" | jq -er '.containerImage')
-                GIT_COMMIT=$(echo "${COMPONENT_JSON}" | jq -er '.source.git.revision')
-                GIT_URL=$(echo "${COMPONENT_JSON}" | jq -er '.source.git.url')
-                echo "STREAM_IMAGE (new version): ${STREAM_IMAGE}"
-                echo "LAKE_IMAGE (current stable): ${LAKE_IMAGE}"
                 echo "GIT_COMMIT: ${GIT_COMMIT}"
-                echo "GIT_URL: ${GIT_URL}"
+                echo "SOURCE_URL: ${SOURCE_URL}"
+                echo "STREAM_IMAGES (new build): ${TEST_IMAGES}"
 
-                UPSTREAM_URL="https://github.com/opendatahub-io/trainer-operator.git"
-                git clone "${UPSTREAM_URL}" src_code
+                # The Lake phase runs Makefile.rhai from the trainer repository
+                # main branch; the Stream revision (the pull request head) is
+                # fetched from the fork, where the head commit is present.
+                git clone https://github.com/opendatahub-io/trainer.git src_code
                 cd src_code
-                git remote add fork "${GIT_URL}" || true
+                git remote add fork "${SOURCE_URL}" || true
                 git fetch fork "${GIT_COMMIT}"
 
-                echo "Installing cert-manager (required by Kubeflow Trainer webhook)..."
-                oc apply -f - <<EOF
-                apiVersion: v1
-                kind: Namespace
-                metadata:
-                  name: cert-manager-operator
-                ---
-                apiVersion: operators.coreos.com/v1
-                kind: OperatorGroup
-                metadata:
-                  name: cert-manager-operator
-                  namespace: cert-manager-operator
-                spec:
-                  targetNamespaces:
-                  - cert-manager-operator
-                ---
-                apiVersion: operators.coreos.com/v1alpha1
-                kind: Subscription
-                metadata:
-                  name: openshift-cert-manager-operator
-                  namespace: cert-manager-operator
-                spec:
-                  channel: stable-v1
-                  name: openshift-cert-manager-operator
-                  source: redhat-operators
-                  sourceNamespace: openshift-marketplace
-                EOF
-                echo "Waiting for cert-manager CSV to be created by OLM..."
-                for i in $(seq 1 60); do
-                  CSV=$(oc get csv -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator -o name 2>/dev/null | head -1)
-                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
-                  echo "  attempt $i/60, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
-                  -n cert-manager-operator -l operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator \
-                  --timeout=300s
-                echo "Waiting for cert-manager deployment to be created by the operator..."
-                for i in $(seq 1 30); do
-                  oc get deployment cert-manager -n cert-manager 2>/dev/null && break
-                  echo "  attempt $i/30, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=300s
-
-                echo "Installing JobSet operator (required by Kubeflow Trainer)..."
-                oc apply -f - <<EOF
-                apiVersion: v1
-                kind: Namespace
-                metadata:
-                  name: openshift-jobset-operator
-                ---
-                apiVersion: operators.coreos.com/v1
-                kind: OperatorGroup
-                metadata:
-                  name: openshift-jobset-operator
-                  namespace: openshift-jobset-operator
-                spec:
-                  targetNamespaces:
-                  - openshift-jobset-operator
-                ---
-                apiVersion: operators.coreos.com/v1alpha1
-                kind: Subscription
-                metadata:
-                  name: job-set
-                  namespace: openshift-jobset-operator
-                spec:
-                  channel: stable-v1.0
-                  name: job-set
-                  source: redhat-operators
-                  sourceNamespace: openshift-marketplace
-                EOF
-                echo "Waiting for JobSet CSV to be created by OLM..."
-                for i in $(seq 1 60); do
-                  CSV=$(oc get csv -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator -o name 2>/dev/null | head -1)
-                  [ -n "$CSV" ] && echo "CSV found: $CSV" && break
-                  echo "  attempt $i/60, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=jsonpath='{.status.phase}'=Succeeded csv \
-                  -n openshift-jobset-operator -l operators.coreos.com/job-set.openshift-jobset-operator \
-                  --timeout=300s
-                oc apply -f - <<EOF
-                apiVersion: operator.openshift.io/v1
-                kind: JobSetOperator
-                metadata:
-                  name: cluster
-                spec:
-                  logLevel: Normal
-                  managementState: Managed
-                  operatorLogLevel: Normal
-                EOF
-                echo "Waiting for jobsets CRD to be created by the operator..."
-                for i in $(seq 1 30); do
-                  oc get crd jobsets.jobset.x-k8s.io 2>/dev/null && break
-                  echo "  attempt $i/30, retrying in 10s..."
-                  sleep 10
-                done
-                oc wait --for=condition=established crd/jobsets.jobset.x-k8s.io --timeout=300s
-                oc wait --for=condition=Available jobsetoperator/cluster --timeout=300s
+                # The upgrade test suites live in the distributed-workloads
+                # repository, where the Makefile.rhai targets expect them.
+                git clone --depth 1 https://github.com/opendatahub-io/distributed-workloads.git \
+                  .test-data/distributed-workloads
 
                 PRE_UPGRADE_RC=0
                 POST_UPGRADE_RC=0
 
                 echo ""
-                echo "============================================="
-                echo "  Phase 1: Deploy Lake version (current stable)"
-                echo "============================================="
-                make deploy IMG="${LAKE_IMAGE}"
-
-                echo "Waiting for trainer-operator deployment (Lake) to be available..."
-                oc wait --for=condition=available deployment/trainer-operator-controller-manager \
-                  -n trainer-operator-system --timeout=300s
+                echo "============================================================"
+                echo "  Phase 1: Deploy Lake version, run pre-upgrade validation"
+                echo "============================================================"
+                make -f Makefile.rhai test-upgrade-pre-rhai \
+                  ARTIFACT_DIR="${ARTIFACT_DIR}" || PRE_UPGRADE_RC=$?
 
                 echo ""
-                echo "============================================="
-                echo "  Phase 2: Pre-upgrade validation"
-                echo "============================================="
-                mkdir -p "${ARTIFACT_DIR}"
-                make test-e2e-upgrade-pre 2>&1 | tee "${ARTIFACT_DIR}/pre-upgrade-e2e-output.log" || PRE_UPGRADE_RC=$?
-
-                echo ""
-                echo "============================================="
-                echo "  Phase 3: Upgrade to Stream version (new build)"
-                echo "============================================="
-                # `make deploy` runs the `manifests` controller-gen target, which rewrites
-                # config/crd/bases/*.yaml and leaves the worktree dirty. Discard that
-                # generated noise before switching to the Stream revision.
+                echo "============================================================"
+                echo "  Phase 2: Upgrade to Stream version, run post-upgrade validation"
+                echo "============================================================"
+                # `make deploy` runs the `manifests` controller-gen target, which
+                # rewrites config/crd/bases/*.yaml and leaves the worktree dirty.
+                # Discard that generated noise before switching to the Stream
+                # revision.
                 git checkout -f "${GIT_COMMIT}"
-                # The Stream revision is the Trainer monorepo, where the operator lives
-                # in rhoai/operator instead of the repository root.
-                cd rhoai/operator
-                make deploy IMG="${STREAM_IMAGE}"
-
-                echo "Waiting for trainer-operator deployment (Stream) to be available..."
-                oc wait --for=condition=available deployment/trainer-operator-controller-manager \
-                  -n trainer-operator-system --timeout=300s
-
-                echo "Waiting 30s for reconciliation to start..."
-                sleep 30
-
-                echo "Waiting for Trainer deployments to have exactly 1 ready replica..."
-                oc wait --for=jsonpath='{.status.readyReplicas}'=1 \
-                  deployment -l platform.opendatahub.io/part-of=trainer \
-                  -n opendatahub --timeout=300s
-
-                echo ""
-                echo "============================================="
-                echo "  Phase 4: Post-upgrade validation"
-                echo "============================================="
-                make test-e2e-upgrade-post 2>&1 | tee "${ARTIFACT_DIR}/post-upgrade-e2e-output.log" || POST_UPGRADE_RC=$?
+                make -f Makefile.rhai test-upgrade-post-rhai \
+                  ARTIFACT_DIR="${ARTIFACT_DIR}" \
+                  TEST_IMAGES="${TEST_IMAGES}" || POST_UPGRADE_RC=$?
 
                 echo ""
                 echo "============================================="
                 echo "  Upgrade Test Suite Results"
                 echo "============================================="
-                echo "  Lake image:            ${LAKE_IMAGE}"
-                echo "  Stream image:          ${STREAM_IMAGE}"
-                echo "  pre-upgrade e2e:       $([ $PRE_UPGRADE_RC  -eq 0 ] && echo PASSED || echo FAILED [rc=$PRE_UPGRADE_RC])"
-                echo "  post-upgrade e2e:      $([ $POST_UPGRADE_RC -eq 0 ] && echo PASSED || echo FAILED [rc=$POST_UPGRADE_RC])"
+                echo "  Stream images:   ${TEST_IMAGES}"
+                echo "  pre-upgrade:     $([ $PRE_UPGRADE_RC -eq 0 ] && echo PASSED || echo FAILED [rc=$PRE_UPGRADE_RC])"
+                echo "  post-upgrade:    $([ $POST_UPGRADE_RC -eq 0 ] && echo PASSED || echo FAILED [rc=$POST_UPGRADE_RC])"
 
                 if [ $PRE_UPGRADE_RC -eq 0 ] && [ $POST_UPGRADE_RC -eq 0 ]; then
                   echo "success" > "$STATUS_FILE"
@@ -374,6 +340,7 @@ spec:
             - name: must-gather
               onError: continue
               image: quay.io/rhoai/rhoai-task-toolset:trainer
+              imagePullPolicy: Always
               env:
                 - name: KUBECONFIG
                   value: /credentials/kubeconfig
@@ -384,11 +351,14 @@ spec:
                 - name: credentials
                   mountPath: /credentials
               script: |
-                mkdir -p "${ARTIFACT_DIR}/gather-trainer-operator"
-                oc adm must-gather --image=quay.io/modh/must-gather:rhoai-2.24 --dest-dir "${ARTIFACT_DIR}/gather-trainer-operator" -- "export COMPONENT=trainer; /usr/bin/gather" || true
+                mkdir -p "${ARTIFACT_DIR}/gather-trainer"
+                # The shared /workspace volume already holds the source checkout and
+                # the test artifacts, so the default 70% volume limit of oc adm
+                # must-gather would abort the gathering before it starts.
+                oc adm must-gather --volume-percentage=95 --image=quay.io/modh/must-gather:rhoai-2.24 --dest-dir "${ARTIFACT_DIR}/gather-trainer" -- "export OPERATOR_NAMESPACE=opendatahub; export APPLICATIONS_NAMESPACE=opendatahub; export COMPONENT=trainer; /usr/bin/gather" || true
 
                 mkdir -p "${ARTIFACT_DIR}/gather-openshift"
-                oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift" || true
+                oc adm must-gather --volume-percentage=95 --dest-dir "${ARTIFACT_DIR}/gather-openshift"
             - name: git-push-artifacts
               ref:
                 resolver: git
@@ -427,6 +397,10 @@ spec:
 
     finally:
     - name: push-ci-artifacts-and-update-pr
+      when:
+        - input: $(tasks.audit-snapshot.results.event-type)
+          operator: notin
+          values: ["push"]
       params:
         - name: oci-artifacts-repo
           value: $(params.oci-artifacts-repo)

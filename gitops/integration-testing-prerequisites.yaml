@@ -215,7 +215,7 @@ spec:
       - name: revision
         value: main
       - name: pathInRepo
-        value: integration-tests/trainer-operator/upgrade-testing-pipeline.yaml
+        value: integration-tests/trainer/upgrade-testing-pipeline.yaml
     resolver: git
     resourceKind: pipelinerun
 ---
