@@ -8,6 +8,9 @@ spec:
     A group integration test which provisions an ephemeral Hypershift cluster and runs the
     MaaS e2e tests using images for odh-maas-api-ci, odh-maas-controller-ci, and
     odh-maas-discovery-ci built from the same pull request commit.
+
+    Smoke deploy sets MAAS_DISCOVERY_ENABLED=true so odh-maas-discovery runs in-cluster for this
+    pipeline (snapshots require maas-discovery-ci; discovery is part of the default group-test deploy).
   params:
     - description: List of components in the group
       name: group-components
@@ -54,6 +57,38 @@ spec:
       type: string
       default: hosted-mgmt2
       description: Hosted management cluster used to provision the ephemeral cluster.
+    - name: tls-pqc-check
+      type: string
+      default: "true"
+      description: When "true", run openshift tls-scanner with --pqc-check after smoke e2e.
+    - name: tls-scan-namespaces
+      type: string
+      default: "opendatahub,odh-ai-gateway-infra"
+      description: Comma-separated namespaces for tls-scanner --namespace-filter.
+    - name: tls-component-filter
+      type: string
+      default: "maas-api,maas-controller,maas-discovery,odh-maas-discovery,ai-gateway-operator,ai-gateway-controller"
+      description: Comma-separated component filter passed to tls-scanner (include odh-maas-discovery alias for discovery image).
+    - name: tls-scanner-image
+      type: string
+      default: "registry.ci.openshift.org/ocp/4.22:tls-scanner-tool"
+      description: tls-scanner container image (align with params.ocp-version when possible).
+    - name: tls-scanner-pod-namespace
+      type: string
+      default: opendatahub
+      description: Namespace for the in-cluster tls-scanner pod (opendatahub allows maas-api:8443 when labeled maas-api-e2e-probe).
+    - name: tls-pqc-required-ports
+      type: string
+      default: "8443,9443"
+      description: Ports for the post-scan TLS 1.3 + ML-KEM check. Each scanned tls-component-filter entry needs at least one PQC-ready result on these ports.
+    - name: odh-konflux-central-revision
+      type: string
+      default: main
+      description: Git branch or tag of odh-konflux-central used to fetch integration-tests/models-as-a-service/tls-scanner-run.sh (git clone --branch; not a raw commit SHA).
+    - name: odh-konflux-central-git-url
+      type: string
+      default: "https://github.com/opendatahub-io/odh-konflux-central.git"
+      description: Git remote for tls-scanner-run.sh (use your fork URL while testing a konflux PR branch).
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -251,14 +286,17 @@ spec:
                 mountPath: /test-status
             script: |
               set -euxo pipefail
-              bash
 
               STATUS_FILE="/test-status/deploy-and-e2e-status"
+              E2E_SMOKE_STATUS="/test-status/e2e-smoke-status"
               echo "failed" > "$STATUS_FILE"
+              echo "failed" > "$E2E_SMOKE_STATUS"
 
               export MAAS_API_IMAGE=$(jq -r '."odh-maas-api-ci".image' <<< "${SNAPSHOT}")
               export MAAS_CONTROLLER_IMAGE=$(jq -r '."odh-maas-controller-ci".image' <<< "${SNAPSHOT}")
               export MAAS_DISCOVERY_IMAGE=$(jq -r '."odh-maas-discovery-ci".image' <<< "${SNAPSHOT}")
+              # Enable MaaS discovery in smoke so odh-maas-discovery is deployed (snapshot includes odh-maas-discovery-ci; TLS filter expects maas-discovery/odh-maas-discovery).
+              export MAAS_DISCOVERY_ENABLED="true"
 
               MAAS_API_TAG=$(jq -r '."odh-maas-api-ci".image_tag' <<< "${SNAPSHOT}")
               MAAS_CONTROLLER_TAG=$(jq -r '."odh-maas-controller-ci".image_tag' <<< "${SNAPSHOT}")
@@ -289,7 +327,162 @@ spec:
 
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
+              echo "success" > "$E2E_SMOKE_STATUS"
               echo "success" > "$STATUS_FILE"
+          - name: tls-pqc-scan
+            onError: continue
+            image: quay.io/rhoai/rhoai-task-toolset:maas
+            env:
+              - name: KUBECONFIG
+                value: /credentials/kubeconfig
+              - name: ARTIFACT_DIR
+                value: /workspace/artifacts-dir
+              - name: TLS_PQC_CHECK
+                value: $(params.tls-pqc-check)
+              - name: TLS_SCAN_NAMESPACES
+                value: $(params.tls-scan-namespaces)
+              - name: TLS_COMPONENT_FILTER
+                value: $(params.tls-component-filter)
+              - name: PULL_SPEC_TLS_SCANNER_TOOL
+                value: $(params.tls-scanner-image)
+              - name: TLS_SCANNER_POD_NAMESPACE
+                value: $(params.tls-scanner-pod-namespace)
+              - name: TLS_PQC_REQUIRED_PORTS
+                value: $(params.tls-pqc-required-ports)
+              - name: ODH_KONFLUX_CENTRAL_REVISION
+                value: $(params.odh-konflux-central-revision)
+              - name: ODH_KONFLUX_CENTRAL_GIT_URL
+                value: $(params.odh-konflux-central-git-url)
+            workingDir: /workspace/source
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              set -euxo pipefail
+
+              STATUS_FILE="/test-status/deploy-and-e2e-status"
+              E2E_SMOKE_STATUS="/test-status/e2e-smoke-status"
+              E2E_STATUS=$(cat "${E2E_SMOKE_STATUS}" 2>/dev/null || cat "${STATUS_FILE}" 2>/dev/null || echo "failed")
+              if [ "${E2E_STATUS}" != "success" ]; then
+                echo "Smoke e2e status is ${E2E_STATUS}; continuing with TLS scan (tls-pqc-check=${TLS_PQC_CHECK})"
+              fi
+
+              if [ "${TLS_PQC_CHECK}" != "true" ]; then
+                echo "TLS PQC scan disabled (tls-pqc-check=${TLS_PQC_CHECK})"
+                echo "skipped" > "/test-status/tls-scan-status"
+                exit 0
+              fi
+
+              echo "failed" > "/test-status/tls-scan-status"
+
+              if [ "${E2E_STATUS}" = "success" ]; then
+                echo "failed" > "$STATUS_FILE"
+              fi
+
+              mkdir -p "${ARTIFACT_DIR}"
+              export PQC_CHECK="true"
+              export SCAN_NAMESPACE="${TLS_SCAN_NAMESPACES}"
+              export COMPONENT_FILTER="${TLS_COMPONENT_FILTER}"
+              export SHARED_DIR="${ARTIFACT_DIR}/shared"
+              export SCANNER_CPU="${SCANNER_CPU:-4}"
+              export SCANNER_MEMORY="${SCANNER_MEMORY:-4Gi}"
+              export SCANNER_NAMESPACE="${TLS_SCANNER_POD_NAMESPACE}"
+              export SCANNER_MAAS_API_E2E_PROBE="true"
+              mkdir -p "${SHARED_DIR}"
+
+              ODH_KONFLUX_GIT_CLONE_TIMEOUT="${ODH_KONFLUX_GIT_CLONE_TIMEOUT:-120s}"
+              set +e
+              timeout "${ODH_KONFLUX_GIT_CLONE_TIMEOUT}" git clone --depth 1 --branch "${ODH_KONFLUX_CENTRAL_REVISION}" \
+                "${ODH_KONFLUX_CENTRAL_GIT_URL}" /tmp/odh-konflux-central
+              CLONE_EXIT=$?
+              set -e
+              if [ "${CLONE_EXIT}" -ne 0 ]; then
+                echo "git clone for tls-scanner failed or timed out (exit ${CLONE_EXIT})" >&2
+                echo "failed" > "$STATUS_FILE"
+                echo "failed" > "/test-status/tls-scan-status"
+                exit "${CLONE_EXIT}"
+              fi
+              set +e
+              bash /tmp/odh-konflux-central/integration-tests/models-as-a-service/tls-scanner-run.sh
+              TLS_EXIT=$?
+              set -e
+              if [ "${TLS_EXIT}" -ne 0 ]; then
+                echo "failed" > "$STATUS_FILE"
+                echo "failed" > "/test-status/tls-scan-status"
+                exit "${TLS_EXIT}"
+              fi
+
+              set +e
+              export TLS_COMPONENT_FILTER
+              export TLS_PQC_REQUIRED_PORTS
+              python3 /tmp/odh-konflux-central/integration-tests/models-as-a-service/validate-maas-tls-pqc-results.py
+              VALIDATE_EXIT=$?
+              set -e
+              if [ "${VALIDATE_EXIT}" -ne 0 ]; then
+                echo "failed" > "$STATUS_FILE"
+                echo "failed" > "/test-status/tls-scan-status"
+                exit "${VALIDATE_EXIT}"
+              fi
+
+              echo "success" > "/test-status/tls-scan-status"
+              if [ "${E2E_STATUS}" = "success" ]; then
+                echo "success" > "$STATUS_FILE"
+              else
+                echo "ℹ️ TLS scan succeeded; pipeline will still fail on smoke (e2e-smoke-status=${E2E_STATUS})"
+              fi
+          - name: confirm-tls-scanner-rbac-removed
+            onError: continue
+            image: quay.io/rhoai/rhoai-task-toolset:maas
+            env:
+              - name: KUBECONFIG
+                value: /credentials/kubeconfig
+              - name: TLS_PQC_CHECK
+                value: $(params.tls-pqc-check)
+              - name: TLS_SCANNER_POD_NAMESPACE
+                value: $(params.tls-scanner-pod-namespace)
+              - name: ODH_KONFLUX_CENTRAL_REVISION
+                value: $(params.odh-konflux-central-revision)
+              - name: ODH_KONFLUX_CENTRAL_GIT_URL
+                value: $(params.odh-konflux-central-git-url)
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              set -euxo pipefail
+              if [ "${TLS_PQC_CHECK}" != "true" ]; then
+                echo "TLS scan disabled; skipping cluster-admin confirmation"
+                exit 0
+              fi
+              fail_tls_and_deploy() {
+                echo "failed" > "/test-status/tls-scan-status"
+                echo "failed" > "/test-status/deploy-and-e2e-status"
+              }
+              ODH_KONFLUX_GIT_CLONE_TIMEOUT="${ODH_KONFLUX_GIT_CLONE_TIMEOUT:-120s}"
+              set +e
+              timeout "${ODH_KONFLUX_GIT_CLONE_TIMEOUT}" git clone --depth 1 --branch "${ODH_KONFLUX_CENTRAL_REVISION}" \
+                "${ODH_KONFLUX_CENTRAL_GIT_URL}" /tmp/odh-konflux-central
+              CLONE_EXIT=$?
+              set -e
+              if [ "${CLONE_EXIT}" -ne 0 ]; then
+                fail_tls_and_deploy
+                echo "git clone for RBAC confirmation failed or timed out (exit ${CLONE_EXIT})" >&2
+                exit "${CLONE_EXIT}"
+              fi
+              export SCANNER_NAMESPACE="${TLS_SCANNER_POD_NAMESPACE}"
+              export OC_REQUEST_TIMEOUT="${OC_REQUEST_TIMEOUT:-45s}"
+              set +e
+              bash /tmp/odh-konflux-central/integration-tests/models-as-a-service/tls-scanner-run.sh --confirm-rbac-removed
+              CONFIRM_EXIT=$?
+              set -e
+              if [ "${CONFIRM_EXIT}" -ne 0 ]; then
+                fail_tls_and_deploy
+                echo "cluster-admin confirmation failed (${CONFIRM_EXIT}); artifact upload and fail-if-needed still run"
+                exit "${CONFIRM_EXIT}"
+              fi
           - name: must-gather
             onError: continue
             image: quay.io/rhoai/rhoai-task-toolset:maas
@@ -412,11 +605,32 @@ spec:
                 mountPath: /test-status
             script: |
               STATUS_FILE="/test-status/deploy-and-e2e-status"
-              if ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
-                echo "❌ Failing pipeline because deploy-and-e2e step failed"
+              E2E_SMOKE=$(cat /test-status/e2e-smoke-status 2>/dev/null || echo "unknown")
+              if [ -f /test-status/tls-scan-status ]; then
+                TLS_RAW=$(tr -d '[:space:]' </test-status/tls-scan-status)
+                TLS_STATUS_DISPLAY="${TLS_RAW}"
+              else
+                TLS_RAW="failed"
+                TLS_STATUS_DISPLAY="missing (tls step did not write status — e.g. task timeout before tls-pqc-scan)"
+              fi
+              FAIL=0
+              if [ "${E2E_SMOKE}" != "success" ]; then
+                FAIL=1
+              fi
+              if [ "${TLS_RAW}" = "failed" ]; then
+                FAIL=1
+              fi
+              if [ "${FAIL}" -ne 0 ] || ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
+                echo "❌ Failing pipeline (e2e-smoke-status=${E2E_SMOKE}, tls-scan-status=${TLS_STATUS_DISPLAY}, deploy-and-e2e-status=$(cat "$STATUS_FILE" 2>/dev/null || echo missing))"
                 exit 1
               fi
-              echo "✅ deploy-and-e2e step succeeded"
+              if [ "${TLS_RAW}" = "success" ]; then
+                echo "✅ deploy, e2e smoke, and TLS PQC scan succeeded"
+              elif [ "${TLS_RAW}" = "skipped" ]; then
+                echo "✅ deploy and e2e smoke succeeded (TLS PQC scan disabled)"
+              else
+                echo "✅ deploy and e2e smoke succeeded (unexpected tls-scan-status=${TLS_RAW})"
+              fi
 
   finally:
   - name: push-ci-artifacts-and-update-pr
