@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from suite.constants import DEFAULT_APP, DEFAULT_NAMESPACE
 import unittest
 
-from suite.constants import DEFAULT_APP
+from suite.constants import DEFAULT_APP, DEFAULT_NAMESPACE
+from suite.constants import LABEL_SNAPSHOT_TYPE, SNAPSHOT_TYPE_OVERRIDE
 from suite.rh_nightly_auto_trigger import (
+    build_auto_trigger_snapshot_doc,
     build_auto_trigger_snapshot_yaml,
+    build_override_snapshot_labels,
     decide_auto_trigger,
     image_digest,
     rhoai_fbc_component_meets_min_version,
@@ -59,6 +61,20 @@ class TestRhNightlyAutoTrigger(unittest.TestCase):
         self.assertIn(f"application: {DEFAULT_APP}", text)
         self.assertIn("name: rhoai-fbc-fragment-ocp-420", text)
         self.assertIn("containerImage: quay.io/rhoai/rhoai-fbc-fragment@sha256:abc", text)
+
+    def test_override_snapshot_doc_labels(self) -> None:
+        labels = build_override_snapshot_labels(
+            application=DEFAULT_APP,
+            fbc_component="rhoai-fbc-fragment-ocp-420",
+        )
+        doc = build_auto_trigger_snapshot_doc(
+            namespace=DEFAULT_NAMESPACE,
+            application=DEFAULT_APP,
+            fbc_component="rhoai-fbc-fragment-ocp-420",
+            fbc_image="quay.io/rhoai/rhoai-fbc-fragment@sha256:abc",
+            labels=labels,
+        )
+        self.assertEqual(doc["metadata"]["labels"][LABEL_SNAPSHOT_TYPE], SNAPSHOT_TYPE_OVERRIDE)
 
 
 if __name__ == "__main__":

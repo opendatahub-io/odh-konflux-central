@@ -82,7 +82,11 @@ def is_enterprise_contract_pipelinerun(item: dict[str, Any]) -> bool:
     if kind == EC_KIND_VALUE:
         return True
     scenario = str(labels.get("test.appstudio.openshift.io/scenario") or "").strip().lower()
-    return "conforma" in scenario or "enterprise-contract" in scenario
+    if "conforma" in scenario or "enterprise-contract" in scenario:
+        return True
+    meta = item.get("metadata") or {}
+    name = str(meta.get("name") or "").strip().lower() if isinstance(meta, dict) else ""
+    return name.startswith("conforma-fbc-") or name.startswith("conforma-")
 
 
 def pipelinerun_succeeded_status(item: dict[str, Any]) -> str | None:

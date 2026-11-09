@@ -427,6 +427,7 @@ def parse_cli_args(parser: CliArgumentParser, argv: list[str]) -> argparse.Names
     list_components_on = bool(getattr(args, "list_components", False))
     watch_on = args.watch is not None
     structural_tests_on = bool(getattr(args, "structural_tests", False))
+    sync_fbc_on = bool(getattr(args, "sync_fbc_e2e_snapshots", False))
     if structural_tests_on and (
         args.enable_its or args.disable_its or args.run_its or watch_on or list_pipelines_on
     ):
@@ -434,6 +435,8 @@ def parse_cli_args(parser: CliArgumentParser, argv: list[str]) -> argparse.Names
             "--structural-tests cannot be combined with --run-its, --enable-its, --disable-its, -w, or -l.",
             2,
         )
+    if sync_fbc_on and structural_tests_on:
+        raise AppError("--sync-fbc-e2e-snapshots cannot be combined with --structural-tests.", 2)
     delete_pipelines_on = bool(args.delete_pending_pipelines)
     cleanup_maintenance_on = bool(getattr(args, "cleanup_maintenance", False))
     query_modes = sum(
@@ -445,13 +448,14 @@ def parse_cli_args(parser: CliArgumentParser, argv: list[str]) -> argparse.Names
             delete_pipelines_on,
             its_admin_on,
             cleanup_maintenance_on,
+            sync_fbc_on,
         ]
     )
     if query_modes > 1:
         raise AppError(
             "-l, -w, --delete-pending-pipelines, --cleanup, --list-supported-ocp, "
-            "--list-components, --enable-its, --disable-its, and --run-its are mutually exclusive "
-            "(pick one query/maintenance mode).",
+            "--list-components, --enable-its, --disable-its, --run-its, and "
+            "--sync-fbc-e2e-snapshots are mutually exclusive (pick one query/maintenance mode).",
             2,
         )
 

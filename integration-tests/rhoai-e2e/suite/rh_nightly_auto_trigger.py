@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from suite.component_version_gate import _compare_version_strings
-from suite.constants import DEFAULT_UPSTREAM_KONFLUX_GIT
+from suite.constants import (
+    DEFAULT_UPSTREAM_KONFLUX_GIT,
+    LABEL_KONFLUX_APPLICATION,
+    LABEL_KONFLUX_COMPONENT,
+    LABEL_SNAPSHOT_TYPE,
+    SNAPSHOT_TYPE_OVERRIDE,
+)
 from suite.errors import AppError
 
 _RHOAI_FBC_PREFIX = "rhoai-fbc-fragment-"
@@ -131,6 +137,73 @@ def record_auto_trigger_success(
         state["last_v35_snapshot_ts"] = v35_snapshot_ts
 
 
+def build_override_snapshot_labels(
+    *,
+    application: str,
+    fbc_component: str,
+    extra_labels: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Konflux override Snapshot labels so ITS ``override`` contexts match."""
+    app = application.strip()
+    comp = fbc_component.strip()
+    labels = {
+        LABEL_SNAPSHOT_TYPE: SNAPSHOT_TYPE_OVERRIDE,
+        LABEL_KONFLUX_APPLICATION: app,
+        LABEL_KONFLUX_COMPONENT: comp,
+    }
+    if extra_labels:
+        labels.update({k: v for k, v in extra_labels.items() if (k or "").strip() and (v or "").strip()})
+    return labels
+
+
+def build_auto_trigger_snapshot_doc(
+    *,
+    namespace: str,
+    application: str,
+    fbc_component: str,
+    fbc_image: str,
+    generate_name: str = "rh-nightly-snap-",
+    git_url: str = DEFAULT_UPSTREAM_KONFLUX_GIT,
+    git_revision: str = "main",
+    labels: dict[str, str] | None = None,
+    annotations: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    if not (namespace or "").strip():
+        raise AppError("snapshot namespace must be non-empty", 2)
+    if not application.strip():
+        raise AppError("rh-nightly catalog sync snapshot application must be non-empty", 2)
+    if not fbc_component.strip() or not fbc_image.strip():
+        raise AppError("rh-nightly catalog sync snapshot requires FBC component and image", 2)
+    meta: dict[str, Any] = {
+        "generateName": generate_name,
+        "namespace": namespace.strip(),
+    }
+    if labels:
+        meta["labels"] = {k: str(v) for k, v in labels.items() if (k or "").strip()}
+    if annotations:
+        meta["annotations"] = {k: str(v) for k, v in annotations.items() if (k or "").strip() and (v or "").strip()}
+    return {
+        "apiVersion": "appstudio.redhat.com/v1alpha1",
+        "kind": "Snapshot",
+        "metadata": meta,
+        "spec": {
+            "application": application.strip(),
+            "components": [
+                {
+                    "name": fbc_component.strip(),
+                    "containerImage": fbc_image.strip(),
+                    "source": {
+                        "git": {
+                            "url": git_url,
+                            "revision": git_revision,
+                        }
+                    },
+                }
+            ],
+        },
+    }
+
+
 def build_auto_trigger_snapshot_yaml(
     *,
     application: str,
@@ -140,18 +213,24 @@ def build_auto_trigger_snapshot_yaml(
     git_url: str = DEFAULT_UPSTREAM_KONFLUX_GIT,
     git_revision: str = "main",
 ) -> str:
-    if not application.strip():
-        raise AppError("rh-nightly catalog sync snapshot application must be non-empty", 2)
-    if not fbc_component.strip() or not fbc_image.strip():
-        raise AppError("rh-nightly catalog sync snapshot requires FBC component and image", 2)
+    doc = build_auto_trigger_snapshot_doc(
+        namespace="rhoai-tenant",
+        application=application,
+        fbc_component=fbc_component,
+        fbc_image=fbc_image,
+        generate_name=generate_name,
+        git_url=git_url,
+        git_revision=git_revision,
+    )
+    meta = doc["metadata"]
     return (
         "---\n"
         "apiVersion: appstudio.redhat.com/v1alpha1\n"
         "kind: Snapshot\n"
         "metadata:\n"
-        f"  generateName: {generate_name}\n"
+        f"  generateName: {meta['generateName']}\n"
         "spec:\n"
-        f"  application: {application}\n"
+        f"  application: {doc['spec']['application']}\n"
         "  components:\n"
         f"    - name: {fbc_component}\n"
         f"      containerImage: {fbc_image}\n"
