@@ -1440,9 +1440,20 @@ class RunnerTriggerMixin:
             )
             return (proc.stdout or "").strip()
 
+        from suite.fbc_e2e_snapshot_sync import build_fbc_override_snapshot_json, fbc_sync_exit_code
+        from suite.rh_nightly_auto_trigger import record_auto_trigger_success, save_last_triggered_state
+
         triggered = 0
         skipped = 0
+        failures = 0
         for plan in plans:
+            if plan.get("action") == "fail":
+                failures += 1
+                print(
+                    f"ERROR ocp-{plan.get('slice')}: {plan.get('reason', '')}",
+                    file=sys.stderr,
+                )
+                continue
             if plan.get("action") != "trigger":
                 skipped += 1
                 print(f"SKIP ocp-{plan.get('slice')}: {plan.get('reason', '')}")
@@ -1475,9 +1486,6 @@ class RunnerTriggerMixin:
                 fbc_snapshot_meta=snap_meta if isinstance(snap_meta, dict) else None,
                 local_git_repo=self.script_dir.parent.parent,
             )
-            from suite.fbc_e2e_snapshot_sync import build_fbc_override_snapshot_json
-            from suite.rh_nightly_auto_trigger import record_auto_trigger_success, save_last_triggered_state
-
             body = build_fbc_override_snapshot_json(
                 namespace=self.args.namespace,
                 application=app,
@@ -1492,7 +1500,12 @@ class RunnerTriggerMixin:
                 print(f"DRY-RUN would create override Snapshot on {app} ({image})")
                 triggered += 1
                 continue
-            snap_name = _create_snapshot(self.args.namespace, body)
+            try:
+                snap_name = _create_snapshot(self.args.namespace, body)
+            except Exception as exc:
+                failures += 1
+                print(f"ERROR ocp-{plan.get('slice')}: Snapshot create failed: {exc}", file=sys.stderr)
+                continue
             record_auto_trigger_success(
                 cluster_id="fbc-e2e-sync",
                 fbc_component=component,
@@ -1500,12 +1513,17 @@ class RunnerTriggerMixin:
                 snapshot_name=snap_name,
                 state=state,
             )
+            if not dry_run:
+                save_last_triggered_state(state)
             triggered += 1
             print(f"Created Snapshot {snap_name} on {app} (digest {plan.get('digest', '')[:16]}…)")
-        if not dry_run and triggered:
-            save_last_triggered_state(state)
-        print(f"FBC e2e sync: {triggered} triggered, {skipped} skipped (slices={','.join(slices)})")
-        return 0 if triggered or skipped else 1
+        print(
+            f"FBC e2e sync: {triggered} triggered, {skipped} skipped, {failures} failed "
+            f"(slices={','.join(slices)})"
+        )
+        if failures:
+            return 1
+        return fbc_sync_exit_code(plans, triggered=triggered)
 
     def run_trigger_mode(self) -> None:
         self._apply_konflux_git_inference_from_clone_or_env()

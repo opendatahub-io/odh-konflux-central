@@ -265,7 +265,9 @@ python3 integration-tests/rhoai-e2e/rhoai_e2e.py --sync-fbc-e2e-snapshots --konf
 python3 integration-tests/rhoai-e2e/rhoai_e2e.py --sync-fbc-e2e-snapshots --sync-fbc-slices 422 --konflux-namespace rhoai-tenant
 ```
 
-Digest state: **`~/.cache/rhoai-e2e/rh-nightly-last-triggered.json`**. Pass **`--force-sync-fbc`** or **`--sync-fbc-dry-run`** to override or preview. Pair with tenant **testGraph** conforma → e2e and **`WAIT_FOR_CONFORMA=false`** on auto-runs.
+Digest state: **`~/.cache/rhoai-e2e/rh-nightly-last-triggered.json`**. Pass **`--force-sync-fbc`** or **`--sync-fbc-dry-run`** to override or preview. Sync persists state **after each** successful Snapshot; resolver errors exit **non-zero** (digest-only skips still exit 0).
+
+**Rollout (RHAI-21827):** [`WAIT_FOR_CONFORMA=false`](tekton/its/) and **`override`** contexts are **not** sufficient alone. Do **not** re-`--enable-its` / cron sync until **tenant testGraph** orders conforma → e2e on the same Snapshot with **`failFast: true`** on the conforma prerequisite (Konflux default is `false`). Track B promotion Snapshots / ReleasePlan selection is **not** implemented here — `--sync-fbc-slices 422` mirrors the latest fragment-app image only. Schedule cadence and capture budget evidence are operator-owned.
 
 Rh-nightly stays on **FBC ocp-422** (full matrix, external cluster). EPHC smoke is split across FBC apps: **ocp-420 = slice A** (all smoke except Cypress/platform), **ocp-421 = slice B** (`dashboard_cypress` + `platform` only). Debug on **`testops-playpen`** with `--run-its e2e-ephc-ocp420-wb-mr-msrv-mrt-maas` or `e2e-ephc-ocp421-dcy-plat` plus **`--konflux-app testops-playpen`** (and **`--local-its`** when using a fork branch). Do **not** `--enable-its` for the ocp-420 / ocp-421 ITS on FBC apps until after this PR merges upstream; re-applying the ocp-420 ITS cuts that app over from full matrix to slice A.
 

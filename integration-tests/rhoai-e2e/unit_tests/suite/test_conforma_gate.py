@@ -96,6 +96,10 @@ class ConformaGateTest(unittest.TestCase):
         item = {"metadata": {"name": "conforma-fbc-rhoai-prod-ocp-420-8tvsW", "labels": {}}}
         self.assertTrue(is_enterprise_contract_pipelinerun(item))
 
+    def test_is_not_enterprise_contract_by_broad_conforma_prefix(self) -> None:
+        item = {"metadata": {"name": "conforma-unrelated-smoke-abc", "labels": {}}}
+        self.assertFalse(is_enterprise_contract_pipelinerun(item))
+
     def test_evaluate_pending(self) -> None:
         self.assertIsNone(
             evaluate_conforma_runs([_pr("ec-1", succeeded=None), _pr("olm-1", succeeded="True", ec=False)])

@@ -86,7 +86,8 @@ def is_enterprise_contract_pipelinerun(item: dict[str, Any]) -> bool:
         return True
     meta = item.get("metadata") or {}
     name = str(meta.get("name") or "").strip().lower() if isinstance(meta, dict) else ""
-    return name.startswith("conforma-fbc-") or name.startswith("conforma-")
+    # FBC conforma PLRs on stone-prod-p02 use conforma-fbc-*; avoid broad conforma-* (unrelated test PLRs).
+    return name.startswith("conforma-fbc-")
 
 
 def pipelinerun_succeeded_status(item: dict[str, Any]) -> str | None:

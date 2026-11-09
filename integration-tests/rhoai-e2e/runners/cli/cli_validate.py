@@ -428,6 +428,13 @@ def parse_cli_args(parser: CliArgumentParser, argv: list[str]) -> argparse.Names
     watch_on = args.watch is not None
     structural_tests_on = bool(getattr(args, "structural_tests", False))
     sync_fbc_on = bool(getattr(args, "sync_fbc_e2e_snapshots", False))
+    if sync_fbc_on:
+        from suite.fbc_e2e_snapshot_sync import parse_fbc_sync_slices
+
+        try:
+            parse_fbc_sync_slices(getattr(args, "sync_fbc_slices", "") or "")
+        except ValueError as exc:
+            raise AppError(str(exc), 2) from exc
     if structural_tests_on and (
         args.enable_its or args.disable_its or args.run_its or watch_on or list_pipelines_on
     ):

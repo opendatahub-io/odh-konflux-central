@@ -81,7 +81,7 @@ def plan_fbc_e2e_snapshot_sync(
             plans.append(
                 {
                     "slice": slice_key,
-                    "action": "skip",
+                    "action": "fail",
                     "reason": f"no catalog image on application {app}",
                     "application": app,
                     "component": component,
@@ -194,6 +194,17 @@ def apply_fbc_e2e_sync_plans(
     if not dry_run and triggered:
         save_last_triggered_state(state)
     return triggered, skipped
+
+
+def fbc_sync_exit_code(plans: list[dict[str, Any]], *, triggered: int) -> int:
+    """0 = success (triggers or digest-only skips); 1 = resolver/create failure or empty run."""
+    if any(p.get("action") == "fail" for p in plans):
+        return 1
+    if triggered > 0:
+        return 0
+    if plans and all(p.get("action") == "skip" for p in plans):
+        return 0
+    return 1
 
 
 def default_fbc_sync_annotations(*, trigger_command: str) -> dict[str, str]:

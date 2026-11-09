@@ -223,6 +223,10 @@ def build_auto_trigger_snapshot_yaml(
         git_revision=git_revision,
     )
     meta = doc["metadata"]
+    comp = doc["spec"]["components"][0]
+    comp_name = comp["name"]
+    comp_image = comp["containerImage"]
+    git = comp["source"]["git"]
     return (
         "---\n"
         "apiVersion: appstudio.redhat.com/v1alpha1\n"
@@ -232,10 +236,10 @@ def build_auto_trigger_snapshot_yaml(
         "spec:\n"
         f"  application: {doc['spec']['application']}\n"
         "  components:\n"
-        f"    - name: {fbc_component}\n"
-        f"      containerImage: {fbc_image}\n"
+        f"    - name: {comp_name}\n"
+        f"      containerImage: {comp_image}\n"
         "      source:\n"
         "        git:\n"
-        f"          url: {git_url}\n"
-        f'          revision: "{git_revision}"\n'
+        f"          url: {git['url']}\n"
+        f'          revision: "{git["revision"]}"\n'
     )

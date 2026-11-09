@@ -8,6 +8,7 @@ import unittest
 from suite.constants import LABEL_KONFLUX_COMPONENT, LABEL_SNAPSHOT_TYPE, SNAPSHOT_TYPE_OVERRIDE
 from suite.fbc_e2e_snapshot_sync import (
     build_fbc_override_snapshot_json,
+    fbc_sync_exit_code,
     parse_fbc_sync_slices,
     plan_fbc_e2e_snapshot_sync,
 )
@@ -60,6 +61,34 @@ class TestFbcE2eSnapshotSync(unittest.TestCase):
             force=False,
         )
         self.assertEqual(plans[0]["action"], "skip")
+
+    def test_plan_resolver_failure_is_fail_not_skip(self) -> None:
+        resolver = _Resolver({})
+        plans = plan_fbc_e2e_snapshot_sync(
+            resolver=resolver,
+            namespace="rhoai-tenant",
+            slices=["420"],
+            state={},
+            min_rhoai="3.5",
+            force=False,
+        )
+        self.assertEqual(plans[0]["action"], "fail")
+        self.assertEqual(fbc_sync_exit_code(plans, triggered=0), 1)
+
+    def test_exit_code_all_digest_skip(self) -> None:
+        image = "quay.io/rhoai/rhoai-fbc-fragment@sha256:abc"
+        state = {"fbc-e2e-sync:rhoai-fbc-fragment-ocp-420": {"digest": "abc"}}
+        resolver = _Resolver({"rhoai-fbc-fragment-ocp-420": image})
+        plans = plan_fbc_e2e_snapshot_sync(
+            resolver=resolver,
+            namespace="rhoai-tenant",
+            slices=["420"],
+            state=state,
+            min_rhoai="3.5",
+            force=False,
+        )
+        self.assertEqual(plans[0]["action"], "skip")
+        self.assertEqual(fbc_sync_exit_code(plans, triggered=0), 0)
 
     def test_build_override_snapshot_json(self) -> None:
         body = build_fbc_override_snapshot_json(
