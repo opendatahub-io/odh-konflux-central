@@ -260,9 +260,6 @@
   "trainer": {
     "trainer-ci": "opendatahub/trainer"
   },
-  "trainer-operator": {
-    "odh-trainer-operator-ci": "opendatahub/odh-trainer-operator"
-  },
   "trustyai-explainability": {
     "odh-trustyai-service-ci": "opendatahub/odh-trustyai-service"
   },
