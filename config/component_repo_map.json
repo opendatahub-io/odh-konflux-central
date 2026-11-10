@@ -258,6 +258,7 @@
     "spark-operator-ci": "opendatahub/spark-operator"
   },
   "trainer": {
+    "odh-trainer-operator-ci": "opendatahub/odh-trainer-operator",
     "trainer-ci": "opendatahub/trainer"
   },
   "trustyai-explainability": {
