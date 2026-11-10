@@ -31,7 +31,7 @@ spec:
   - name: hermetic
     value: "true"
   - name: prefetch-input
-    value: '[{"type": "gomod", "path": "."}]'
+    value: '[{"type": "gomod", "path": "."}, {"type": "rpm"}]'
   - name: additional-tags
     value:
     - 'odh-pr-{{revision}}'
