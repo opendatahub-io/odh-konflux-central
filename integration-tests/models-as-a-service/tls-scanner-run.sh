@@ -225,6 +225,61 @@ run_tls_scan() {
       return 0
   }
 
+  scanner_container_ready() {
+      local ready
+      ready=$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.containerStatuses[?(@.name=="scanner")].ready}' 2>/dev/null || echo "false")
+      [[ "${ready}" == "true" ]]
+  }
+
+  # Stop oc logs -f before oc cp — concurrent attach/exec against the scanner pod flakes on busy apiserver links.
+  stop_logs_follower() {
+      local pid="${1:?}"
+      kill "${pid}" 2>/dev/null || true
+      wait_for_logs_follower "${pid}" || true
+  }
+
+  copy_scanner_artifacts_from_pod() {
+      local attempts="${OC_CP_RETRY_ATTEMPTS:-12}"
+      local interval="${OC_CP_RETRY_INTERVAL:-10}"
+      local attempt=0
+      mkdir -p "${SCANNER_ARTIFACT_DIR}"
+      while (( attempt < attempts )); do
+          attempt=$((attempt + 1))
+          local phase
+          phase=$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+          if scanner_container_ready || [[ "${phase}" == "Succeeded" || "${phase}" == "Failed" ]]; then
+              # shellcheck disable=SC2086
+              if timeout "${OC_CP_PROCESS_TIMEOUT}" "${OCR_CP[@]}" cp -c scanner "${NAMESPACE}/tls-scanner:/results/." "${SCANNER_ARTIFACT_DIR}/"; then
+                  if [[ -f "${SCANNER_ARTIFACT_DIR}/results.json" ]]; then
+                      echo "Artifacts copied via oc cp (attempt ${attempt})"
+                      return 0
+                  fi
+                  echo "Warning: oc cp succeeded but results.json missing (attempt ${attempt})" >&2
+              else
+                  echo "Warning: oc cp failed (attempt ${attempt}, phase=${phase})" >&2
+              fi
+              if scanner_container_ready; then
+                  # shellcheck disable=SC2086
+                  if timeout "${OC_CP_PROCESS_TIMEOUT}" "${OCR[@]}" exec pod/tls-scanner -n "${NAMESPACE}" -c scanner -- tar czf - -C /results . \
+                      | tar xzf - -C "${SCANNER_ARTIFACT_DIR}"; then
+                      if [[ -f "${SCANNER_ARTIFACT_DIR}/results.json" ]]; then
+                          echo "Artifacts copied via exec tar fallback (attempt ${attempt})"
+                          return 0
+                      fi
+                  fi
+              fi
+          else
+              echo "Warning: scanner container not ready for copy (attempt ${attempt}, phase=${phase})" >&2
+          fi
+          if (( attempt < attempts )); then
+              echo "Artifact copy retry in ${interval}s (${attempt}/${attempts})..."
+              sleep "${interval}"
+          fi
+      done
+      echo "ERROR: could not copy scanner artifacts (missing ${SCANNER_ARTIFACT_DIR}/results.json)" >&2
+      return 1
+  }
+
   local scanner_pod_mode="${SCANNER_POD_MODE:-false}"
   case "${scanner_pod_mode}" in
     true|false) ;;
@@ -697,18 +752,19 @@ EOF
 
   if [[ "${completion_timed_out}" == "true" ]] && [[ "${scan_done_found}" != "true" ]]; then
       echo "ERROR: wall-clock deadline (${completion_wall_deadline_sec}s) expired waiting for /results/scan.done (phase=${phase})" >&2
-      kill "${LOGS_PID}" 2>/dev/null || true
-      wait_for_logs_follower "${LOGS_PID}" || true
+      stop_logs_follower "${LOGS_PID}"
       echo "Copying artifacts (partial)..."
-      # shellcheck disable=SC2086
-      timeout "${OC_CP_PROCESS_TIMEOUT}" "${OCR_CP[@]}" cp "${NAMESPACE}/tls-scanner:/results/." "${SCANNER_ARTIFACT_DIR}/" || echo "Warning: Failed to copy some artifacts"
+      copy_scanner_artifacts_from_pod || true
       "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}" >&2 || true
       exit 1
   fi
 
+  stop_logs_follower "${LOGS_PID}"
   echo "Copying artifacts..."
-  # shellcheck disable=SC2086
-  timeout "${OC_CP_PROCESS_TIMEOUT}" "${OCR_CP[@]}" cp "${NAMESPACE}/tls-scanner:/results/." "${SCANNER_ARTIFACT_DIR}/" || echo "Warning: Failed to copy some artifacts"
+  if ! copy_scanner_artifacts_from_pod; then
+      "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}" >&2 || true
+      exit 1
+  fi
 
   if [[ -f "${SCANNER_ARTIFACT_DIR}/junit_tls_scan.xml" ]]; then
       if [[ "${PQC_CHECK:-false}" == "true" && -n "${TLS_SCANNER_CLUSTER_LABEL:-}" ]]; then
@@ -721,8 +777,6 @@ EOF
       cp "${SCANNER_ARTIFACT_DIR}/junit_tls_scan.xml" "${junit_artifact}"
       echo "JUnit results copied to ${junit_artifact} for Spyglass"
   fi
-
-  wait_for_logs_follower "${LOGS_PID}" || true
 
   # Check final pod status. The scanner exits non-zero when TLS findings are
   # detected — this is expected and not an infrastructure failure. Propagate
