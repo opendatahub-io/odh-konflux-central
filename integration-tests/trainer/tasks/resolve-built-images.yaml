@@ -78,14 +78,9 @@ spec:
         # build. The triggering component is therefore matched by git
         # revision, and the siblings by the git URL of the repository under
         # test (the triggering component itself may point to a fork).
-        # Temporary workaround: the trainer-operator component is still built
-        # from its original repository, so its snapshot entry carries that
-        # URL. TODO: drop once the component is rebuilt from the trainer
-        # repository.
-        LEGACY_REPO_URL='https://github.com/opendatahub-io/trainer-operator'
-        COMPONENTS=$(printf '%s' "${SNAPSHOT}" | jq -c --arg rev "${GIT_REVISION}" --arg repo "${REPO_URL}" --arg legacy "${LEGACY_REPO_URL}" '
+        COMPONENTS=$(printf '%s' "${SNAPSHOT}" | jq -c --arg rev "${GIT_REVISION}" --arg repo "${REPO_URL}" '
           [ .components[]
-            | select(.source.git.revision == $rev or .source.git.url == $repo or .source.git.url == $legacy)
+            | select(.source.git.revision == $rev or .source.git.url == $repo)
             | { name: .name,
                 repo: (.containerImage | sub("@.*$"; "")),
                 revision: .source.git.revision,
