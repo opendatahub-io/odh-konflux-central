@@ -191,7 +191,12 @@ run_tls_scan() {
       fi
     fi
     if [[ -n "${SCANNER_MEM_LIMIT:-}" && -z "${SCANNER_MEM_REQUEST:-}" ]]; then
-      scanner_mem_request="${scanner_mem_limit}"
+      local req_mi lim_mi
+      req_mi=$(echo "${scanner_mem_request}" | awk '/Gi$/ { sub(/Gi$/,""); print ($0+0)*1024; next } /Mi$/ { sub(/Mi$/,""); print $0+0; next } { print $0+0 }')
+      lim_mi=$(echo "${scanner_mem_limit}" | awk '/Gi$/ { sub(/Gi$/,""); print ($0+0)*1024; next } /Mi$/ { sub(/Mi$/,""); print $0+0; next } { print $0+0 }')
+      if awk "BEGIN { exit !(${req_mi} > ${lim_mi}) }"; then
+        scanner_mem_request="${scanner_mem_limit}"
+      fi
     fi
   fi
   echo "Scanner pod resources: cpu=${scanner_cpu_request}/${scanner_cpu_limit} memory=${scanner_mem_request}/${scanner_mem_limit}"
