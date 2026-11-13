@@ -1,14 +1,9 @@
 #!/bin/bash
-# Originally based on openshift/release ci-operator/step-registry/tls/scanner/run/tls-scanner-run-commands.sh
-# (see steps.ci.openshift.org tls-scanner-run). This copy is **heavily diverged** for Konflux/MaaS
-# (dedicated SA, verified cluster-admin removal, bounded oc calls, RBAC classifier, pipeline hooks).
-# Do **not** treat it as a drop-in sync from openshift/release — port upstream changes manually and
-# re-test. Longer term, consider upstreaming the SA + cleanup hardening to openshift/release.
+# Synced from openshift/release ci-operator/step-registry/tls/scanner/run/tls-scanner-run-commands.sh
+# for Konflux integration tests (same cluster as e2e, after smoke). Set PULL_SPEC_TLS_SCANNER_TOOL,
+# PQC_CHECK, SCAN_NAMESPACE, COMPONENT_FILTER before invoking.
 #
-# Konflux: same cluster as e2e after smoke. Set PULL_SPEC_TLS_SCANNER_TOOL, PQC_CHECK,
-# SCAN_NAMESPACE, COMPONENT_FILTER before invoking.
-#
-# MaaS: scanner pod uses a dedicated ServiceAccount (SCANNER_SERVICE_ACCOUNT_NAME, default
+# MaaS Konflux: scanner pod uses a dedicated ServiceAccount (SCANNER_SERVICE_ACCOUNT_NAME, default
 # tls-scanner) for cluster-admin — not the namespace default SA. Bindings are removed in cleanup().
 set -o nounset
 set -o errexit
@@ -21,264 +16,7 @@ if [[ -n "${SHARED_DIR:-}" ]] && test -f "${SHARED_DIR}/proxy-conf.sh"; then
   source "${SHARED_DIR}/proxy-conf.sh"
 fi
 
-# Classify a ClusterRoleBinding List on stdin for system:serviceaccount:<ns>:<sa>.
-# 0 present, 10 absent (well-formed list, no match), 11 JSON, 12 bad list envelope,
-# 14 malformed binding/subject, 13 unexpected.
-# Omitted subjects or "subjects": [] grants nobody. "subjects": null is not a list.
-_classify_crb_json() {
-  local ns="$1"
-  local sa="$2"
-  python3 -c '
-import json, sys
-ns, sa = sys.argv[1], sys.argv[2]
-raw = sys.stdin.read()
-try:
-    data = json.loads(raw)
-except json.JSONDecodeError:
-    sys.exit(11)
-
-def nonempty_str(value):
-    return isinstance(value, str) and value != ""
-
-try:
-    if not isinstance(data, dict) or "items" not in data or not isinstance(data["items"], list):
-        sys.exit(12)
-    matched = False
-    for item in data["items"]:
-        if not isinstance(item, dict):
-            sys.exit(14)
-        role_ref = item.get("roleRef")
-        if not isinstance(role_ref, dict):
-            sys.exit(14)
-        api_group = role_ref.get("apiGroup")
-        role_kind = role_ref.get("kind")
-        role_name = role_ref.get("name")
-        if not nonempty_str(api_group) or not nonempty_str(role_kind) or not nonempty_str(role_name):
-            sys.exit(14)
-        is_cluster_admin = (
-            api_group == "rbac.authorization.k8s.io"
-            and role_kind == "ClusterRole"
-            and role_name == "cluster-admin"
-        )
-        if "subjects" not in item:
-            continue
-        subj_list = item["subjects"]
-        if not isinstance(subj_list, list):
-            sys.exit(14)
-        for subj in subj_list:
-            if not isinstance(subj, dict):
-                sys.exit(14)
-            kind = subj.get("kind")
-            name = subj.get("name")
-            if kind not in ("User", "Group", "ServiceAccount") or not nonempty_str(name):
-                sys.exit(14)
-            if "apiGroup" in subj and not isinstance(subj.get("apiGroup"), str):
-                sys.exit(14)
-            if kind == "ServiceAccount":
-                namespace = subj.get("namespace")
-                if not nonempty_str(namespace):
-                    sys.exit(14)
-                if is_cluster_admin and namespace == ns and name == sa:
-                    matched = True
-            elif "namespace" in subj and not isinstance(subj.get("namespace"), str):
-                sys.exit(14)
-    sys.exit(0 if matched else 10)
-except SystemExit:
-    raise
-except Exception:
-    sys.exit(13)
-' "${ns}" "${sa}"
-}
-
-# Process-bound list. Non-zero (including timeout 124) means the API response is unusable.
-_oc_get_clusterrolebindings_json() {
-  local req="${OC_REQUEST_TIMEOUT:-45s}"
-  timeout "${req}" oc --request-timeout="${req}" get clusterrolebinding -o json
-}
-
-_confirm_rbac_removed() {
-  local ns="${SCANNER_NAMESPACE:-${TLS_SCANNER_POD_NAMESPACE:-tls-scanner}}"
-  local sa="${SCANNER_SERVICE_ACCOUNT_NAME:-tls-scanner}"
-  local req="${OC_REQUEST_TIMEOUT:-45s}"
-  echo "Confirming cluster-admin is absent for system:serviceaccount:${ns}:${sa}"
-  # Best-effort removal in case cleanup ran while the API was stalled.
-  timeout "${req}" oc --request-timeout="${req}" adm policy remove-cluster-role-from-user cluster-admin -z "${sa}" -n "${ns}" || true
-  local json st=0
-  if ! json=$(_oc_get_clusterrolebindings_json 2>/dev/null); then
-    echo "ERROR: could not list ClusterRoleBindings (request bound by ${req})" >&2
-    return 1
-  fi
-  printf '%s' "${json}" | _classify_crb_json "${ns}" "${sa}" || st=$?
-  if [[ "${st}" -eq 10 ]]; then
-    echo "Confirmed: no cluster-admin binding for system:serviceaccount:${ns}:${sa}"
-    return 0
-  fi
-  if [[ "${st}" -eq 0 ]]; then
-    echo "ERROR: cluster-admin binding still present for ${sa} in ${ns}" >&2
-    return 1
-  fi
-  echo "ERROR: cannot confirm cluster-admin removal (classifier status ${st})" >&2
-  return 1
-}
-
-_rbac_selftest() {
-  local failed=0
-  _expect() {
-    local want="$1" json="$2" st=0
-    printf '%s' "${json}" | _classify_crb_json "ns" "sa" || st=$?
-    if [[ "${st}" -ne "${want}" ]]; then
-      echo "FAIL want ${want} got ${st}: ${json}" >&2
-      failed=1
-    fi
-  }
-  local cr='{"apiGroup":"rbac.authorization.k8s.io","kind":"ClusterRole","name":"cluster-admin"}'
-  _expect 12 '{}'
-  _expect 12 '{"items":null}'
-  _expect 10 '{"items":[]}'
-  _expect 11 'not-json'
-  _expect 14 '{"items":[null]}'
-  _expect 14 "{\"items\":[{\"roleRef\":{}}]}"
-  _expect 14 "{\"items\":[{\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":42,\"name\":\"cluster-admin\"}}]}"
-  _expect 10 "{\"items\":[{\"roleRef\":${cr}}]}"
-  _expect 10 "{\"items\":[{\"roleRef\":${cr},\"subjects\":[]}]}"
-  _expect 14 "{\"items\":[{\"roleRef\":${cr},\"subjects\":null}]}"
-  _expect 14 "{\"items\":[{\"roleRef\":${cr},\"subjects\":[{}]}]}"
-  _expect 14 "{\"items\":[{\"roleRef\":${cr},\"subjects\":[{\"kind\":42,\"name\":\"sa\",\"namespace\":\"ns\"}]}]}"
-  _expect 14 "{\"items\":[{\"roleRef\":${cr},\"subjects\":[{\"kind\":\"nope\",\"name\":\"sa\",\"namespace\":\"ns\"}]}]}"
-  _expect 14 "{\"items\":[{\"roleRef\":${cr},\"subjects\":[{\"kind\":\"ServiceAccount\",\"name\":\"sa\"}]}]}"
-  _expect 0 "{\"items\":[{\"roleRef\":${cr},\"subjects\":[{\"kind\":\"ServiceAccount\",\"name\":\"sa\",\"namespace\":\"ns\"}]}]}"
-  _expect 10 "{\"items\":[{\"roleRef\":${cr},\"subjects\":[{\"kind\":\"ServiceAccount\",\"name\":\"other\",\"namespace\":\"ns\"}]}]}"
-  _expect 14 "{\"items\":[{\"roleRef\":{\"apiGroup\":\"rbac.authorization.k8s.io\",\"kind\":\"ClusterRole\",\"name\":\"view\"},\"subjects\":[{\"kind\":42,\"name\":\"x\"}]}]}"
-  local stall_dir start end stall_st=0
-  stall_dir=$(mktemp -d)
-  cat > "${stall_dir}/oc" <<'EOF'
-#!/bin/sh
-sleep 30
-EOF
-  chmod +x "${stall_dir}/oc"
-  start=$(date +%s)
-  PATH="${stall_dir}:${PATH}" OC_REQUEST_TIMEOUT=2s _oc_get_clusterrolebindings_json >/dev/null 2>&1 || stall_st=$?
-  end=$(date +%s)
-  rm -rf "${stall_dir}"
-  if [[ "${stall_st}" -eq 0 || $((end - start)) -gt 5 ]]; then
-    echo "FAIL hung oc was not bounded (status ${stall_st}, elapsed $((end - start))s)" >&2
-    failed=1
-  fi
-  if [[ "${failed}" -ne 0 ]]; then
-    echo "RBAC self-test failed" >&2
-    return 1
-  fi
-  echo "RBAC self-test passed"
-}
-
 run_tls_scan() {
-
-  # Bound individual oc API calls (stalled server connections) separately from scan wall-clock deadline.
-  # Note: --request-timeout bounds single REST requests, not long streams — use `timeout` for logs/cp/wait.
-  local OC_REQUEST_TIMEOUT="${OC_REQUEST_TIMEOUT:-45s}"
-  local OC_CP_REQUEST_TIMEOUT="${OC_CP_REQUEST_TIMEOUT:-120s}"
-  local OC_LOGS_STREAM_TIMEOUT="${OC_LOGS_STREAM_TIMEOUT:-600s}"
-  local OC_LOGS_WAIT_TIMEOUT="${OC_LOGS_WAIT_TIMEOUT:-300s}"
-  local OC_CP_PROCESS_TIMEOUT="${OC_CP_PROCESS_TIMEOUT:-600s}"
-  local OC_EXEC_PROCESS_TIMEOUT="${OC_EXEC_PROCESS_TIMEOUT:-60s}"
-  local -a OCR=(oc --request-timeout="${OC_REQUEST_TIMEOUT}")
-  local -a OCR_CP=(oc --request-timeout="${OC_CP_REQUEST_TIMEOUT}")
-  if ! command -v timeout >/dev/null 2>&1; then
-      echo "ERROR: \`timeout\` not found in PATH — need coreutils for bounded oc logs/cp/wait" >&2
-      exit 1
-  fi
-  if ! command -v python3 >/dev/null 2>&1; then
-      echo "ERROR: python3 required for cluster-admin binding verification" >&2
-      exit 1
-  fi
-
-  # `wait` is a shell builtin — cannot use `timeout wait` (exits 127). Use wall-clock drain instead.
-  _duration_to_sec() {
-      local v="${1:-300s}"
-      if [[ "${v}" =~ ^[0-9]+$ ]]; then
-          echo "${v}"
-      elif [[ "${v}" =~ ^([0-9]+)s$ ]]; then
-          echo "${BASH_REMATCH[1]}"
-      else
-          echo "300"
-      fi
-  }
-
-  wait_for_logs_follower() {
-      local pid="${1:?}"
-      local max_sec
-      max_sec=$(_duration_to_sec "${OC_LOGS_WAIT_TIMEOUT}")
-      local start
-      start=$(date +%s)
-      while kill -0 "${pid}" 2>/dev/null; do
-          local now
-          now=$(date +%s)
-          if (( now - start >= max_sec )); then
-              echo "Log follower still running after ${max_sec}s — sending SIGKILL to pid ${pid}" >&2
-              kill -9 "${pid}" 2>/dev/null || true
-              wait "${pid}" 2>/dev/null || true
-              return 124
-          fi
-          sleep 1
-      done
-      wait "${pid}" 2>/dev/null || true
-      return 0
-  }
-
-  scanner_container_ready() {
-      local ready
-      ready=$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.containerStatuses[?(@.name=="scanner")].ready}' 2>/dev/null || echo "false")
-      [[ "${ready}" == "true" ]]
-  }
-
-  # Stop oc logs -f before oc cp — concurrent attach/exec against the scanner pod flakes on busy apiserver links.
-  stop_logs_follower() {
-      local pid="${1:?}"
-      kill "${pid}" 2>/dev/null || true
-      wait_for_logs_follower "${pid}" || true
-  }
-
-  copy_scanner_artifacts_from_pod() {
-      local attempts="${OC_CP_RETRY_ATTEMPTS:-12}"
-      local interval="${OC_CP_RETRY_INTERVAL:-10}"
-      local attempt=0
-      mkdir -p "${SCANNER_ARTIFACT_DIR}"
-      while (( attempt < attempts )); do
-          attempt=$((attempt + 1))
-          local phase
-          phase=$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-          if scanner_container_ready || [[ "${phase}" == "Succeeded" || "${phase}" == "Failed" ]]; then
-              # shellcheck disable=SC2086
-              if timeout "${OC_CP_PROCESS_TIMEOUT}" "${OCR_CP[@]}" cp -c scanner "${NAMESPACE}/tls-scanner:/results/." "${SCANNER_ARTIFACT_DIR}/"; then
-                  if [[ -f "${SCANNER_ARTIFACT_DIR}/results.json" ]]; then
-                      echo "Artifacts copied via oc cp (attempt ${attempt})"
-                      return 0
-                  fi
-                  echo "Warning: oc cp succeeded but results.json missing (attempt ${attempt})" >&2
-              else
-                  echo "Warning: oc cp failed (attempt ${attempt}, phase=${phase})" >&2
-              fi
-              if scanner_container_ready; then
-                  # shellcheck disable=SC2086
-                  if timeout "${OC_CP_PROCESS_TIMEOUT}" "${OCR[@]}" exec pod/tls-scanner -n "${NAMESPACE}" -c scanner -- tar czf - -C /results . \
-                      | tar xzf - -C "${SCANNER_ARTIFACT_DIR}"; then
-                      if [[ -f "${SCANNER_ARTIFACT_DIR}/results.json" ]]; then
-                          echo "Artifacts copied via exec tar fallback (attempt ${attempt})"
-                          return 0
-                      fi
-                  fi
-              fi
-          else
-              echo "Warning: scanner container not ready for copy (attempt ${attempt}, phase=${phase})" >&2
-          fi
-          if (( attempt < attempts )); then
-              echo "Artifact copy retry in ${interval}s (${attempt}/${attempts})..."
-              sleep "${interval}"
-          fi
-      done
-      echo "ERROR: could not copy scanner artifacts (missing ${SCANNER_ARTIFACT_DIR}/results.json)" >&2
-      return 1
-  }
 
   local scanner_pod_mode="${SCANNER_POD_MODE:-false}"
   case "${scanner_pod_mode}" in
@@ -475,15 +213,15 @@ run_tls_scan() {
       # Shared clusters can retain tls-scanner resources from prior jobs.
       # Pods are immutable; delete any leftover namespace before recreating.
       echo "Removing any previous tls-scanner resources..."
-      "${OCR[@]}" delete namespace "${NAMESPACE}" --ignore-not-found --wait=true --timeout=120s || true
-      "${OCR[@]}" create namespace "${NAMESPACE}"
+      oc delete namespace "${NAMESPACE}" --ignore-not-found --wait=true --timeout=120s || true
+      oc create namespace "${NAMESPACE}"
   else
       # Just remove any leftover scanner pod from a prior run; do not touch the namespace.
-      "${OCR[@]}" delete pod/tls-scanner -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s || true
+      oc delete pod/tls-scanner -n "${NAMESPACE}" --ignore-not-found --wait=true --timeout=60s || true
   fi
 
   # Dedicated SA for cluster-wide API access; never use the namespace default SA.
-  "${OCR[@]}" create serviceaccount "${SCANNER_SA_NAME}" -n "${NAMESPACE}" --dry-run=client -o yaml | "${OCR[@]}" apply -f -
+  oc create serviceaccount "${SCANNER_SA_NAME}" -n "${NAMESPACE}" --dry-run=client -o yaml | oc apply -f -
 
   # Snapshot locals into global variables so the EXIT trap can reference them
   # after run_tls_scan returns and locals go out of scope.
@@ -491,103 +229,21 @@ run_tls_scan() {
   _CLEANUP_OWNS_NAMESPACE="${OWNS_NAMESPACE}"
   _CLEANUP_SCANNER_SA_NAME="${SCANNER_SA_NAME}"
 
-  cluster_admin_binding_present() {
-      local ns="$1"
-      local sa="$2"
-      local json st=0
-      # timeout + --request-timeout: a stalled apiserver cannot hold this call open.
-      if ! json=$(_oc_get_clusterrolebindings_json 2>/dev/null); then
-          return 2
-      fi
-      printf '%s' "${json}" | _classify_crb_json "${ns}" "${sa}" || st=$?
-      return "${st}"
-  }
-
   cleanup_scanner_rbac() {
       local ns="${_CLEANUP_NAMESPACE}"
       local sa="${_CLEANUP_SCANNER_SA_NAME}"
-      local max_attempts="${RBAC_CLEANUP_VERIFY_ATTEMPTS:-15}"
-      local sleep_sec="${RBAC_CLEANUP_VERIFY_SLEEP_SEC:-4}"
-      local wall_sec="${RBAC_CLEANUP_WALL_TIMEOUT:-180}"
-      local deadline_epoch=$(( $(date +%s) + wall_sec ))
-      local attempt
       echo "Removing tls-scanner RBAC for SA ${sa} in ${ns}..."
-      if ! timeout "${OC_REQUEST_TIMEOUT}" "${OCR[@]}" adm policy remove-cluster-role-from-user cluster-admin -z "${sa}" -n "${ns}"; then
-          echo "ERROR: cluster-admin removal for ${sa} in ${ns} failed (bound by ${OC_REQUEST_TIMEOUT})" >&2
-          return 1
-      fi
-      for (( attempt=1; attempt<=max_attempts; attempt++ )); do
-          if (( $(date +%s) >= deadline_epoch )); then
-              echo "ERROR: RBAC verification exceeded wall-clock ${wall_sec}s" >&2
-              return 1
-          fi
-          cluster_admin_binding_present "${ns}" "${sa}"
-          local st=$?
-          if [[ "${st}" -eq 10 ]]; then
-              echo "Verified: no cluster-admin ClusterRoleBinding for system:serviceaccount:${ns}:${sa}"
-              break
-          fi
-          if [[ "${st}" -eq 2 ]]; then
-              echo "Warning: could not list clusterrolebindings (attempt ${attempt}/${max_attempts}), retrying..." >&2
-          elif [[ "${st}" -eq 11 ]]; then
-              echo "ERROR: JSON parse error from clusterrolebinding list — cannot verify RBAC" >&2
-              return 1
-          elif [[ "${st}" -eq 12 ]]; then
-              echo "ERROR: unexpected ClusterRoleBinding list shape (expected .items list) — cannot verify RBAC" >&2
-              return 1
-          elif [[ "${st}" -eq 14 ]]; then
-              echo "ERROR: malformed ClusterRoleBinding entry in list — cannot verify RBAC" >&2
-              return 1
-          elif [[ "${st}" -eq 13 ]]; then
-              echo "ERROR: internal error while parsing ClusterRoleBinding list — cannot verify RBAC" >&2
-              return 1
-          else
-              echo "Waiting for cluster-admin binding removal (attempt ${attempt}/${max_attempts})..."
-          fi
-          sleep "${sleep_sec}"
-      done
-      cluster_admin_binding_present "${ns}" "${sa}"
-      local final_st=$?
-      if [[ "${final_st}" -eq 0 ]]; then
-          echo "ERROR: cluster-admin binding still present for ${sa} in ${ns} after cleanup" >&2
-          return 1
-      fi
-      if [[ "${final_st}" -eq 2 ]]; then
-          echo "ERROR: could not confirm cluster-admin removal — API unavailable after ${max_attempts} attempts" >&2
-          return 1
-      fi
-      if [[ "${final_st}" -eq 10 ]]; then
-          :
-      elif [[ "${final_st}" -eq 11 ]]; then
-          echo "ERROR: JSON parse error from clusterrolebinding list — cannot verify RBAC" >&2
-          return 1
-      elif [[ "${final_st}" -eq 12 ]]; then
-          echo "ERROR: unexpected ClusterRoleBinding list shape — cannot verify RBAC" >&2
-          return 1
-      elif [[ "${final_st}" -eq 14 ]]; then
-          echo "ERROR: malformed ClusterRoleBinding entry in list — cannot verify RBAC" >&2
-          return 1
-      elif [[ "${final_st}" -eq 13 ]]; then
-          echo "ERROR: internal error while parsing ClusterRoleBinding list — cannot verify RBAC" >&2
-          return 1
-      else
-          echo "ERROR: unexpected exit code from cluster-admin verification (${final_st})" >&2
-          return 1
-      fi
-      if ! timeout "${OC_REQUEST_TIMEOUT}" "${OCR[@]}" adm policy remove-scc-from-user privileged -z "${sa}" -n "${ns}" 2>/dev/null; then
-          echo "Warning: privileged SCC removal for ${sa} in ${ns} failed or timed out (request-timeout=${OC_REQUEST_TIMEOUT})" >&2
-      fi
-      return 0
+      oc adm policy remove-cluster-role-from-user cluster-admin -z "${sa}" -n "${ns}" 2>/dev/null || true
+      oc adm policy remove-scc-from-user privileged -z "${sa}" -n "${ns}" 2>/dev/null || true
   }
 
   cleanup() {
       echo "Cleaning up..."
-      # Best-effort on EXIT trap (abnormal path); success path verifies RBAC via cleanup_scanner_rbac || exit 1
-      cleanup_scanner_rbac || echo "Warning: RBAC cleanup incomplete during EXIT trap" >&2
+      cleanup_scanner_rbac
       if [[ "${_CLEANUP_OWNS_NAMESPACE}" == "true" ]]; then
-          "${OCR[@]}" delete namespace "${_CLEANUP_NAMESPACE}" --ignore-not-found --wait=false || true
+          oc delete namespace "${_CLEANUP_NAMESPACE}" --ignore-not-found --wait=false || true
       else
-          "${OCR[@]}" delete pod/tls-scanner -n "${_CLEANUP_NAMESPACE}" --ignore-not-found --wait=false || true
+          oc delete pod/tls-scanner -n "${_CLEANUP_NAMESPACE}" --ignore-not-found --wait=false || true
       fi
   }
   trap cleanup EXIT
@@ -624,12 +280,12 @@ ${run_as_user_yaml}
   fi
 
   # Grant cluster-admin to the dedicated scanner SA (not the default namespace SA).
-  "${OCR[@]}" adm policy add-cluster-role-to-user cluster-admin -z "${SCANNER_SA_NAME}" -n "${NAMESPACE}"
+  oc adm policy add-cluster-role-to-user cluster-admin -z "${SCANNER_SA_NAME}" -n "${NAMESPACE}"
 
   # Grant privileged SCC to the service account (required for hostNetwork/hostPID/privileged
   # container in host-mode scans).
   if [[ "${OWNS_NAMESPACE}" == "true" && "${scanner_pod_mode}" == "false" ]]; then
-      "${OCR[@]}" adm policy add-scc-to-user privileged -z "${SCANNER_SA_NAME}" -n "${NAMESPACE}"
+      oc adm policy add-scc-to-user privileged -z "${SCANNER_SA_NAME}" -n "${NAMESPACE}"
   fi
 
   # Wait for RBAC/SCC changes to propagate before creating the pod
@@ -649,7 +305,7 @@ ${SCANNER_EXTRA_POD_LABELS}"
   fi
 
   # Create the scanner pod
-  cat <<EOF | "${OCR[@]}" create -f -
+  cat <<EOF | oc create -f -
 apiVersion: v1
 kind: Pod
 metadata:
@@ -706,40 +362,24 @@ ${SECURITY_CONTEXT_YAML}
 EOF
 
   echo "Waiting for scanner pod to start..."
-  "${OCR[@]}" wait --for=condition=Ready pod/tls-scanner -n "${NAMESPACE}" --timeout=5m || {
+  oc wait --for=condition=Ready pod/tls-scanner -n "${NAMESPACE}" --timeout=5m || {
       echo "Pod failed to start:"
-      "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}"
-      "${OCR[@]}" get events -n "${NAMESPACE}"
+      oc describe pod/tls-scanner -n "${NAMESPACE}"
+      oc get events -n "${NAMESPACE}"
       exit 1
   }
 
-  echo "Streaming scanner logs (live, process bound ${OC_LOGS_STREAM_TIMEOUT})..."
-  # shellcheck disable=SC2086
-  timeout "${OC_LOGS_STREAM_TIMEOUT}" "${OCR[@]}" logs -f pod/tls-scanner -n "${NAMESPACE}" &
+  echo "Streaming scanner logs (live)..."
+  oc logs -f pod/tls-scanner -n "${NAMESPACE}" &
   LOGS_PID=$!
 
-  # Wall-clock deadline for scan.done (API calls are additionally bounded by --request-timeout).
-  local scan_done_found=false
-  local completion_timed_out=false
-  local completion_poll_interval="${SCAN_COMPLETION_POLL_INTERVAL:-15}"
-  local completion_wall_deadline_sec="${SCAN_COMPLETION_WAIT_TIMEOUT:-900}"
-  local completion_deadline_epoch
-  completion_deadline_epoch=$(( $(date +%s) + completion_wall_deadline_sec ))
-  echo "Waiting for scan to finish (pod stays alive 120s after scan for artifact collection; wall-clock deadline ${completion_wall_deadline_sec}s)..."
+  echo "Waiting for scan to finish (pod stays alive 120s after scan for artifact collection)..."
   while true; do
-      local now_sec
-      now_sec=$(date +%s)
-      if (( now_sec >= completion_deadline_epoch )); then
-          completion_timed_out=true
-          break
-      fi
-      phase=$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+      phase=$(oc get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
       echo "Poll: phase=${phase}"
       # Scanner completion check first — must copy artifacts while pod is still running.
-      # shellcheck disable=SC2086
-      if timeout "${OC_EXEC_PROCESS_TIMEOUT}" "${OCR[@]}" exec pod/tls-scanner -n "${NAMESPACE}" -- test -f /results/scan.done 2>/dev/null; then
+      if oc exec pod/tls-scanner -n "${NAMESPACE}" -- test -f /results/scan.done 2>/dev/null; then
           echo "/results/scan.done found — proceeding to copy artifacts"
-          scan_done_found=true
           break
       fi
       # Fallback: pod already exited (sleep window expired or crash).
@@ -747,22 +387,29 @@ EOF
           echo "Warning: pod ${phase} before artifact collection — oc cp will likely fail"
           break
       fi
-      sleep "${completion_poll_interval}"
+      sleep 15
   done
 
-  if [[ "${completion_timed_out}" == "true" ]] && [[ "${scan_done_found}" != "true" ]]; then
-      echo "ERROR: wall-clock deadline (${completion_wall_deadline_sec}s) expired waiting for /results/scan.done (phase=${phase})" >&2
-      stop_logs_follower "${LOGS_PID}"
-      echo "Copying artifacts (partial)..."
-      copy_scanner_artifacts_from_pod || true
-      "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}" >&2 || true
-      exit 1
-  fi
+  kill "${LOGS_PID}" 2>/dev/null || true
+  wait "${LOGS_PID}" 2>/dev/null || true
 
-  stop_logs_follower "${LOGS_PID}"
+  local cp_attempt cp_max="${TLS_OC_CP_RETRY_ATTEMPTS:-12}" cp_interval="${TLS_OC_CP_RETRY_INTERVAL:-10}"
+  cp_attempt=0
   echo "Copying artifacts..."
-  if ! copy_scanner_artifacts_from_pod; then
-      "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}" >&2 || true
+  while (( cp_attempt < cp_max )); do
+      cp_attempt=$((cp_attempt + 1))
+      if oc cp -c scanner "${NAMESPACE}/tls-scanner:/results/." "${SCANNER_ARTIFACT_DIR}/" && [[ -f "${SCANNER_ARTIFACT_DIR}/results.json" ]]; then
+          echo "Artifacts copied (attempt ${cp_attempt})"
+          break
+      fi
+      if (( cp_attempt < cp_max )); then
+          echo "Warning: oc cp missing results.json (attempt ${cp_attempt}/${cp_max}); retry in ${cp_interval}s" >&2
+          sleep "${cp_interval}"
+      fi
+  done
+  if [[ ! -f "${SCANNER_ARTIFACT_DIR}/results.json" ]]; then
+      echo "ERROR: could not copy scanner results.json from pod" >&2
+      oc describe pod/tls-scanner -n "${NAMESPACE}" >&2 || true
       exit 1
   fi
 
@@ -783,9 +430,9 @@ EOF
   # the scanner's exit code so CI marks the job accordingly, but do not treat
   # it as a timeout or describe the pod as failed when artifacts were collected.
   local pod_phase
-  pod_phase="$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")"
+  pod_phase="$(oc get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")"
   local pod_exit_code
-  pod_exit_code="$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")"
+  pod_exit_code="$(oc get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")"
 
   if [[ "${pod_phase}" == "Failed" ]]; then
       echo "Scanner pod exited with phase=${pod_phase} code=${pod_exit_code}"
@@ -793,41 +440,35 @@ EOF
           echo "Artifacts were collected — scanner found TLS compliance issues."
       else
           echo "No artifacts found — scanner may have crashed."
-          "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}"
+          oc describe pod/tls-scanner -n "${NAMESPACE}"
       fi
       exit "${pod_exit_code:-1}"
   elif [[ "${pod_phase}" != "Succeeded" ]]; then
-      # Wall-clock bound only (each oc get may take up to OC_REQUEST_TIMEOUT).
-      local pod_terminal_poll_sec="${POD_TERMINAL_POLL_TIMEOUT:-600}"
-      local poll_interval="${POD_TERMINAL_POLL_INTERVAL:-10}"
-      local pod_terminal_deadline_epoch
-      pod_terminal_deadline_epoch=$(( $(date +%s) + pod_terminal_poll_sec ))
-      echo "Scanner pod in unexpected phase: ${pod_phase} — polling until terminal (wall-clock ${pod_terminal_poll_sec}s)"
-      while true; do
-          local poll_now_sec
-          poll_now_sec=$(date +%s)
-          if (( poll_now_sec >= pod_terminal_deadline_epoch )); then
-              break
-          fi
-          pod_phase="$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")"
+      local poll_timeout=600
+      local poll_interval=10
+      echo "Scanner pod in unexpected phase: ${pod_phase} — polling until terminal (up to $((poll_timeout/60))m)"
+      local wait_elapsed=0
+      while (( wait_elapsed < poll_timeout )); do
+          pod_phase="$(oc get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")"
           if [[ "${pod_phase}" == "Succeeded" || "${pod_phase}" == "Failed" ]]; then
               break
           fi
           sleep "${poll_interval}"
+          (( wait_elapsed += poll_interval )) || true
       done
       if [[ "${pod_phase}" == "Failed" ]]; then
-          pod_exit_code="$("${OCR[@]}" get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")"
+          pod_exit_code="$(oc get pod/tls-scanner -n "${NAMESPACE}" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")"
           echo "Scanner pod exited with phase=${pod_phase} code=${pod_exit_code}"
           if [[ -f "${SCANNER_ARTIFACT_DIR}/junit_tls_scan.xml" ]]; then
               echo "Artifacts were collected — scanner found TLS compliance issues."
           else
               echo "No artifacts found — scanner may have crashed."
-              "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}"
+              oc describe pod/tls-scanner -n "${NAMESPACE}"
           fi
           exit "${pod_exit_code:-1}"
       elif [[ "${pod_phase}" != "Succeeded" ]]; then
           echo "Scanner did not complete successfully - timeout exceeded (phase: ${pod_phase})"
-          "${OCR[@]}" describe pod/tls-scanner -n "${NAMESPACE}"
+          oc describe pod/tls-scanner -n "${NAMESPACE}"
           exit 1
       fi
   fi
@@ -837,7 +478,7 @@ EOF
   ls -la "${SCANNER_ARTIFACT_DIR}" || true
 
   # Drop elevated bindings before returning (namespace may outlive this job).
-  cleanup_scanner_rbac || exit 1
+  cleanup_scanner_rbac
 
   # Unregister the trap so it doesn't fire after the function returns (local
   # variables NAMESPACE/OWNS_NAMESPACE would be unbound at that point).
@@ -846,15 +487,6 @@ EOF
   fi
   trap - EXIT
 }
-
-if [[ "${1:-}" == "--rbac-selftest" ]]; then
-  _rbac_selftest
-  exit $?
-fi
-if [[ "${1:-}" == "--confirm-rbac-removed" ]]; then
-  _confirm_rbac_removed
-  exit $?
-fi
 
 if [[ "${TLS_SCANNER_RUN_HYPERSHIFT:-false}" == "true" ]]; then
   OVERALL_EXIT_CODE=0
