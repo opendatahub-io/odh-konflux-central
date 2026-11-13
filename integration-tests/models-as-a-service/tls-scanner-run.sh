@@ -16,6 +16,24 @@ if [[ -n "${SHARED_DIR:-}" ]] && test -f "${SHARED_DIR}/proxy-conf.sh"; then
   source "${SHARED_DIR}/proxy-conf.sh"
 fi
 
+# Kubernetes quantity → bytes (binary Ki/Mi/Gi/Ti and decimal k/M/G/T).
+_k8s_mem_bytes() {
+  awk -v v="$1" 'BEGIN {
+    if (match(v, /^([0-9]+(\.[0-9]+)?)([A-Za-z]*)$/, a)) {
+      n = a[1] + 0; u = a[3]
+      if (u == "Ki") { print int(n * 1024); exit }
+      if (u == "Mi") { print int(n * 1048576); exit }
+      if (u == "Gi") { print int(n * 1073741824); exit }
+      if (u == "Ti") { print int(n * 1099511627776); exit }
+      if (u == "k")  { print int(n * 1000); exit }
+      if (u == "M")  { print int(n * 1000000); exit }
+      if (u == "G")  { print int(n * 1000000000); exit }
+      if (u == "T")  { print int(n * 1000000000000); exit }
+    }
+    exit 1
+  }'
+}
+
 run_tls_scan() {
 
   local scanner_pod_mode="${SCANNER_POD_MODE:-false}"
@@ -191,10 +209,10 @@ run_tls_scan() {
       fi
     fi
     if [[ -n "${SCANNER_MEM_LIMIT:-}" && -z "${SCANNER_MEM_REQUEST:-}" ]]; then
-      local req_mi lim_mi
-      req_mi=$(echo "${scanner_mem_request}" | awk '/Gi$/ { sub(/Gi$/,""); print ($0+0)*1024; next } /Mi$/ { sub(/Mi$/,""); print $0+0; next } { print $0+0 }')
-      lim_mi=$(echo "${scanner_mem_limit}" | awk '/Gi$/ { sub(/Gi$/,""); print ($0+0)*1024; next } /Mi$/ { sub(/Mi$/,""); print $0+0; next } { print $0+0 }')
-      if awk "BEGIN { exit !(${req_mi} > ${lim_mi}) }"; then
+      local req_b lim_b
+      req_b=$(_k8s_mem_bytes "${scanner_mem_request}") || req_b=0
+      lim_b=$(_k8s_mem_bytes "${scanner_mem_limit}") || lim_b=0
+      if (( req_b > lim_b )); then
         scanner_mem_request="${scanner_mem_limit}"
       fi
     fi
