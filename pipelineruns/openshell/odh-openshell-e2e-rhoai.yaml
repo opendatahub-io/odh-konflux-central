@@ -1,0 +1,65 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+# Builds quay.io/opendatahub/odh-openshell-e2e:<branch> on every push to
+# rhoai-*-e2e. Authored in odh-konflux-central pipelineruns/openshell/.
+#
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/openshell?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "push"
+      && target_branch.matches("^rhoai-[0-9]+\\.[0-9]+(-ea\\.[0-9]+)?-e2e$")
+  creationTimestamp: null
+  labels:
+    appstudio.openshift.io/application: opendatahub-builds
+    appstudio.openshift.io/component: odh-openshell-e2e-ci
+    pipelines.appstudio.openshift.io/type: build
+  name: odh-openshell-e2e-on-rhoai
+  namespace: open-data-hub-tenant
+spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/opendatahub/odh-openshell-e2e:{{target_branch}}
+  - name: dockerfile
+    value: deploy/docker/Dockerfile.konflux.e2e-odh
+  - name: path-context
+    value: .
+  - name: hermetic
+    value: "true"
+  - name: build-platforms
+    value:
+    - linux-m2xlarge/amd64
+    - linux-m2xlarge/arm64
+  - name: prefetch-input
+    value: |
+      [
+        {"type": "cargo", "path": "."},
+        {"type": "cargo", "path": "e2e/rust"},
+        {"type": "pip", "path": "odh", "requirements_files": ["requirements.txt"], "binary": {"packages": ":all:", "arch": "x86_64,aarch64", "os": "linux", "py_version": 311, "py_impl": "cp"}},
+        {"type": "rpm", "path": "deploy/konflux/e2e-odh"},
+        {"type": "generic", "path": "deploy/konflux/e2e-odh", "lockfile": "generic-fetcher.yaml"}
+      ]
+  pipelineRef:
+    resolver: git
+    params:
+    - name: url
+      value: https://github.com/opendatahub-io/odh-konflux-central.git
+    - name: revision
+      value: main
+    - name: pathInRepo
+      value: pipeline/multi-arch-container-build.yaml
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-odh-openshell-e2e-ci
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+status: {}
