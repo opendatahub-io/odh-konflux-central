@@ -46,8 +46,8 @@ metadata:
 spec:
   application: rhoai-fbc-fragment-ocp-421
   contexts:
-    - description: RHOAI EPHC smoke slice B when rhoai-fbc-fragment-ocp-421 builds
-      name: component_rhoai-fbc-fragment-ocp-421
+    - description: EPHC 421 slice B on CLI override Snapshots (rhoai_e2e.py --sync-fbc-e2e-snapshots)
+      name: override
   params:
     - name: CLUSTER_SOURCE
       value: "EPHC"
@@ -69,6 +69,8 @@ spec:
       value: "unspecified (default)"
     - name: MIN_RHOAI_VERSION
       value: "3.5"
+    - name: WAIT_FOR_CONFORMA
+      value: "false"
     - name: TEST_GATES
       value: "bvt,smoke"
     - name: COMPONENTS

@@ -1406,6 +1406,125 @@ class RunnerTriggerMixin:
         )
         print(f"  Stream existing run: {watch_owned}", flush=True)
 
+    def run_sync_fbc_e2e_snapshots(self) -> int:
+        """Create override Snapshots on FBC fragment apps when the catalog digest changed."""
+        from runners.report.pipelinerun_metadata import (
+            build_cli_trigger_metadata,
+            build_manual_snapshot_trigger_labels,
+        )
+        from suite.fbc_e2e_snapshot_sync import parse_fbc_sync_slices, plan_fbc_e2e_snapshot_sync
+        from suite.constants import TRIGGER_TYPE_RH_NIGHTLY_AUTO
+        from suite.rh_nightly_auto_trigger import load_last_triggered_state
+
+        slices = parse_fbc_sync_slices(getattr(self.args, "sync_fbc_slices", "") or "")
+        state = load_last_triggered_state()
+        min_rhoai = "3.5"
+        force = bool(getattr(self.args, "force_sync_fbc", False))
+        dry_run = bool(getattr(self.args, "sync_fbc_dry_run", False))
+        plans = plan_fbc_e2e_snapshot_sync(
+            resolver=self,
+            namespace=self.args.namespace,
+            slices=slices,
+            state=state,
+            min_rhoai=min_rhoai,
+            force=force,
+        )
+        git_url, git_rev = self._trigger_scripts_git_source()
+
+        def _create_snapshot(ns: str, body: str) -> str:
+            proc = run_cmd(
+                ["oc", "create", "-n", ns, "-f", "-", "-o", "jsonpath={.metadata.name}"],
+                capture=True,
+                check=True,
+                input_text=body,
+            )
+            return (proc.stdout or "").strip()
+
+        from suite.fbc_e2e_snapshot_sync import build_fbc_override_snapshot_json, fbc_sync_exit_code
+        from suite.rh_nightly_auto_trigger import record_auto_trigger_success, save_last_triggered_state
+
+        triggered = 0
+        skipped = 0
+        failures = 0
+        for plan in plans:
+            if plan.get("action") == "fail":
+                failures += 1
+                print(
+                    f"ERROR ocp-{plan.get('slice')}: {plan.get('reason', '')}",
+                    file=sys.stderr,
+                )
+                continue
+            if plan.get("action") != "trigger":
+                skipped += 1
+                print(f"SKIP ocp-{plan.get('slice')}: {plan.get('reason', '')}")
+                continue
+            app = str(plan.get("application", ""))
+            component = str(plan.get("component", ""))
+            image = str(plan.get("image", ""))
+            snap_meta = plan.get("fbc_snapshot_meta")
+            labels = build_manual_snapshot_trigger_labels(
+                application=app,
+                run_owner=self.run_owner,
+                product="rhoai",
+                target_type="ephc",
+                fbcf_image=image,
+                scripts_git_url=git_url,
+                scripts_git_revision=git_rev,
+                upstream_git_url=DEFAULT_UPSTREAM_KONFLUX_GIT,
+                fbc_snapshot_meta=snap_meta if isinstance(snap_meta, dict) else None,
+                local_git_repo=self.script_dir.parent.parent,
+            )
+            ann = build_cli_trigger_metadata(
+                script_dir=self.script_dir,
+                trigger_argv=self.trigger_argv,
+                product="rhoai",
+                fbcf_image=image,
+                trigger_type=TRIGGER_TYPE_RH_NIGHTLY_AUTO,
+                scripts_git_url=git_url,
+                scripts_git_revision=git_rev,
+                upstream_git_url=DEFAULT_UPSTREAM_KONFLUX_GIT,
+                fbc_snapshot_meta=snap_meta if isinstance(snap_meta, dict) else None,
+                local_git_repo=self.script_dir.parent.parent,
+            )
+            body = build_fbc_override_snapshot_json(
+                namespace=self.args.namespace,
+                application=app,
+                fbc_component=component,
+                fbc_image=image,
+                labels=labels,
+                annotations=ann,
+                git_url=git_url,
+                git_revision=git_rev,
+            )
+            if dry_run:
+                print(f"DRY-RUN would create override Snapshot on {app} ({image})")
+                triggered += 1
+                continue
+            try:
+                snap_name = _create_snapshot(self.args.namespace, body)
+            except Exception as exc:
+                failures += 1
+                print(f"ERROR ocp-{plan.get('slice')}: Snapshot create failed: {exc}", file=sys.stderr)
+                continue
+            record_auto_trigger_success(
+                cluster_id="fbc-e2e-sync",
+                fbc_component=component,
+                fbc_image=image,
+                snapshot_name=snap_name,
+                state=state,
+            )
+            if not dry_run:
+                save_last_triggered_state(state)
+            triggered += 1
+            print(f"Created Snapshot {snap_name} on {app} (digest {plan.get('digest', '')[:16]}…)")
+        print(
+            f"FBC e2e sync: {triggered} triggered, {skipped} skipped, {failures} failed "
+            f"(slices={','.join(slices)})"
+        )
+        if failures:
+            return 1
+        return fbc_sync_exit_code(plans, triggered=triggered)
+
     def run_trigger_mode(self) -> None:
         self._apply_konflux_git_inference_from_clone_or_env()
         rows: list[tuple[str, str, str, str, str]] = []
