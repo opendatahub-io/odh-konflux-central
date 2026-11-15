@@ -143,6 +143,11 @@ def test_structural_incompatible_with_watch(parser) -> None:
         parse_cli_args(parser, ["-w", "--structural", "--rhoai-version", "3.6-ea.1"])
 
 
+def test_sync_fbc_aux_flags_require_sync_mode(parser) -> None:
+    with pytest.raises(AppError, match="require --sync-fbc-e2e-snapshots"):
+        parse_cli_args(parser, ["--product", "rhoai", "--sync-fbc-dry-run"])
+
+
 def test_quay_pull_secret_name_defaults_without_flag(parser) -> None:
     from suite.constants import DEFAULT_QUAY_PULL_SECRET_NAME
 

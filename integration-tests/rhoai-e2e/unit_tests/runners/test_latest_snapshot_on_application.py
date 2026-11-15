@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from runners.cli.cli import make_parser, parse_cli_args
 from runners.cli.runner import RhoaiE2ERunner
 from suite.constants import RHOAI_FBCF_IMAGE_REF_PATTERN, DEFAULT_APP, DEFAULT_NAMESPACE
+from suite.fbc_e2e_snapshot_sync import is_fbc_e2e_override_snapshot
 
 _FBC_IMAGE = (
     "quay.io/rhoai/rhoai-fbc-fragment@sha256:"
@@ -168,3 +169,55 @@ class LatestNamedComponentImageOnApplicationTest(unittest.TestCase):
         self.assertEqual(ts, "2026-09-15T00:00:00Z")
         self.assertEqual(img, img_35)
         self.assertEqual((meta or {}).get("name"), "snap-35")
+
+    def test_excludes_override_snapshots_when_requested(self) -> None:
+        runner = self._runner()
+        list_out = (
+            "NAME  TS\n"
+            "snap-build  2026-07-01T00:00:00Z\n"
+            "snap-override  2026-07-11T00:00:00Z\n"
+        )
+        img_build = _FBC_IMAGE
+        img_override = (
+            "quay.io/rhoai/rhoai-fbc-fragment@sha256:"
+            "0000000000000000000000000000000000000000000000000000000000000001"
+        )
+
+        def snap_json(name: str, image: str, *, override: bool) -> str:
+            meta: dict = {"name": name, "creationTimestamp": "2026-07-11T00:00:00Z"}
+            if override:
+                meta["labels"] = {"test.appstudio.openshift.io/type": "override"}
+            return json.dumps(
+                {
+                    "metadata": meta,
+                    "spec": {
+                        "components": [
+                            {"name": "rhoai-fbc-fragment-ocp-421", "containerImage": image}
+                        ]
+                    },
+                }
+            )
+
+        def fake_run(cmd, **kwargs):
+            del kwargs
+            proc = MagicMock()
+            proc.returncode = 0
+            if cmd[:4] == ["oc", "get", "snapshots", "-n"]:
+                proc.stdout = list_out
+            elif cmd[3] == "snap-override":
+                proc.stdout = snap_json("snap-override", img_override, override=True)
+            else:
+                proc.stdout = snap_json("snap-build", img_build, override=False)
+            return proc
+
+        with patch("runners.cli.runner_mixin_list.run_cmd", side_effect=fake_run):
+            ts, img, meta = runner.latest_named_component_image_on_application(
+                DEFAULT_NAMESPACE,
+                "rhoai-fbc-fragment-ocp-421",
+                "rhoai-fbc-fragment-ocp-421",
+                RHOAI_FBCF_IMAGE_REF_PATTERN,
+                snapshot_walk=5,
+                exclude_snapshot=is_fbc_e2e_override_snapshot,
+            )
+        self.assertEqual(img, img_build)
+        self.assertEqual((meta or {}).get("name"), "snap-build")

@@ -44,8 +44,8 @@ metadata:
 spec:
   application: rhoai-fbc-fragment-ocp-422
   contexts:
-    - description: EPHC 422 mlops+tail smoke when rhoai-fbc-fragment-ocp-422 builds
-      name: component_rhoai-fbc-fragment-ocp-422
+    - description: EPHC 422 mlops+tail on CLI override Snapshots (rhoai_e2e.py --sync-fbc-e2e-snapshots)
+      name: override
   params:
     - name: CLUSTER_SOURCE
       value: "EPHC"
@@ -67,6 +67,8 @@ spec:
       value: "unspecified (default)"
     - name: MIN_RHOAI_VERSION
       value: "3.5"
+    - name: WAIT_FOR_CONFORMA
+      value: "false"
     - name: TEST_GATES
       value: "bvt,smoke"
     - name: COMPONENTS
