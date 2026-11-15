@@ -421,6 +421,34 @@ def _add_konflux_group(parser: CliArgumentParser) -> None:
         ),
     )
     konflux.add_argument(
+        "--sync-fbc-e2e-snapshots",
+        action="store_true",
+        help=(
+            "Track A/B cadence: create Konflux override Snapshots on rhoai-fbc-fragment-ocp-{420,421,422} "
+            "when the catalog digest changed (Integration Service; ITS contexts override). "
+            "State file: ~/.cache/rhoai-e2e/rh-nightly-last-triggered.json."
+        ),
+    )
+    konflux.add_argument(
+        "--sync-fbc-slices",
+        metavar="LIST",
+        default="",
+        help=(
+            "With --sync-fbc-e2e-snapshots: comma-separated OCP minors to sync (default 420,421,422). "
+            "Use 422 alone for promotion-style konflux-rhoai1 cadence (~1–2/day cron)."
+        ),
+    )
+    konflux.add_argument(
+        "--force-sync-fbc",
+        action="store_true",
+        help="With --sync-fbc-e2e-snapshots: create Snapshots even when the digest is unchanged.",
+    )
+    konflux.add_argument(
+        "--sync-fbc-dry-run",
+        action="store_true",
+        help="With --sync-fbc-e2e-snapshots: print decisions without oc create.",
+    )
+    konflux.add_argument(
         "--local-its",
         action="store_true",
         help="With --run-its NAME: use the in-tree rhoai-e2e ITS manifest on this branch.",

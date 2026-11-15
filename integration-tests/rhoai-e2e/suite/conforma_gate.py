@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
@@ -82,7 +83,30 @@ def is_enterprise_contract_pipelinerun(item: dict[str, Any]) -> bool:
     if kind == EC_KIND_VALUE:
         return True
     scenario = str(labels.get("test.appstudio.openshift.io/scenario") or "").strip().lower()
-    return "conforma" in scenario or "enterprise-contract" in scenario
+    if "conforma" in scenario or "enterprise-contract" in scenario:
+        return True
+    meta = item.get("metadata") or {}
+    name = str(meta.get("name") or "").strip().lower() if isinstance(meta, dict) else ""
+    # FBC conforma PLRs on stone-prod-p02 use conforma-fbc-*; avoid broad conforma-* (unrelated test PLRs).
+    return name.startswith("conforma-fbc-")
+
+
+_CONFORMA_FBC_SCENARIO_RE = re.compile(r"^(conforma-fbc-rhoai-prod-ocp-\d{3})", re.IGNORECASE)
+
+
+def conforma_scenario_group_key(item: dict[str, Any]) -> str:
+    """Group conforma PLRs by ITS scenario (retries share one key)."""
+    labels = (item.get("metadata") or {}).get("labels") or {}
+    if isinstance(labels, dict):
+        scenario = str(labels.get("test.appstudio.openshift.io/scenario") or "").strip().lower()
+        if scenario:
+            return scenario
+    meta = item.get("metadata") or {}
+    name = str(meta.get("name") or "").strip().lower() if isinstance(meta, dict) else ""
+    match = _CONFORMA_FBC_SCENARIO_RE.match(name)
+    if match:
+        return match.group(1).lower()
+    return name or "(unknown)"
 
 
 def pipelinerun_succeeded_status(item: dict[str, Any]) -> str | None:
@@ -109,23 +133,23 @@ def evaluate_conforma_runs(items: list[dict[str, Any]]) -> ConformaGateDecision 
     if not ec_runs:
         return None
     names: list[str] = []
-    pending = 0
-    failed: list[str] = []
+    by_group: dict[str, list[dict[str, Any]]] = {}
     for item in ec_runs:
         meta = item.get("metadata") or {}
         name = str(meta.get("name") or "").strip() if isinstance(meta, dict) else ""
         if name:
             names.append(name)
-        outcome = pipelinerun_succeeded_status(item)
-        if outcome is None:
-            pending += 1
-        elif outcome == "False":
-            failed.append(name or "(unknown)")
-    if pending:
-        return None
-    if failed:
-        joined = ", ".join(failed[:3])
-        extra = f" (+{len(failed) - 3} more)" if len(failed) > 3 else ""
+        by_group.setdefault(conforma_scenario_group_key(item), []).append(item)
+    for group_items in by_group.values():
+        if any(pipelinerun_succeeded_status(x) is None for x in group_items):
+            return None
+    failed_groups: list[str] = []
+    for group, group_items in by_group.items():
+        if not any(pipelinerun_succeeded_status(x) == "True" for x in group_items):
+            failed_groups.append(group)
+    if failed_groups:
+        joined = ", ".join(failed_groups[:3])
+        extra = f" (+{len(failed_groups) - 3} more)" if len(failed_groups) > 3 else ""
         return ConformaGateDecision(
             gate=CONFORMA_GATE_SKIP,
             reason="conforma_failed",

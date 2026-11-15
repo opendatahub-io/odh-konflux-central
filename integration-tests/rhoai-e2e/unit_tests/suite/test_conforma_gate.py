@@ -92,19 +92,38 @@ class ConformaGateTest(unittest.TestCase):
         }
         self.assertTrue(is_enterprise_contract_pipelinerun(item))
 
+    def test_is_enterprise_contract_by_name_prefix_without_labels(self) -> None:
+        item = {"metadata": {"name": "conforma-fbc-rhoai-prod-ocp-420-8tvsW", "labels": {}}}
+        self.assertTrue(is_enterprise_contract_pipelinerun(item))
+
+    def test_is_not_enterprise_contract_by_broad_conforma_prefix(self) -> None:
+        item = {"metadata": {"name": "conforma-unrelated-smoke-abc", "labels": {}}}
+        self.assertFalse(is_enterprise_contract_pipelinerun(item))
+
     def test_evaluate_pending(self) -> None:
         self.assertIsNone(
             evaluate_conforma_runs([_pr("ec-1", succeeded=None), _pr("olm-1", succeeded="True", ec=False)])
         )
 
-    def test_evaluate_failed(self) -> None:
-        decision = evaluate_conforma_runs(
-            [_pr("ec-1", succeeded="False"), _pr("ec-2", succeeded="True")]
-        )
+    def test_evaluate_failed_independent_scenarios(self) -> None:
+        fail = _pr("conforma-fbc-rhoai-prod-ocp-420-a", succeeded="False")
+        ok = _pr("conforma-fbc-rhoai-prod-ocp-421-b", succeeded="True")
+        decision = evaluate_conforma_runs([fail, ok])
         self.assertIsNotNone(decision)
         assert decision is not None
         self.assertEqual(decision.gate, CONFORMA_GATE_SKIP)
         self.assertIn("conforma failed", decision.note)
+
+    def test_evaluate_retry_success_same_scenario(self) -> None:
+        scenario = "conforma-fbc-rhoai-prod-ocp-420"
+        fail = _pr("conforma-fbc-rhoai-prod-ocp-420-old", succeeded="False")
+        fail["metadata"]["labels"]["test.appstudio.openshift.io/scenario"] = scenario
+        ok = _pr("conforma-fbc-rhoai-prod-ocp-420-new", succeeded="True")
+        ok["metadata"]["labels"]["test.appstudio.openshift.io/scenario"] = scenario
+        decision = evaluate_conforma_runs([fail, ok])
+        self.assertIsNotNone(decision)
+        assert decision is not None
+        self.assertEqual(decision.gate, CONFORMA_GATE_PASS)
 
     def test_evaluate_passed(self) -> None:
         decision = evaluate_conforma_runs([_pr("ec-1", succeeded="True")])

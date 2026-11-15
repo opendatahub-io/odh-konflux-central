@@ -34,7 +34,7 @@ spec:
 # the first document). document 2 = IntegrationTestScenario (`--enable-its` / `--run-its`).
 # Auto ITS: external konflux-rhoai1 (ROSA HCP install-data S3), RHOAI install on ocp-422 FBC builds.
 # CLUSTER_SOURCE is S3-only (no tenant kubeconfig Secret); login via openshift-cli-installer zip + Vault rosaCcsAdmin.
-# MIN_RHOAI_VERSION=3.5 is enforced in wait-for-conforma via Snapshot PAC metadata (catalog line).
+# MIN_RHOAI_VERSION=3.5 skips e2e when the snapshot catalog line is below the floor (see wait-for-conforma).
 apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
@@ -45,8 +45,8 @@ metadata:
 spec:
   application: rhoai-fbc-fragment-ocp-422
   contexts:
-    - description: RHOAI E2E on konflux-rhoai1 when rhoai-fbc-fragment-ocp-422 FBC builds
-      name: component_rhoai-fbc-fragment-ocp-422
+    - description: konflux-rhoai1 matrix on CLI override Snapshots (promotion cadence; --sync-fbc-slices 422)
+      name: override
   params:
     - name: CLUSTER_SOURCE
       value: rhoai-e2e-s3-konflux-rhoai1
@@ -70,6 +70,8 @@ spec:
       value: "unspecified (default)"
     - name: MIN_RHOAI_VERSION
       value: "3.5"
+    - name: WAIT_FOR_CONFORMA
+      value: "false"
     - name: TEST_GATES
       value: "bvt,smoke"
     - name: COMPONENTS
