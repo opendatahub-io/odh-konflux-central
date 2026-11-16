@@ -28,11 +28,6 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `rhoai-must-gather-tag` | Tag for `registry.redhat.io/rhoai/odh-must-gather-rhel9:<tag>` used by the must-gather step (default `v3.5.0`). Ignored when `rhoai-must-gather-image` is set. |
 | `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
 | `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
-| `tls-pqc-check` | When `"true"` (default), run TLS/PQC scanner after smoke on the same cluster. |
-| `tls-component-filter` | Pod label filter for MaaS + AI Gateway workloads (also drives post-scan validation via `TLS_COMPONENT_FILTER`). |
-| `tls-scanner-image` | Scanner image (default `quay.io/opendatahub/tls-scanner:latest`). Deploy script is cloned from `opendatahub-io/tls-scanner` `main`. |
-| `odh-konflux-central-git-url` | Remote for [`validate-maas-tls-pqc-results.py`](validate-maas-tls-pqc-results.py) sparse-clone (default upstream). |
-| `odh-konflux-central-revision` | Branch, tag, or SHA for that script (default `main`; match fork SHA when testing a konflux PR). |
 
 **Workspaces**
 
@@ -43,25 +38,18 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 1. **`generate-snapshot`** — builds a **composite snapshot** JSON listing images and git metadata for every component in `group-components` (rhoai-konflux `generate-snapshot-for-group-testing` task).
 2. **`audit-snapshot`** — verifies each component row has non-empty image, `git.commit`, and `git.url`; writes PR fields from PAC annotations/labels (`pipelinesascode.tekton.dev/sender`, `pull-request`, `url-repository`, `url-org`, `sha`, …).
 3. **`provision-eaas-space`** / **`provision-cluster`** — EaaS space + Hypershift cluster (`m5.2xlarge`), same build-definitions stepactions as other ODH integration tests.
-4. **`e2e-maas-openshift`** (timeout **2h30m**) — clone `models-as-a-service`, run smoke, then **`tls-pqc-scan`** on the **same** kubeconfig when `tls-pqc-check=true` (runs even if smoke failed). **`ARTIFACT_DIR`** holds e2e, tls-scanner, and must-gather output. Steps use **`onError: continue`**; **`fail-if-needed`** fails the run after artifacts upload if smoke or TLS failed; a **missing** `tls-scan-status` file (e.g. task timeout before the tls step) is treated as TLS failure in the message. If runs exceed the task budget, follow-up is split TLS into its own task or shorter smoke (see PR #764).
+4. **`e2e-maas-openshift`** (timeout **2h30m**, unchanged) — clone `models-as-a-service`, run smoke, then **`tls-pqc-scan`** on the same cluster (runs even if smoke failed). **`ARTIFACT_DIR`** holds e2e, `tls-scanner/`, and must-gather output. Steps use **`onError: continue`**; **`fail-if-needed`** fails after artifact upload if smoke or TLS failed.
 5. **`must-gather`** — plain OpenShift must-gather first, then official RHOAI must-gather (`registry.redhat.io/rhoai/odh-must-gather-rhel9` + `rhoai-must-gather-tag`, default `v3.5.0`) for **`aigateway`** (MaaS CRs / Kuadrant TRLPs) and **`kserve`** (LLMInferenceService), under `ARTIFACT_DIR` (also `onError: continue`). Each gather continues on failure so one broken plugin cannot skip the others. RHOAI gather commands export ODH namespaces (`OPERATOR_NAMESPACE=openshift-operators`, `APPLICATIONS_NAMESPACE` / `MONITORING_NAMESPACE` / `NOTEBOOK_NAMESPACE=opendatahub`) so must-gather does not early-exit looking for `rhods-operator`.
 6. **`git-push-artifacts`** — stages `ARTIFACT_DIR` into `opendatahub-io/odh-build-metadata` branch `ci-artifacts` under `test-artifacts/<pipelinerun-name>` (`secure-git-push` stepaction).
 7. **`finally` → `push-ci-artifacts-and-update-pr`** — sparse-clone that path, **push OCI** (`secure-push-oci` + `odh-registry-secret`), **comment on the PR** (`pull-request-comment`, inputs from `audit-snapshot` results and `$(tasks.status)`), **delete** the transient directory under `test-artifacts/` (`cleanup-git-repo`).
 
-### TLS / PQC after smoke (Konflux)
+### TLS / PQC after smoke
 
-**`tls-pqc-scan`** shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` and runs **`python -m tls_scanner.deploy`** with **`quay.io/opendatahub/tls-scanner`** (`tls-scanner-image`), namespaces `opendatahub,odh-ai-gateway-infra`, `--pqc-check`, `--out-dir` `$ARTIFACT_DIR/tls-scanner`. Post-scan gate: [`validate-maas-tls-pqc-results.py`](validate-maas-tls-pqc-results.py) (sparse-clone from this repo) — `TLS_COMPONENT_FILTER`, ports **8443/9443** (validator default); strict **`maas-api`** / **`maas-controller`**. Install path unchanged: ODH operator + `prow_run_smoke_test.sh`.
+Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main`, run **`python -m tls_scanner.deploy`** with image **`quay.io/opendatahub/tls-scanner:latest`**, namespaces **`opendatahub,odh-ai-gateway-infra`**, **`--pqc-check`**, output **`ARTIFACT_DIR/tls-scanner/`** (`results.json`, logs). Pass/fail follows deploy exit code; no extra pipeline params. Smoke sets **`MAAS_DISCOVERY_ENABLED=true`** so discovery workloads are on the cluster.
 
-**Validate:** comment **`/group-test`** on a MaaS PR (or wait for auto `/group-test` after Konflux builds). In Konflux UI, open the **`maas-group-test`** run and confirm step **`tls-pqc-scan`** after **`e2e-maas`**. Artifacts: `ARTIFACT_DIR/tls-scanner/` and JUnit under the pipelinerun OCI/git artifacts.
+**Validate:** `/group-test` → confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
 
-**Optional / SKIP components:** components in the filter that are not deployed (e.g. AI Gateway on the maas Helm profile) print `SKIP … no pods matched in scan` and do **not** fail validation unless listed in **`TLS_STRICT_COMPONENTS`**. A SKIP for a strict component fails the step.
-
-| Component | How to get scanned / validated |
-|-----------|-------------------------------|
-| **maas-discovery** | Discovery enabled in smoke (`MAAS_DISCOVERY_ENABLED=true`); filter must include **`odh-maas-discovery`** (image-derived name) as well as **`maas-discovery`**. Pod runs in **`opendatahub`** on **8443**; scanner must reach it via deploy NetworkPolicies. |
-| **ai-gateway-operator / ai-gateway-controller** | MaaS group-test **Helm maas profile** currently has **`aigateway: Removed`** — no AI Gateway operand pods to scan. Enable AI Gateway on the test cluster (DSC / odh-gitops profile change) if these must be in scope; then confirm names with `jq '.ip_results[].openshift_component.component' tls-scanner/results.json \| sort -u` and align **`tls-component-filter`**. |
-
-**Test a konflux-central PR before merge:** set **`pipelineRef.revision`** (and `url` if using a fork) on MaaS `.tekton/maas-group-test.yaml`, and set **`odh-konflux-central-git-url`** / **`odh-konflux-central-revision`** to the same fork + SHA, then `/group-test`.
+**Test a konflux PR:** set **`pipelineRef`** fork + SHA on MaaS `.tekton/maas-group-test.yaml`, then `/group-test`.
 
 ### `Dockerfile.maas`
 
