@@ -1,80 +1,24 @@
-# Models-as-a-Service Integration Test
+# Models-as-a-Service integration test
 
-This directory contains the Konflux **group** integration test **Pipeline** for Models-as-a-Service (MaaS), plus supporting files. The former per-component **`pr-test-pipelinerun.yaml`** is **not** maintained here anymore.
+Konflux **group** pipeline for [models-as-a-service](https://github.com/opendatahub-io/models-as-a-service): composite snapshot of MaaS images on a PR, ephemeral Hypershift (EaaS), smoke e2e, optional TLS/PQC, must-gather, CI artifacts + PR comment.
 
-## Repositories
+## Pipeline
 
-- **Pipeline config:** [opendatahub-io/odh-konflux-central](https://github.com/opendatahub-io/odh-konflux-central)
-- **Tested project:** [opendatahub-io/models-as-a-service](https://github.com/opendatahub-io/models-as-a-service)
-- **TLS orchestration:** [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) (`python -m tls_scanner.deploy`)
+[`pr-group-testing-pipeline.yaml`](pr-group-testing-pipeline.yaml) — Tekton `Pipeline` `odh-pr-test-maas`. Parameters and task graph are defined in the YAML; PAC defaults live in [`maas-group-test.yaml`](../../pipelineruns/models-as-a-service/maas-group-test.yaml).
 
-## Pipelines
+## Trigger
 
-### `pr-group-testing-pipeline.yaml`
+`.tekton/maas-group-test.yaml` in the MaaS repo (mirror: [`pipelineruns/.../maas-group-test.yaml`](../../pipelineruns/models-as-a-service/maas-group-test.yaml)). Comment **`/group-test`** or `event == "group-test"`. Component: `maas-group` under `group-testing` (per-component `pr-test-pipelinerun.yaml` was removed).
 
-Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e against an **ephemeral Hypershift** cluster on AWS (EaaS), using **both** `odh-maas-api-ci` and `odh-maas-controller-ci` images that belong to the **same pull request** (composite snapshot), not a single-component Konflux snapshot.
+## Flow
 
-**How it is triggered**
+Snapshot → audit → provision cluster → **`e2e-maas-openshift`** (`prow_run_smoke_test.sh`, then **`tls-pqc-scan`** when `tls-pqc-check=true`) → must-gather (on failure unless `gather-on-success`) → push artifacts → `finally` OCI + PR comment. Task image: `quay.io/rhoai/rhoai-task-toolset:maas`. Local toolset source: [`Dockerfile.maas`](Dockerfile.maas).
 
-- PAC `PipelineRun` [`pipelineruns/models-as-a-service/maas-group-test.yaml`](../../pipelineruns/models-as-a-service/maas-group-test.yaml) resolves this file from `odh-konflux-central`.
-- Annotations: `pipelinesascode.tekton.dev/on-cel-expression: event == "group-test"` and optional `on-comment: "^/group-test"` for manual runs.
+## TLS / PQC (after smoke)
 
-**Parameters**
+1. Shallow clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) at `tls-scanner-deploy-revision`; run `python -m tls_scanner.deploy` with `tls-scanner-image` (default `quay.io/opendatahub/tls-scanner:latest`), `tls-scan-namespaces`, `--pqc-check`, output under `ARTIFACT_DIR/tls-scanner/`.
+2. Run `test/e2e/scripts/validate-maas-tls-pqc-results.py` from the cloned MaaS repo (`tls-component-filter`, `tls-pqc-required-ports`; strict on `maas-api` / `maas-controller`).
 
-| Parameter | Role |
-| --- | --- |
-| `group-components` | JSON map of Konflux component names to repo coordinates; fed into snapshot generation (see default in `maas-group-test.yaml`). |
-| `oci-artifacts-repo` | OCI artifact repository for collected test output (default `quay.io/opendatahub/odh-ci-artifacts`). |
-| `artifact-browser-url` | Base URL passed into the PR comment stepaction for browsing published artifacts. |
-| `rhoai-must-gather-tag` | Tag for `registry.redhat.io/rhoai/odh-must-gather-rhel9:<tag>` used by the must-gather step (default `v3.5.0`). Ignored when `rhoai-must-gather-image` is set. |
-| `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
-| `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
-| `tls-pqc-check` | When `"true"` (default), run TLS/PQC scanner after smoke on the same cluster. |
-| `tls-scan-namespaces` | Namespaces passed to tls-scanner-deploy `--namespaces` (default `opendatahub,odh-ai-gateway-infra`). |
-| `tls-component-filter` | Comma-separated components checked in `results.json` by the MaaS validator after the scan. |
-| `tls-scanner-image` | In-cluster scanner image (default `quay.io/opendatahub/tls-scanner:latest`). |
-| `tls-scanner-deploy-revision` | Branch, tag, or **40-char SHA** of [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) for `python -m tls_scanner.deploy` (default `main`). |
-| `tls-pqc-required-ports` | Post-scan validation ports (default `8443,9443`). |
+Undeployed filter entries (e.g. AI Gateway when the maas Helm profile has `aigateway: Removed`) may SKIP; strict components must appear in `results.json`. Discovery needs smoke `MAAS_DISCOVERY_ENABLED` and filter names `maas-discovery` / `odh-maas-discovery`.
 
-**Workspaces**
-
-- **`git-auth`** — required for `generate-snapshot` (clone/pull private metadata as configured in the `PipelineRun`).
-
-**Task flow (high level)**
-
-1. **`generate-snapshot`** — builds a **composite snapshot** JSON listing images and git metadata for every component in `group-components` (rhoai-konflux `generate-snapshot-for-group-testing` task).
-2. **`audit-snapshot`** — verifies each component row has non-empty image, `git.commit`, and `git.url`; writes PR fields from PAC annotations/labels (`pipelinesascode.tekton.dev/sender`, `pull-request`, `url-repository`, `url-org`, `sha`, …).
-3. **`provision-eaas-space`** / **`provision-cluster`** — EaaS space + Hypershift cluster (`m5.2xlarge`), same build-definitions stepactions as other ODH integration tests.
-4. **`e2e-maas-openshift`** (timeout **2h30m**) — clone `models-as-a-service`, run smoke, then **`tls-pqc-scan`** on the **same** kubeconfig when `tls-pqc-check=true` (runs even if smoke failed). **`ARTIFACT_DIR`** holds e2e, tls-scanner, and must-gather output. Steps use **`onError: continue`**; **`fail-if-needed`** fails the run after artifacts upload if smoke or TLS failed; a **missing** `tls-scan-status` file (e.g. task timeout before the tls step) is treated as TLS failure in the message. If runs exceed the task budget, follow-up is split TLS into its own task or shorter smoke (see PR #764).
-5. **`must-gather`** — plain OpenShift must-gather first, then official RHOAI must-gather (`registry.redhat.io/rhoai/odh-must-gather-rhel9` + `rhoai-must-gather-tag`, default `v3.5.0`) for **`aigateway`** (MaaS CRs / Kuadrant TRLPs) and **`kserve`** (LLMInferenceService), under `ARTIFACT_DIR` (also `onError: continue`). Each gather continues on failure so one broken plugin cannot skip the others. RHOAI gather commands export ODH namespaces (`OPERATOR_NAMESPACE=openshift-operators`, `APPLICATIONS_NAMESPACE` / `MONITORING_NAMESPACE` / `NOTEBOOK_NAMESPACE=opendatahub`) so must-gather does not early-exit looking for `rhods-operator`.
-6. **`git-push-artifacts`** — stages `ARTIFACT_DIR` into `opendatahub-io/odh-build-metadata` branch `ci-artifacts` under `test-artifacts/<pipelinerun-name>` (`secure-git-push` stepaction).
-7. **`finally` → `push-ci-artifacts-and-update-pr`** — sparse-clone that path, **push OCI** (`secure-push-oci` + `odh-registry-secret`), **comment on the PR** (`pull-request-comment`, inputs from `audit-snapshot` results and `$(tasks.status)`), **delete** the transient directory under `test-artifacts/` (`cleanup-git-repo`).
-
-### TLS / PQC after smoke (Konflux)
-
-The **`tls-pqc-scan`** step shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) at `tls-scanner-deploy-revision` and runs **`python -m tls_scanner.deploy`** with `--image` (`tls-scanner-image`), `--namespaces`, `--pqc-check`, and `--out-dir` `$ARTIFACT_DIR/tls-scanner`. Deploy provisions a short-lived scanner namespace, RBAC, cross-namespace NetworkPolicies, runs the Job, collects artifacts, and tears down (unless `--keep`).
-
-Post-scan gate: **`models-as-a-service/test/e2e/scripts/validate-maas-tls-pqc-results.py`** on the cloned MaaS repo — requires `TLS_COMPONENT_FILTER` (from `tls-component-filter`); for each listed component that appears in `results.json`, at least one TLS 1.3 + ML-KEM probe on a port in `TLS_PQC_REQUIRED_PORTS` / `tls-pqc-required-ports`. **`maas-api`** and **`maas-controller`** are **strict**: if either has no pods in the scan (SKIP), validation fails so the gate cannot pass vacuously. Optional env **`TLS_STRICT_COMPONENTS`** overrides the strict list (comma-separated). Install path unchanged: ODH operator + existing `prow_run_smoke_test.sh`.
-
-**Validate:** comment **`/group-test`** on a MaaS PR (or wait for auto `/group-test` after Konflux builds). In Konflux UI, open the **`maas-group-test`** run and confirm step **`tls-pqc-scan`** after smoke. Artifacts: `ARTIFACT_DIR/tls-scanner/` (e.g. `results.json`) and JUnit when present under the pipelinerun OCI/git artifacts.
-
-**Optional / SKIP components:** components in the filter that are not deployed (e.g. AI Gateway on the maas Helm profile) print `SKIP … no pods matched in scan` and do **not** fail validation unless listed in **`TLS_STRICT_COMPONENTS`**. A SKIP for a strict component fails the step.
-
-| Component | How to get scanned / validated |
-|-----------|-------------------------------|
-| **maas-discovery** | Discovery enabled in smoke (`MAAS_DISCOVERY_ENABLED=true`); filter must include **`odh-maas-discovery`** (image-derived name) as well as **`maas-discovery`**. Operand listens on **8443** in **`opendatahub`**. |
-| **ai-gateway-operator / ai-gateway-controller** | MaaS group-test **Helm maas profile** currently has **`aigateway: Removed`** — no AI Gateway operand pods to scan. Enable AI Gateway on the test cluster (DSC / odh-gitops profile change) if these must be in scope; then confirm names with `jq '.ip_results[].openshift_component.component' tls-scanner/results.json \| sort -u` and align **`tls-component-filter`**. |
-
-**Test a konflux-central PR before merge:** set **`pipelineRef.revision`** (and `url` if using a fork) on MaaS [`.tekton/maas-group-test.yaml`](https://github.com/opendatahub-io/models-as-a-service/blob/main/.tekton/maas-group-test.yaml), then `/group-test`.
-
-### `Dockerfile.maas`
-
-UBI-based image with `oc`/`kubectl`, `kustomize`, `jq`, and related tooling aligned with what the MaaS e2e task image expects. Use it when you need to reproduce or extend the **rhoai** MaaS task toolset locally; the pipeline YAML itself references the published **`quay.io/rhoai/rhoai-task-toolset:maas`** image.
-
-### Konflux integration scenarios
-
-Per-component **IntegrationTestScenario** entries for MaaS API/controller were **removed** from `gitops/integration-testing-prerequisites.yaml` when `pr-test-pipelinerun.yaml` was dropped. MaaS integration runs through the **group** PAC `PipelineRun` [`maas-group-test.yaml`](../../pipelineruns/models-as-a-service/maas-group-test.yaml) on the `group-testing` / `maas-group` component instead.
-
-## Metadata
-
-This group pipeline does **not** use [`test_metadata.yaml`](https://github.com/konflux-ci/integration-examples/blob/main/tasks/test_metadata.yaml) from `konflux-ci/integration-examples`. Snapshot and git context come from **`generate-snapshot`**, **`audit-snapshot`**, and **Pipelines-as-Code** annotations on the `PipelineRun`.
+**Try a konflux PR:** pin `pipelineRef` `url`/`revision` on MaaS `.tekton/maas-group-test.yaml`, then `/group-test`.
