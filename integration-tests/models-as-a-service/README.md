@@ -29,10 +29,11 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
 | `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
 | `tls-pqc-check` | When `"true"` (default), run TLS/PQC scanner after smoke on the same cluster. |
-| `tls-scan-namespaces` | Namespaces for tls-scanner (default `opendatahub,odh-ai-gateway-infra`). |
 | `tls-component-filter` | Pod label filter for MaaS + AI Gateway workloads (also drives post-scan validation via `TLS_COMPONENT_FILTER`). |
 | `tls-scanner-image` | Scanner image (default `quay.io/opendatahub/tls-scanner:latest`). Deploy script is cloned from `opendatahub-io/tls-scanner` `main`. |
 | `tls-pqc-required-ports` | Post-scan validation ports (default `8443,9443`). |
+| `odh-konflux-central-git-url` | Remote for [`validate-maas-tls-pqc-results.py`](validate-maas-tls-pqc-results.py) sparse-clone (default upstream). |
+| `odh-konflux-central-revision` | Branch, tag, or SHA for that script (default `main`; match fork SHA when testing a konflux PR). |
 
 **Workspaces**
 
@@ -50,7 +51,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 
 ### TLS / PQC after smoke (Konflux)
 
-**`tls-pqc-scan`** shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` and runs **`python -m tls_scanner.deploy`** (`tls-scanner-image`, `--namespaces`, `--pqc-check`, `--out-dir` `$ARTIFACT_DIR/tls-scanner`). Post-scan gate: **`models-as-a-service/test/e2e/scripts/validate-maas-tls-pqc-results.py`** (cloned MaaS repo) — requires `TLS_COMPONENT_FILTER` (from `tls-component-filter`); for each listed component that appears in `results.json`, at least one TLS 1.3 + ML-KEM probe on a port in `TLS_PQC_REQUIRED_PORTS` / `tls-pqc-required-ports`. **`maas-api`** and **`maas-controller`** are **strict**: if either has no pods in the scan (SKIP), validation fails so the gate cannot pass vacuously. Optional env **`TLS_STRICT_COMPONENTS`** overrides the strict list (comma-separated). Install path unchanged: ODH operator + existing `prow_run_smoke_test.sh`.
+**`tls-pqc-scan`** shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` and runs **`python -m tls_scanner.deploy`** (`tls-scanner-image`, namespaces `opendatahub,odh-ai-gateway-infra`, `--pqc-check`, `--out-dir` `$ARTIFACT_DIR/tls-scanner`). Post-scan gate: [`validate-maas-tls-pqc-results.py`](validate-maas-tls-pqc-results.py) (sparse-clone from this repo) — `TLS_COMPONENT_FILTER` / `tls-pqc-required-ports`; strict **`maas-api`** / **`maas-controller`**. Install path unchanged: ODH operator + `prow_run_smoke_test.sh`.
 
 **Validate:** comment **`/group-test`** on a MaaS PR (or wait for auto `/group-test` after Konflux builds). In Konflux UI, open the **`maas-group-test`** run and confirm step **`tls-pqc-scan`** after **`e2e-maas`**. Artifacts: `ARTIFACT_DIR/tls-scanner/` and JUnit under the pipelinerun OCI/git artifacts.
 
@@ -61,7 +62,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | **maas-discovery** | Discovery enabled in smoke (`MAAS_DISCOVERY_ENABLED=true`); filter must include **`odh-maas-discovery`** (image-derived name) as well as **`maas-discovery`**. Pod runs in **`opendatahub`** on **8443**; scanner must reach it via deploy NetworkPolicies. |
 | **ai-gateway-operator / ai-gateway-controller** | MaaS group-test **Helm maas profile** currently has **`aigateway: Removed`** — no AI Gateway operand pods to scan. Enable AI Gateway on the test cluster (DSC / odh-gitops profile change) if these must be in scope; then confirm names with `jq '.ip_results[].openshift_component.component' tls-scanner/results.json \| sort -u` and align **`tls-component-filter`**. |
 
-**Test a konflux-central PR before merge:** set **`pipelineRef.revision`** (and `url` if using a fork) on the MaaS [`maas-group-test`](../../pipelineruns/models-as-a-service/maas-group-test.yaml) / `.tekton/maas-group-test.yaml` to the same branch or SHA, then `/group-test`.
+**Test a konflux-central PR before merge:** set **`pipelineRef.revision`** (and `url` if using a fork) on MaaS `.tekton/maas-group-test.yaml`, and set **`odh-konflux-central-git-url`** / **`odh-konflux-central-revision`** to the same fork + SHA, then `/group-test`.
 
 ### `Dockerfile.maas`
 

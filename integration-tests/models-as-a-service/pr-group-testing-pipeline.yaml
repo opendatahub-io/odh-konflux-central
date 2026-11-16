@@ -58,10 +58,6 @@ spec:
       type: string
       default: "true"
       description: When "true", run openshift tls-scanner with --pqc-check after smoke e2e.
-    - name: tls-scan-namespaces
-      type: string
-      default: "opendatahub,odh-ai-gateway-infra"
-      description: Comma-separated namespaces for tls-scanner-deploy --namespaces.
     - name: tls-component-filter
       type: string
       default: "maas-api,maas-controller,maas-discovery,odh-maas-discovery,ai-gateway-operator,ai-gateway-controller"
@@ -74,6 +70,14 @@ spec:
       type: string
       default: "8443,9443"
       description: Ports for the post-scan TLS 1.3 + ML-KEM check. Each scanned tls-component-filter entry needs at least one PQC-ready result on these ports.
+    - name: odh-konflux-central-git-url
+      type: string
+      default: "https://github.com/opendatahub-io/odh-konflux-central.git"
+      description: Git remote for validate-maas-tls-pqc-results.py (fork URL when testing a konflux PR).
+    - name: odh-konflux-central-revision
+      type: string
+      default: main
+      description: Branch, tag, or 40-char SHA for validate-maas-tls-pqc-results.py in this repo.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -324,14 +328,16 @@ spec:
                 value: /workspace/artifacts-dir
               - name: TLS_PQC_CHECK
                 value: $(params.tls-pqc-check)
-              - name: TLS_SCAN_NAMESPACES
-                value: $(params.tls-scan-namespaces)
               - name: TLS_COMPONENT_FILTER
                 value: $(params.tls-component-filter)
               - name: TLS_SCANNER_IMAGE
                 value: $(params.tls-scanner-image)
               - name: TLS_PQC_REQUIRED_PORTS
                 value: $(params.tls-pqc-required-ports)
+              - name: ODH_KONFLUX_CENTRAL_GIT_URL
+                value: $(params.odh-konflux-central-git-url)
+              - name: ODH_KONFLUX_CENTRAL_REVISION
+                value: $(params.odh-konflux-central-revision)
             workingDir: /workspace/source
             volumeMounts:
               - name: credentials
@@ -371,7 +377,7 @@ spec:
               set +e
               python3 -m tls_scanner.deploy \
                 --image "${TLS_SCANNER_IMAGE}" \
-                --namespaces "${TLS_SCAN_NAMESPACES}" \
+                --namespaces "opendatahub,odh-ai-gateway-infra" \
                 --pqc-check \
                 --out-dir "${TLS_SCAN_OUT}"
               TLS_EXIT=$?
@@ -385,10 +391,44 @@ spec:
                 exit "${TLS_EXIT}"
               fi
 
+              VALIDATOR_PATH="integration-tests/models-as-a-service/validate-maas-tls-pqc-results.py"
+              KONFLUX_CFG=/tmp/odh-konflux-central
+              rm -rf "${KONFLUX_CFG}"
+              CLONE_EXIT=1
+              set +e
+              if [[ "${ODH_KONFLUX_CENTRAL_REVISION}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                timeout 120s git clone --depth 1 --filter=blob:none --sparse \
+                  "${ODH_KONFLUX_CENTRAL_GIT_URL}" "${KONFLUX_CFG}"
+                CLONE_EXIT=$?
+                if [ "${CLONE_EXIT}" -eq 0 ]; then
+                  git -C "${KONFLUX_CFG}" sparse-checkout set "${VALIDATOR_PATH}"
+                  git -C "${KONFLUX_CFG}" fetch --depth 1 origin "${ODH_KONFLUX_CENTRAL_REVISION}"
+                  CLONE_EXIT=$?
+                fi
+                if [ "${CLONE_EXIT}" -eq 0 ]; then
+                  git -C "${KONFLUX_CFG}" checkout "${ODH_KONFLUX_CENTRAL_REVISION}"
+                  CLONE_EXIT=$?
+                fi
+              else
+                timeout 120s git clone --depth 1 --filter=blob:none --sparse --branch "${ODH_KONFLUX_CENTRAL_REVISION}" \
+                  "${ODH_KONFLUX_CENTRAL_GIT_URL}" "${KONFLUX_CFG}"
+                CLONE_EXIT=$?
+                if [ "${CLONE_EXIT}" -eq 0 ]; then
+                  git -C "${KONFLUX_CFG}" sparse-checkout set "${VALIDATOR_PATH}"
+                fi
+              fi
+              set -e
+              if [ "${CLONE_EXIT}" -ne 0 ]; then
+                echo "git sparse-clone for ${VALIDATOR_PATH} failed (exit ${CLONE_EXIT})" >&2
+                echo "failed" > "$STATUS_FILE"
+                echo "failed" > "/test-status/tls-scan-status"
+                exit "${CLONE_EXIT}"
+              fi
+
               set +e
               export TLS_COMPONENT_FILTER
               export TLS_PQC_REQUIRED_PORTS
-              python3 ./test/e2e/scripts/validate-maas-tls-pqc-results.py
+              python3 "${KONFLUX_CFG}/${VALIDATOR_PATH}"
               VALIDATE_EXIT=$?
               set -e
               if [ "${VALIDATE_EXIT}" -ne 0 ]; then
