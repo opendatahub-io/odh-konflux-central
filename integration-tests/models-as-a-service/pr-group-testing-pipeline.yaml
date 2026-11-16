@@ -57,7 +57,7 @@ spec:
     - name: tls-pqc-check
       type: string
       default: "true"
-      description: When "true", run openshift tls-scanner with --pqc-check after smoke e2e.
+      description: When "true", run tls-pqc-scan after smoke (quay.io/opendatahub/tls-scanner).
     - name: tls-component-filter
       type: string
       default: "maas-api,maas-controller,maas-discovery,odh-maas-discovery,ai-gateway-operator,ai-gateway-controller"
@@ -66,10 +66,6 @@ spec:
       type: string
       default: "quay.io/opendatahub/tls-scanner:latest"
       description: In-cluster scanner image (OpenShift tls-scanner on Quay). Deploy orchestration is cloned from opendatahub-io/tls-scanner main.
-    - name: tls-pqc-required-ports
-      type: string
-      default: "8443,9443"
-      description: Ports for the post-scan TLS 1.3 + ML-KEM check. Each scanned tls-component-filter entry needs at least one PQC-ready result on these ports.
     - name: odh-konflux-central-git-url
       type: string
       default: "https://github.com/opendatahub-io/odh-konflux-central.git"
@@ -328,17 +324,14 @@ spec:
                 value: /workspace/artifacts-dir
               - name: TLS_PQC_CHECK
                 value: $(params.tls-pqc-check)
-              - name: TLS_COMPONENT_FILTER
-                value: $(params.tls-component-filter)
               - name: TLS_SCANNER_IMAGE
                 value: $(params.tls-scanner-image)
-              - name: TLS_PQC_REQUIRED_PORTS
-                value: $(params.tls-pqc-required-ports)
+              - name: TLS_COMPONENT_FILTER
+                value: $(params.tls-component-filter)
               - name: ODH_KONFLUX_CENTRAL_GIT_URL
                 value: $(params.odh-konflux-central-git-url)
               - name: ODH_KONFLUX_CENTRAL_REVISION
                 value: $(params.odh-konflux-central-revision)
-            workingDir: /workspace/source
             volumeMounts:
               - name: credentials
                 mountPath: /credentials
@@ -426,8 +419,6 @@ spec:
               fi
 
               set +e
-              export TLS_COMPONENT_FILTER
-              export TLS_PQC_REQUIRED_PORTS
               python3 "${KONFLUX_CFG}/${VALIDATOR_PATH}"
               VALIDATE_EXIT=$?
               set -e

@@ -31,7 +31,6 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `tls-pqc-check` | When `"true"` (default), run TLS/PQC scanner after smoke on the same cluster. |
 | `tls-component-filter` | Pod label filter for MaaS + AI Gateway workloads (also drives post-scan validation via `TLS_COMPONENT_FILTER`). |
 | `tls-scanner-image` | Scanner image (default `quay.io/opendatahub/tls-scanner:latest`). Deploy script is cloned from `opendatahub-io/tls-scanner` `main`. |
-| `tls-pqc-required-ports` | Post-scan validation ports (default `8443,9443`). |
 | `odh-konflux-central-git-url` | Remote for [`validate-maas-tls-pqc-results.py`](validate-maas-tls-pqc-results.py) sparse-clone (default upstream). |
 | `odh-konflux-central-revision` | Branch, tag, or SHA for that script (default `main`; match fork SHA when testing a konflux PR). |
 
@@ -51,7 +50,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 
 ### TLS / PQC after smoke (Konflux)
 
-**`tls-pqc-scan`** shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` and runs **`python -m tls_scanner.deploy`** (`tls-scanner-image`, namespaces `opendatahub,odh-ai-gateway-infra`, `--pqc-check`, `--out-dir` `$ARTIFACT_DIR/tls-scanner`). Post-scan gate: [`validate-maas-tls-pqc-results.py`](validate-maas-tls-pqc-results.py) (sparse-clone from this repo) — `TLS_COMPONENT_FILTER` / `tls-pqc-required-ports`; strict **`maas-api`** / **`maas-controller`**. Install path unchanged: ODH operator + `prow_run_smoke_test.sh`.
+**`tls-pqc-scan`** shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` and runs **`python -m tls_scanner.deploy`** with **`quay.io/opendatahub/tls-scanner`** (`tls-scanner-image`), namespaces `opendatahub,odh-ai-gateway-infra`, `--pqc-check`, `--out-dir` `$ARTIFACT_DIR/tls-scanner`. Post-scan gate: [`validate-maas-tls-pqc-results.py`](validate-maas-tls-pqc-results.py) (sparse-clone from this repo) — `TLS_COMPONENT_FILTER`, ports **8443/9443** (validator default); strict **`maas-api`** / **`maas-controller`**. Install path unchanged: ODH operator + `prow_run_smoke_test.sh`.
 
 **Validate:** comment **`/group-test`** on a MaaS PR (or wait for auto `/group-test` after Konflux builds). In Konflux UI, open the **`maas-group-test`** run and confirm step **`tls-pqc-scan`** after **`e2e-maas`**. Artifacts: `ARTIFACT_DIR/tls-scanner/` and JUnit under the pipelinerun OCI/git artifacts.
 
