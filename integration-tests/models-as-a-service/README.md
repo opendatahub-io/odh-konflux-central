@@ -31,8 +31,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `tls-pqc-check` | When `"true"` (default), run TLS/PQC scanner after smoke on the same cluster. |
 | `tls-scan-namespaces` | Namespaces for tls-scanner (default `opendatahub,odh-ai-gateway-infra`). |
 | `tls-component-filter` | Pod label filter for MaaS + AI Gateway workloads (also drives post-scan validation via `TLS_COMPONENT_FILTER`). |
-| `tls-scanner-image` | Scanner image (default `quay.io/opendatahub/tls-scanner:latest`). |
-| `tls-scanner-deploy-revision` | Branch, tag, or **40-char SHA** of [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) for `python -m tls_scanner.deploy` (default `main`). |
+| `tls-scanner-image` | Scanner image (default `quay.io/opendatahub/tls-scanner:latest`). Deploy script is cloned from `opendatahub-io/tls-scanner` `main`. |
 | `tls-pqc-required-ports` | Post-scan validation ports (default `8443,9443`). |
 
 **Workspaces**
@@ -51,7 +50,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 
 ### TLS / PQC after smoke (Konflux)
 
-**`tls-pqc-scan`** shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) at `tls-scanner-deploy-revision` and runs **`python -m tls_scanner.deploy`** (`tls-scanner-image`, `--namespaces`, `--pqc-check`, `--out-dir` `$ARTIFACT_DIR/tls-scanner`). Post-scan gate: **`models-as-a-service/test/e2e/scripts/validate-maas-tls-pqc-results.py`** (cloned MaaS repo) — requires `TLS_COMPONENT_FILTER` (from `tls-component-filter`); for each listed component that appears in `results.json`, at least one TLS 1.3 + ML-KEM probe on a port in `TLS_PQC_REQUIRED_PORTS` / `tls-pqc-required-ports`. **`maas-api`** and **`maas-controller`** are **strict**: if either has no pods in the scan (SKIP), validation fails so the gate cannot pass vacuously. Optional env **`TLS_STRICT_COMPONENTS`** overrides the strict list (comma-separated). Install path unchanged: ODH operator + existing `prow_run_smoke_test.sh`.
+**`tls-pqc-scan`** shallow-clones [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` and runs **`python -m tls_scanner.deploy`** (`tls-scanner-image`, `--namespaces`, `--pqc-check`, `--out-dir` `$ARTIFACT_DIR/tls-scanner`). Post-scan gate: **`models-as-a-service/test/e2e/scripts/validate-maas-tls-pqc-results.py`** (cloned MaaS repo) — requires `TLS_COMPONENT_FILTER` (from `tls-component-filter`); for each listed component that appears in `results.json`, at least one TLS 1.3 + ML-KEM probe on a port in `TLS_PQC_REQUIRED_PORTS` / `tls-pqc-required-ports`. **`maas-api`** and **`maas-controller`** are **strict**: if either has no pods in the scan (SKIP), validation fails so the gate cannot pass vacuously. Optional env **`TLS_STRICT_COMPONENTS`** overrides the strict list (comma-separated). Install path unchanged: ODH operator + existing `prow_run_smoke_test.sh`.
 
 **Validate:** comment **`/group-test`** on a MaaS PR (or wait for auto `/group-test` after Konflux builds). In Konflux UI, open the **`maas-group-test`** run and confirm step **`tls-pqc-scan`** after **`e2e-maas`**. Artifacts: `ARTIFACT_DIR/tls-scanner/` and JUnit under the pipelinerun OCI/git artifacts.
 
