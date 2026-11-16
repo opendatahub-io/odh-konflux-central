@@ -7,28 +7,24 @@ metadata:
     pipelinesascode.tekton.dev/on-event: "[pull_request]"
     pipelinesascode.tekton.dev/on-target-branch: "[main, stable]"
 spec:
-  # Wait up to 4h for image builds, leaving room for cluster provisioning
-  # (1h), testing (2h20m), and the audit task.
+  # Wait up to 4h for the universal runtime image builds (they are large
+  # multi-arch builds), leaving room for cluster provisioning (1h), testing
+  # (2h20m), and the audit task.
   timeouts:
     pipeline: 8h
     tasks: 7h40m
     finally: 20m
   pipelineSpec:
     description: |
-      An integration test which provisions an ephemeral Hypershift cluster, deploys the Kubeflow
-      Trainer with the built distributed-workloads universal runtime images from a Konflux
-      snapshot and runs the integration test suite from the trainer repository against it.
+      An integration test which provisions an ephemeral Hypershift cluster, deploys
+      Trainer from the trainer repository with the built distributed-workloads
+      universal runtime images and runs the integration test suite from the trainer
+      repository against it. The deployment and test logic lives in the
+      test-integration-rhai target of Makefile.rhai in the trainer repository.
     params:
       - description: Snapshot of the application
         name: SNAPSHOT
         type: string
-      - name: universal-runtime-image-repos
-        type: string
-        default: >-
-          {"odh-th-torch-cuda-py312-ci":"quay.io/opendatahub/odh-th-torch-cuda-py312",
-           "odh-th-torch-rocm-py312-ci":"quay.io/opendatahub/odh-th-torch-rocm-py312",
-           "odh-th-torch-cpu-py312-ci":"quay.io/opendatahub/odh-th-torch-cpu-py312"}
-        description: JSON map of universal runtime component names to their fixed image repositories.
       - name: oci-artifacts-repo
         default: 'quay.io/opendatahub/odh-ci-artifacts'
         description: The OCI container used to store all test artifacts.
@@ -66,6 +62,8 @@ spec:
           - name: git-repo
           - name: git-org
           - name: git-revision
+          - name: event-type
+          - name: source-url
           steps:
             - name: audit-snapshot
               image: quay.io/konflux-ci/konflux-test:stable
@@ -93,6 +91,10 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
+                - name: EVENT_TYPE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['pac.test.appstudio.openshift.io/event-type']
               script: |
                 #!/bin/bash
                 set -e
@@ -114,195 +116,83 @@ spec:
                 echo -n "${GIT_REPO}" > "$(results.git-repo.path)"
                 echo -n "${GIT_ORG}" > "$(results.git-org.path)"
                 echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
+                echo -n "${EVENT_TYPE}" > "$(results.event-type.path)"
+                # The component built for this commit names the repository its
+                # sources live in; for a pull request that is the fork, where
+                # the head commit is only present.
+                SOURCE_URL=$(echo "$SNAPSHOT" | jq -r \
+                  --arg rev "${GIT_REVISION}" \
+                  'first(.components[] | select(.source.git.revision == $rev) | .source.git.url)')
+                if [[ -z "${SOURCE_URL}" ]]; then
+                  echo "No snapshot component is built from commit ${GIT_REVISION}; cannot determine the repository to clone." >&2
+                  exit 1
+                fi
+                echo "SOURCE_URL=${SOURCE_URL}"
+                echo -n "${SOURCE_URL}" > "$(results.source-url.path)"
 
-      - name: wait-for-image-builds
+      # Nothing can be tested before every component built from this commit is
+      # done, and a failed build must stop the run before a cluster is created.
+      - name: wait-for-builds
         timeout: 4h
+        runAfter:
+          - audit-snapshot
+        when:
+          - input: $(tasks.audit-snapshot.results.event-type)
+            operator: notin
+            values: ["push"]
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/opendatahub-io/odh-konflux-central.git
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: integration-tests/trainer/tasks/wait-for-builds.yaml
+        params:
+          - name: git-revision
+            value: $(tasks.audit-snapshot.results.git-revision)
+          # The universal runtime images are large multi-arch builds; wait up
+          # to 4h for them (the task default is 45m).
+          - name: wait-timeout-seconds
+            value: "14400"
+      # Map the build tags of the components under test to the image references
+      # the deployment consumes.
+      - name: resolve-built-images
+        runAfter:
+          - wait-for-builds
+        when:
+          - input: $(tasks.audit-snapshot.results.event-type)
+            operator: notin
+            values: ["push"]
+          - input: $(tasks.wait-for-builds.results.should-run)
+            operator: in
+            values: ["true"]
+        taskRef:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/opendatahub-io/odh-konflux-central.git
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: integration-tests/trainer/tasks/resolve-built-images.yaml
         params:
           - name: SNAPSHOT
             value: $(params.SNAPSHOT)
-          - name: universal-runtime-image-repos
-            value: $(params.universal-runtime-image-repos)
-        taskSpec:
-          params:
-            - name: SNAPSHOT
-              description: Snapshot of the application
-            - name: universal-runtime-image-repos
-              type: string
-              description: JSON map of universal runtime component names to their fixed image repositories.
-          results:
-            - name: should-run
-              description: '"true" when all image builds for the PR finished successfully.'
-            - name: image-overrides
-              description: JSON map of component name to PR-built image for components whose snapshot entry is stale.
-          steps:
-            - name: wait-for-builds
-              image: quay.io/rhoai/rhoai-task-toolset:trainer
-              imagePullPolicy: Always
-              env:
-                - name: SNAPSHOT
-                  value: $(params.SNAPSHOT)
-                - name: UNIVERSAL_RUNTIME_IMAGE_REPOS
-                  value: $(params.universal-runtime-image-repos)
-                - name: GIT_REVISION
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
-              script: |
-                #!/bin/bash
-                set -euo pipefail
-                RESULT_FILE="$(results.should-run.path)"
-                OVERRIDES_FILE="$(results.image-overrides.path)"
-                mapfile -t RUNTIME_COMPONENTS < <(
-                  printf '%s' "${UNIVERSAL_RUNTIME_IMAGE_REPOS}" | jq -r 'keys[]'
-                )
-                echo -n "false" > "${RESULT_FILE}"
-                echo "{}" > "${OVERRIDES_FILE}"
-
-                # This ITS is triggered by one component snapshot, while the other
-                # image builds for the same PR may still be running. Wait for all of
-                # them so the test consumes a complete set of PR-built images.
-
-                # Query the management cluster (where the image build PipelineRuns
-                # live) with this pod's own service account.
-                SA_DIR=/var/run/secrets/kubernetes.io/serviceaccount
-                export KUBECONFIG=/tmp/kubeconfig
-                oc config set-cluster in-cluster \
-                  --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}" \
-                  --certificate-authority="${SA_DIR}/ca.crt"
-                oc config set-credentials pod-sa --token="$(cat ${SA_DIR}/token)"
-                oc config set-context in-cluster --cluster=in-cluster --user=pod-sa \
-                  --namespace="$(cat ${SA_DIR}/namespace)"
-                oc config use-context in-cluster
-
-                fetch_builds() {
-                  local siblings
-                  if ! siblings=$(oc get pipelinerun \
-                      -l "pipelines.appstudio.openshift.io/type=build,pipelinesascode.tekton.dev/sha=${GIT_REVISION}" \
-                      -o json 2>/tmp/oc-err); then
-                    return 1
-                  fi
-
-                  printf '%s' "${siblings}" | jq -c \
-                    --argjson imageRepos "${UNIVERSAL_RUNTIME_IMAGE_REPOS}" '
-                    [ .items[]
-                      | {
-                          name: .metadata.name,
-                          component: .metadata.labels["appstudio.openshift.io/component"],
-                          status: ([.status.conditions[]?
-                                     | select(.type == "Succeeded") | .status][0] // "Unknown")
-                        }
-                      | select(.component as $component
-                               | $imageRepos | has($component)) ]'
-                }
-
-                if ! BUILDS=$(fetch_builds); then
-                  echo "Cannot list image build PipelineRuns: $(cat /tmp/oc-err)"
-                  exit 1
-                fi
-
-                echo "Image builds visible for PR commit ${GIT_REVISION}: ${BUILDS}"
-
-                # Kubernetes condition status is True, False, or Unknown. For the
-                # Tekton Succeeded condition, Unknown is the nonterminal state
-                # (pending or running), and a run with no published condition yet is
-                # also mapped to Unknown above. True and False are terminal.
-                #
-                # Tekton GC may already have pruned completed runs. Any build absent
-                # from the list is therefore treated as finished; wait only for the
-                # matching builds that are still visible and nonterminal.
-                while true; do
-                  NONTERMINAL_COUNT=$(printf '%s' "${BUILDS}" | jq '[.[] | select(.status == "Unknown")] | length')
-                  if (( NONTERMINAL_COUNT == 0 )); then
-                    break
-                  fi
-
-                  NONTERMINAL_NAMES=$(printf '%s' "${BUILDS}" | jq -r \
-                    '[.[] | select(.status == "Unknown") | .name] | join(", ")')
-                  echo "Waiting for nonterminal image build PipelineRuns: ${NONTERMINAL_NAMES}"
-                  sleep 30
-
-                  if REFRESHED_BUILDS=$(fetch_builds); then
-                    BUILDS="${REFRESHED_BUILDS}"
-                  else
-                    echo "Transient error while refreshing image builds: $(cat /tmp/oc-err)"
-                  fi
-                done
-
-                FAILED_COUNT=$(printf '%s' "${BUILDS}" | jq '[.[] | select(.status == "False")] | length')
-                if (( FAILED_COUNT > 0 )); then
-                  FAILED_NAMES=$(printf '%s' "${BUILDS}" | jq -r \
-                    '[.[] | select(.status == "False") | .name] | join(", ")')
-                  echo -n "false" > "${RESULT_FILE}"
-                  echo "Image build(s) failed: ${FAILED_NAMES}; failing this ITS."
-                  exit 1
-                fi
-
-                # Resolve the universal training images this pipeline consumes
-                # uniformly from the registry: every component built from this PR has
-                # the odh-pr-<sha> tag the build pipelines push, regardless of which
-                # component triggered this run (a snapshot only carries the triggering
-                # component's PR image). Tag exists -> use it; tag absent (component
-                # not built by this PR, e.g. a test-only change) -> keep the snapshot
-                # image. The registry, not the build PipelineRun (which Tekton GC may
-                # already have deleted), is the authoritative signal.
-                fetch_tag_status() {
-                  local repo="$1"
-                  local component="$2"
-                  local tag="$3"
-                  local url="https://quay.io/v2/${repo#quay.io/}/manifests/${tag}"
-                  local code attempt
-
-                  for attempt in 1 2 3; do
-                    if ! code=$(curl -sS -o /dev/null -w "%{http_code}" -I \
-                        -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" \
-                        "${url}"); then
-                      code="000"
-                    fi
-
-                    case "${code}" in
-                      200|404)
-                        printf '%s' "${code}"
-                        return 0
-                        ;;
-                    esac
-
-                    echo "Registry query for ${component} tag ${tag} returned HTTP ${code} (attempt ${attempt})." >&2
-                    sleep 10
-                  done
-
-                  printf '%s' "${code}"
-                  return 1
-                }
-
-                for component in "${RUNTIME_COMPONENTS[@]}"; do
-                  REPO=$(printf '%s' "${UNIVERSAL_RUNTIME_IMAGE_REPOS}" \
-                    | jq -r --arg component "${component}" '.[$component]')
-                  IMAGE="${REPO}:odh-pr-${GIT_REVISION}"
-
-                  if ! CODE=$(fetch_tag_status "${REPO}" "${component}" "odh-pr-${GIT_REVISION}"); then
-                    echo "Cannot determine whether ${IMAGE} exists (last HTTP ${CODE})."
-                    exit 1
-                  fi
-                  if [[ "${CODE}" == "404" ]]; then
-                    echo "No odh-pr-${GIT_REVISION} tag for ${component}: not built by this PR, using snapshot image."
-                    continue
-                  fi
-
-                  echo "Component ${component}: ${IMAGE}"
-                  jq --arg c "${component}" --arg i "${IMAGE}" '.[$c] = $i' \
-                    "${OVERRIDES_FILE}" > "${OVERRIDES_FILE}.tmp"
-                  mv "${OVERRIDES_FILE}.tmp" "${OVERRIDES_FILE}"
-                done
-                echo "Image overrides: $(cat "${OVERRIDES_FILE}")"
-                echo -n "true" > "${RESULT_FILE}"
-                echo "All image builds finished: proceeding."
-
+          - name: git-revision
+            value: $(tasks.audit-snapshot.results.git-revision)
+          - name: repo-url
+            value: https://github.com/$(tasks.audit-snapshot.results.git-org)/$(tasks.audit-snapshot.results.git-repo)
       - name: provision-cluster
         runAfter:
           - audit-snapshot
-          - wait-for-image-builds
+          - resolve-built-images
         when:
-          - input: $(tasks.wait-for-image-builds.results.should-run)
+          - input: $(tasks.audit-snapshot.results.event-type)
+            operator: notin
+            values: ["push"]
+          - input: $(tasks.wait-for-builds.results.should-run)
             operator: in
             values: ["true"]
         taskRef:
@@ -335,21 +225,28 @@ spec:
         runAfter:
           - provision-cluster
         when:
-          - input: $(tasks.wait-for-image-builds.results.should-run)
+          - input: $(tasks.wait-for-builds.results.should-run)
             operator: in
             values: ["true"]
         params:
           - name: clusterCredentialsSecretRef
             value: $(tasks.provision-cluster.results.secretRef)
-          - name: imageOverrides
-            value: $(tasks.wait-for-image-builds.results.image-overrides)
+          - name: resolvedImages
+            value: $(tasks.resolve-built-images.results.images)
+          - name: gitRevision
+            value: $(tasks.audit-snapshot.results.git-revision)
+          - name: repoUrl
+            value: $(tasks.audit-snapshot.results.source-url)
         taskSpec:
           params:
             - name: clusterCredentialsSecretRef
               type: string
-            - name: imageOverrides
+            - name: resolvedImages
               type: string
-              description: JSON map of component name to PR-built image for stale snapshot entries.
+            - name: gitRevision
+              type: string
+            - name: repoUrl
+              type: string
           volumes:
             - name: credentials
               secret:
@@ -372,18 +269,12 @@ spec:
               env:
                 - name: KUBECONFIG
                   value: /credentials/kubeconfig
-                - name: SNAPSHOT
-                  value: $(params.SNAPSHOT)
-                - name: IMAGE_OVERRIDES
-                  value: $(params.imageOverrides)
-                - name: GIT_REVISION
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
-                - name: COMPONENT_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.labels['appstudio.openshift.io/component']
+                - name: GIT_COMMIT
+                  value: $(params.gitRevision)
+                - name: SOURCE_URL
+                  value: $(params.repoUrl)
+                - name: TEST_IMAGES
+                  value: $(params.resolvedImages)
                 - name: ARTIFACT_DIR
                   value: /workspace/artifacts-dir
               workingDir: /workspace/source
@@ -400,50 +291,24 @@ spec:
                 oc whoami
                 oc get pods -A
 
-                echo "SNAPSHOT=${SNAPSHOT}"
+                echo "GIT_COMMIT: ${GIT_COMMIT}"
+                echo "SOURCE_URL: ${SOURCE_URL}"
+                echo "TEST_IMAGES (PR-built universal runtime images): ${TEST_IMAGES}"
 
-                # Extract the universal training runtime images from the snapshot.
-                # Component name pattern: odh-th-torch-<device>-py312-ci. Entries
-                # stale in the snapshot (only the triggering component's PR image
-                # lands in it) are replaced by the PR-built tag resolved by the
-                # wait-for-image-builds task.
-                extract_image() {
-                  local component="$1"
-                  local override
-                  override=$(echo "${IMAGE_OVERRIDES}" | jq -r --arg c "${component}" '.[$c] // empty')
-                  if [[ -n "${override}" ]]; then
-                    echo "${override}"
-                    return
-                  fi
-                  echo "${SNAPSHOT}" | jq -er --arg component_name "${component}" \
-                    '.components[] | select(.name == $component_name) | .containerImage'
-                }
-                ODH_TH_TORCH_CUDA_IMAGE=$(extract_image odh-th-torch-cuda-py312-ci) || ODH_TH_TORCH_CUDA_IMAGE=""
-                ODH_TH_TORCH_ROCM_IMAGE=$(extract_image odh-th-torch-rocm-py312-ci) || ODH_TH_TORCH_ROCM_IMAGE=""
-                ODH_TH_TORCH_CPU_IMAGE=$(extract_image odh-th-torch-cpu-py312-ci) || ODH_TH_TORCH_CPU_IMAGE=""
-                echo "ODH_TH_TORCH_CUDA_IMAGE: ${ODH_TH_TORCH_CUDA_IMAGE}"
-                echo "ODH_TH_TORCH_ROCM_IMAGE: ${ODH_TH_TORCH_ROCM_IMAGE}"
-                echo "ODH_TH_TORCH_CPU_IMAGE: ${ODH_TH_TORCH_CPU_IMAGE}"
-
-                # The PR under test lives in the distributed-workloads repo. Take the
-                # git URL from the snapshot's trigger component (identified by the
-                # PipelineRun component label): for fork PRs the annotation org/repo
-                # names the target repo, not the fork the commit is fetchable from.
-                COMPONENT_JSON=$(echo "${SNAPSHOT}" | jq -er --arg component_name "${COMPONENT_NAME}" \
-                  '.components[] | select(.name == $component_name)')
-                DW_GIT_URL=$(echo "${COMPONENT_JSON}" | jq -er '.source.git.url')
-                echo "DW_GIT_URL: ${DW_GIT_URL}"
-                echo "DW_GIT_COMMIT: ${GIT_REVISION}"
-
-                # Clone the trainer repo (main) - this has the deployment manifests
-                # and the integration test suite.
+                # The trainer repository main branch provides the deployment
+                # manifests and the test orchestration (Makefile.rhai). Images
+                # absent from TEST_IMAGES (trainer-operator, Trainer
+                # controller) keep the defaults the deployment manifests
+                # carry.
                 git clone https://github.com/opendatahub-io/trainer.git src_code
                 cd src_code
 
-                # Pre-clone the DW repo at the PR commit so test-integration-rhai tests
-                # the pipeline's revision instead of the default branch.
-                git clone "${DW_GIT_URL}" .test-data/distributed-workloads
-                git -C .test-data/distributed-workloads checkout "${GIT_REVISION}"
+                # The distributed-workloads repository under test provides the
+                # test suites; check it out at the PR revision so the pipeline
+                # revision is tested instead of the default branch Makefile.rhai
+                # would clone.
+                git clone "${SOURCE_URL}" .test-data/distributed-workloads
+                git -C .test-data/distributed-workloads checkout "${GIT_COMMIT}"
 
                 echo "Running Trainer integration tests..."
                 TESTS_PASSED=true
@@ -451,9 +316,7 @@ spec:
                   ARTIFACT_DIR="${ARTIFACT_DIR}" \
                   JUNIT_REPORT="${ARTIFACT_DIR}/junit.xml" \
                   DW_SOURCE_DIR="$(pwd)/.test-data/distributed-workloads" \
-                  ODH_TH_TORCH_CUDA_IMAGE="${ODH_TH_TORCH_CUDA_IMAGE}" \
-                  ODH_TH_TORCH_ROCM_IMAGE="${ODH_TH_TORCH_ROCM_IMAGE}" \
-                  ODH_TH_TORCH_CPU_IMAGE="${ODH_TH_TORCH_CPU_IMAGE}" \
+                  TEST_IMAGES="${TEST_IMAGES}" \
                   || TESTS_PASSED=false
                 # Keep the pipeline contract explicit: the target must always publish JUnit.
                 if [ ! -s "${ARTIFACT_DIR}/junit.xml" ]; then
@@ -480,10 +343,13 @@ spec:
                   mountPath: /credentials
               script: |
                 mkdir -p "${ARTIFACT_DIR}/gather-trainer"
-                oc adm must-gather --image=quay.io/modh/must-gather:rhoai-2.24 --dest-dir "${ARTIFACT_DIR}/gather-trainer" -- "export OPERATOR_NAMESPACE=opendatahub; export APPLICATIONS_NAMESPACE=opendatahub; export COMPONENT=trainer; /usr/bin/gather" || true
+                # The shared /workspace volume already holds the source checkout and
+                # the test artifacts, so the default 70% volume limit of oc adm
+                # must-gather would abort the gathering before it starts.
+                oc adm must-gather --volume-percentage=95 --image=quay.io/modh/must-gather:rhoai-2.24 --dest-dir "${ARTIFACT_DIR}/gather-trainer" -- "export OPERATOR_NAMESPACE=opendatahub; export APPLICATIONS_NAMESPACE=opendatahub; export COMPONENT=trainer; /usr/bin/gather" || true
 
                 mkdir -p "${ARTIFACT_DIR}/gather-openshift"
-                oc adm must-gather --dest-dir "${ARTIFACT_DIR}/gather-openshift"
+                oc adm must-gather --volume-percentage=95 --dest-dir "${ARTIFACT_DIR}/gather-openshift"
             - name: git-push-artifacts
               ref:
                 resolver: git
@@ -523,9 +389,9 @@ spec:
     finally:
     - name: push-ci-artifacts-and-update-pr
       when:
-        - input: $(tasks.wait-for-image-builds.results.should-run)
-          operator: in
-          values: ["true"]
+        - input: $(tasks.audit-snapshot.results.event-type)
+          operator: notin
+          values: ["push"]
       params:
         - name: oci-artifacts-repo
           value: $(params.oci-artifacts-repo)

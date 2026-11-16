@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   annotations:
-    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/trainer-operator?rev={{revision}}
+    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/trainer?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
@@ -25,7 +25,7 @@ spec:
   - name: output-image
     value: quay.io/opendatahub/odh-trainer-operator:$$OUTPUT_IMAGE_TAG$$
   - name: dockerfile
-    value: Dockerfile
+    value: rhoai/operator/Dockerfile
   - name: path-context
     value: .
   #add these additional params

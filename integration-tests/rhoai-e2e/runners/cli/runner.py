@@ -879,6 +879,8 @@ class RhoaiE2ERunner(
 
         if getattr(self.args, "structural_tests", False):
             return self.run_structural_tests_only()
+        if getattr(self.args, "sync_fbc_e2e_snapshots", False):
+            return self.run_sync_fbc_e2e_snapshots()
         if (self.args.run_its or "").strip():
             return self.run_integration_test_scenario()
         if (self.args.enable_its or "").strip():

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 from suite.constants import (
@@ -815,6 +815,8 @@ class RunnerListMixin(RunnerOcpMixin):
         image_pattern: str,
         *,
         required_catalog_line: str = "",
+        snapshot_walk: int = 0,
+        exclude_snapshot: Callable[[dict[str, Any]], bool] | None = None,
     ) -> tuple[str, str, dict[str, Any] | None]:
         """Newest ``containerImage`` for ``component_name`` on one Konflux Application only.
 
@@ -850,7 +852,10 @@ class RunnerListMixin(RunnerOcpMixin):
         rows = _snapshot_rows_from_custom_columns(stdout)
         if not rows:
             return "", "", None
-        max_walk = 80 if (required_catalog_line or "").strip() else 1
+        if snapshot_walk > 0:
+            max_walk = snapshot_walk
+        else:
+            max_walk = 80 if (required_catalog_line or "").strip() else 1
         scan = rows[-max_walk:] if len(rows) > max_walk else rows
         for ts, snap_name in reversed(scan):
             meta_proc = run_cmd(
@@ -863,6 +868,8 @@ class RunnerListMixin(RunnerOcpMixin):
                 continue
             snap_obj = _parse_snapshot_json(meta_proc.stdout or "")
             if snap_obj is None:
+                continue
+            if exclude_snapshot is not None and exclude_snapshot(snap_obj):
                 continue
             for comp in snap_obj.get("spec", {}).get("components", []) or []:
                 if not isinstance(comp, dict):

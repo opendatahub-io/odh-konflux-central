@@ -196,6 +196,9 @@ EVENT_TYPE_PUSH = "push"
 
 # Konflux Application / Snapshot / PipelineRun association (Integration Service).
 LABEL_KONFLUX_APPLICATION = "appstudio.openshift.io/application"
+LABEL_KONFLUX_COMPONENT = "appstudio.openshift.io/component"
+LABEL_SNAPSHOT_TYPE = "test.appstudio.openshift.io/type"
+SNAPSHOT_TYPE_OVERRIDE = "override"
 LABEL_KONFLUX_PIPELINE_TYPE = "pipelines.appstudio.openshift.io/type"
 PIPELINE_TYPE_TEST = "test"
 
