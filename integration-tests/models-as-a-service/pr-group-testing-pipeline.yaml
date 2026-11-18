@@ -358,6 +358,7 @@ spec:
 
               export PYTHONPATH="${TLS_SCANNER_REPO}/src"
               TLS_DEPLOY_TIMEOUT="${TLS_SCANNER_DEPLOY_TIMEOUT:-3600}"
+              # set +e: capture deploy exit code under set -euo pipefail without aborting before TLS_EXIT=$?
               set +e
               timeout "${TLS_DEPLOY_TIMEOUT}" python3 -m tls_scanner.deploy \
                 --image "${TLS_SCANNER_IMAGE}" \
@@ -365,10 +366,10 @@ spec:
                 --pqc-check \
                 --out-dir "${TLS_SCAN_OUT}"
               TLS_EXIT=$?
+              set -e
               if [ "${TLS_EXIT}" -eq 124 ]; then
                 echo "tls_scanner.deploy timed out after ${TLS_DEPLOY_TIMEOUT}s" >&2
               fi
-              set -e
               if [ -f "${TLS_SCAN_OUT}/junit_tls_scan.xml" ]; then
                 cp "${TLS_SCAN_OUT}/junit_tls_scan.xml" "${ARTIFACT_DIR}/junit_tls_scan.xml"
               fi
