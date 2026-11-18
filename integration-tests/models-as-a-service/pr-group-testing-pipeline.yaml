@@ -54,6 +54,14 @@ spec:
       type: string
       default: hosted-mgmt2
       description: Hosted management cluster used to provision the ephemeral cluster.
+    - name: tls-scanner-image
+      type: string
+      default: "quay.io/opendatahub/tls-scanner@sha256:30fb4e69fbef9c0c09004265d495c681be8895b7a6e8a2d7fa3c07ef128995f3"
+      description: Pinned tls-scanner image (digest). Bump when intentionally upgrading the scanner.
+    - name: tls-scan-namespaces
+      type: string
+      default: "opendatahub,odh-ai-gateway-infra"
+      description: Namespaces passed to tls-scanner-deploy --namespaces.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -302,6 +310,10 @@ spec:
                 value: /credentials/kubeconfig
               - name: ARTIFACT_DIR
                 value: /workspace/artifacts-dir
+              - name: TLS_SCANNER_IMAGE
+                value: $(params.tls-scanner-image)
+              - name: TLS_SCAN_NAMESPACES
+                value: $(params.tls-scan-namespaces)
             volumeMounts:
               - name: credentials
                 mountPath: /credentials
@@ -314,10 +326,11 @@ spec:
               E2E_SMOKE_STATUS="/test-status/e2e-smoke-status"
               E2E_STATUS=$(cat "${E2E_SMOKE_STATUS}" 2>/dev/null || cat "${STATUS_FILE}" 2>/dev/null || echo "failed")
               if [ "${E2E_STATUS}" != "success" ]; then
-                echo "Smoke e2e status is ${E2E_STATUS}; continuing TLS/PQC scan on same cluster"
+                echo "WARNING: smoke e2e status is ${E2E_STATUS}; TLS/PQC scan continues for artifacts but results may reflect a broken or partial cluster" >&2
               fi
 
               echo "failed" > "/test-status/tls-scan-status"
+              # fail-if-needed requires deploy-and-e2e-status=success only when smoke and TLS both pass.
               if [ "${E2E_STATUS}" = "success" ]; then
                 echo "failed" > "$STATUS_FILE"
               fi
@@ -325,18 +338,36 @@ spec:
               TLS_SCAN_OUT="${ARTIFACT_DIR}/tls-scanner"
               mkdir -p "${TLS_SCAN_OUT}"
 
-              rm -rf /tmp/opendatahub-tls-scanner
-              timeout 120s git clone --depth 1 --branch main \
-                https://github.com/opendatahub-io/tls-scanner.git /tmp/opendatahub-tls-scanner
+              TLS_SCANNER_REPO=/tmp/opendatahub-tls-scanner
+              rm -rf "${TLS_SCANNER_REPO}"
+              CLONE_OK=0
+              for attempt in 1 2 3; do
+                if timeout 120s git clone --depth 1 --branch main \
+                  https://github.com/opendatahub-io/tls-scanner.git "${TLS_SCANNER_REPO}"; then
+                  CLONE_OK=1
+                  break
+                fi
+                echo "tls-scanner git clone attempt ${attempt} failed; retrying..." >&2
+                sleep 5
+              done
+              if [ "${CLONE_OK}" -ne 1 ]; then
+                echo "failed" > "$STATUS_FILE"
+                echo "failed" > "/test-status/tls-scan-status"
+                exit 1
+              fi
 
-              export PYTHONPATH=/tmp/opendatahub-tls-scanner/src
+              export PYTHONPATH="${TLS_SCANNER_REPO}/src"
+              TLS_DEPLOY_TIMEOUT="${TLS_SCANNER_DEPLOY_TIMEOUT:-3600}"
               set +e
-              python3 -m tls_scanner.deploy \
-                --image quay.io/opendatahub/tls-scanner:latest \
-                --namespaces "opendatahub,odh-ai-gateway-infra" \
+              timeout "${TLS_DEPLOY_TIMEOUT}" python3 -m tls_scanner.deploy \
+                --image "${TLS_SCANNER_IMAGE}" \
+                --namespaces "${TLS_SCAN_NAMESPACES}" \
                 --pqc-check \
                 --out-dir "${TLS_SCAN_OUT}"
               TLS_EXIT=$?
+              if [ "${TLS_EXIT}" -eq 124 ]; then
+                echo "tls_scanner.deploy timed out after ${TLS_DEPLOY_TIMEOUT}s" >&2
+              fi
               set -e
               if [ -f "${TLS_SCAN_OUT}/junit_tls_scan.xml" ]; then
                 cp "${TLS_SCAN_OUT}/junit_tls_scan.xml" "${ARTIFACT_DIR}/junit_tls_scan.xml"

@@ -28,6 +28,8 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `rhoai-must-gather-tag` | Tag for `registry.redhat.io/rhoai/odh-must-gather-rhel9:<tag>` used by the must-gather step (default `v3.5.0`). Ignored when `rhoai-must-gather-image` is set. |
 | `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
 | `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
+| `tls-scanner-image` | Pinned Quay scanner by digest (default in pipeline YAML; bump on intentional upgrade). |
+| `tls-scan-namespaces` | Namespaces for tls-scanner-deploy (default `opendatahub,odh-ai-gateway-infra`). |
 
 **Workspaces**
 
@@ -38,14 +40,16 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 1. **`generate-snapshot`** — builds a **composite snapshot** JSON listing images and git metadata for every component in `group-components` (rhoai-konflux `generate-snapshot-for-group-testing` task).
 2. **`audit-snapshot`** — verifies each component row has non-empty image, `git.commit`, and `git.url`; writes PR fields from PAC annotations/labels (`pipelinesascode.tekton.dev/sender`, `pull-request`, `url-repository`, `url-org`, `sha`, …).
 3. **`provision-eaas-space`** / **`provision-cluster`** — EaaS space + Hypershift cluster (`m5.2xlarge`), same build-definitions stepactions as other ODH integration tests.
-4. **`e2e-maas-openshift`** (timeout **2h30m**) — clone `models-as-a-service`, run smoke, then **`tls-pqc-scan`** on the same cluster (runs even if smoke failed). **`ARTIFACT_DIR`** holds e2e, `tls-scanner/`, and must-gather output. Steps use **`onError: continue`**; **`fail-if-needed`** fails after artifact upload if smoke or TLS failed.
+4. **`e2e-maas-openshift`** (timeout **2h30m**, shared by smoke, TLS, and must-gather) — clone `models-as-a-service`, run smoke, then **`tls-pqc-scan`** on the same cluster (runs even if smoke failed; see WARNING in step logs). **`ARTIFACT_DIR`** holds e2e, `tls-scanner/`, and must-gather output. Steps use **`onError: continue`**; **`fail-if-needed`** fails after artifact upload if smoke or TLS failed. If smoke approaches the task budget, TLS may not run (`tls-scan-status` missing).
 5. **`must-gather`** — plain OpenShift must-gather first, then official RHOAI must-gather (`registry.redhat.io/rhoai/odh-must-gather-rhel9` + `rhoai-must-gather-tag`, default `v3.5.0`) for **`aigateway`** (MaaS CRs / Kuadrant TRLPs) and **`kserve`** (LLMInferenceService), under `ARTIFACT_DIR` (also `onError: continue`). Each gather continues on failure so one broken plugin cannot skip the others. RHOAI gather commands export ODH namespaces (`OPERATOR_NAMESPACE=openshift-operators`, `APPLICATIONS_NAMESPACE` / `MONITORING_NAMESPACE` / `NOTEBOOK_NAMESPACE=opendatahub`) so must-gather does not early-exit looking for `rhods-operator`.
 6. **`git-push-artifacts`** — stages `ARTIFACT_DIR` into `opendatahub-io/odh-build-metadata` branch `ci-artifacts` under `test-artifacts/<pipelinerun-name>` (`secure-git-push` stepaction).
 7. **`finally` → `push-ci-artifacts-and-update-pr`** — sparse-clone that path, **push OCI** (`secure-push-oci` + `odh-registry-secret`), **comment on the PR** (`pull-request-comment`, inputs from `audit-snapshot` results and `$(tasks.status)`), **delete** the transient directory under `test-artifacts/` (`cleanup-git-repo`).
 
 ### TLS / PQC after smoke
 
-Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main`, run **`python -m tls_scanner.deploy`** with image **`quay.io/opendatahub/tls-scanner:latest`**, namespaces **`opendatahub,odh-ai-gateway-infra`**, **`--pqc-check`**, output **`ARTIFACT_DIR/tls-scanner/`** (`results.json`, logs). Pass/fail follows deploy exit code; no extra pipeline params. Smoke sets **`MAAS_DISCOVERY_ENABLED=true`** so discovery workloads are on the cluster.
+Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` (retry ×3), run **`python -m tls_scanner.deploy`** with **`tls-scanner-image`** (Quay **digest-pinned**), **`tls-scan-namespaces`**, **`--pqc-check`**, bounded by **`TLS_SCANNER_DEPLOY_TIMEOUT`** (default **3600s**). Output **`ARTIFACT_DIR/tls-scanner/`** (`results.json`, logs); publish path unchanged (`tls-scanner/` inside the usual OCI artifact bundle). Pass/fail follows deploy exit code. Smoke sets **`MAAS_DISCOVERY_ENABLED=true`** so discovery workloads are on the cluster.
+
+Fast follow: bundle `tls_scanner.deploy` in the scanner image to drop the runtime git clone and `PYTHONPATH` coupling.
 
 **Validate:** `/group-test` → confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
 
