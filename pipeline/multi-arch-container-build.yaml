@@ -125,6 +125,10 @@ spec:
     default: "false"
     type: string
     description: Triggers a group testing pipeline at the end of PR builds
+  - name: enable-oidc-group-testing
+    default: "false"
+    type: string
+    description: Triggers the OIDC group testing pipeline (/group-test-oidc) at the end of PR builds
   - name: enable-early-gate-testing
     default: "true"
     type: string
@@ -826,6 +830,137 @@ spec:
       operator: in
       values:
       - "true"
+  - name: trigger-group-testing-oidc
+    workspaces:
+    - name: basic-auth
+      workspace: git-auth
+    taskSpec:
+      workspaces:
+        - name: basic-auth
+          optional: true
+      steps:
+      - image: quay.io/konflux-ci/konflux-test:stable
+        name: trigger-group-testing-oidc
+        env:
+        - name: REPO_OWNER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
+        - name: REPO_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-repository']
+        - name: PR_NUMBER
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/pull-request']
+        - name: CURRENT_PIPELINE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/original-prname']
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: odh-github-secret
+              key: commenter-token
+        script: |
+          #!/bin/bash
+          set -e
+          echo "REPO_OWNER: $REPO_OWNER"
+          echo "REPO_NAME: $REPO_NAME"
+          echo "PR_NUMBER: $PR_NUMBER"
+
+          if [ -z "$GITHUB_TOKEN" ]; then
+              echo "Error: GITHUB_TOKEN env is not set."
+              exit 1
+          fi
+
+          API_BASE="https://api.github.com"
+          PR_URL="$API_BASE/repos/$REPO_OWNER/$REPO_NAME/pulls/$PR_NUMBER"
+          COMMENTS_URL="$API_BASE/repos/$REPO_OWNER/$REPO_NAME/issues/$PR_NUMBER/comments"
+
+          echo "Fetching PR information..."
+          PR_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "$PR_URL")
+          HEAD_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
+
+          if [ -z "$HEAD_SHA" ] || [ "$HEAD_SHA" = "null" ]; then
+              echo "Error: Could not retrieve HEAD SHA for PR #$PR_NUMBER"
+              exit 1
+          fi
+          echo "HEAD SHA: $HEAD_SHA"
+
+          echo "Fetching check runs..."
+          CHECK_RUNS_URL="$API_BASE/repos/$REPO_OWNER/$REPO_NAME/commits/$HEAD_SHA/check-runs"
+          CHECK_RUNS_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "$CHECK_RUNS_URL")
+
+          KONFLUX_CHECKS=$(echo "$CHECK_RUNS_DATA" | jq -r '.check_runs[] | select(.name | startswith("Red Hat Konflux")) | "\(.name)|\(.status)"')
+
+          if [ -z "$KONFLUX_CHECKS" ]; then
+              echo "No Red Hat Konflux checks found"
+              exit 0
+          fi
+
+          echo "Found Red Hat Konflux checks:"
+          echo "$KONFLUX_CHECKS"
+
+          # Wait only on component build checks. Skip every group-test check
+          # (both maas-group-test-* and maas-group-test-oidc-*) — the plain
+          # group test may already be running from the sibling trigger task,
+          # and this check only fires after the /group-test-oidc comment, so
+          # counting either would deadlock.
+          ALL_COMPLETED=true
+          while IFS='|' read -r name status; do
+              if [[ "$name" == *"group-test"* || "$name" == *"${CURRENT_PIPELINE_NAME}" ]]; then
+                  echo "Skipping check: $name (group-test check or current pipeline)"
+                  continue
+              fi
+              if [ "$status" != "completed" ]; then
+                  echo "Check not completed: $name (status: $status)"
+                  ALL_COMPLETED=false
+              else
+                  echo "Check completed: $name"
+              fi
+          done <<< "$KONFLUX_CHECKS"
+
+          if [ "$ALL_COMPLETED" = true ]; then
+              echo "✓ All component checks completed"
+              echo "Adding comment '/group-test-oidc' to PR #$PR_NUMBER..."
+
+              COMMENT_RESPONSE=$(curl -s -X POST \
+                  -H "Authorization: token $GITHUB_TOKEN" \
+                  -H "Accept: application/vnd.github.v3+json" \
+                  -H "Content-Type: application/json" \
+                  -d '{"body":"/group-test-oidc"}' \
+                  "$COMMENTS_URL")
+              COMMENT_URL=$(echo "$COMMENT_RESPONSE" | jq -r '.html_url')
+
+              if [ -n "$COMMENT_URL" ] && [ "$COMMENT_URL" != "null" ]; then
+                  echo "✓ Comment added successfully: $COMMENT_URL"
+              else
+                  echo "✗ Failed to add comment"
+                  echo "$COMMENT_RESPONSE" | jq .
+                  exit 1
+              fi
+          else
+              echo "✗ Condition not met. Not adding comment."
+          fi
+    when:
+    - input: $(tasks.pipeline-success-indicator.status)
+      operator: in
+      values:
+      - "Succeeded"
+    - input: $(params.enable-oidc-group-testing)
+      operator: in
+      values:
+      - "true"
+    - input: $(params.pipeline-type)
+      operator: in
+      values:
+        - "pull-request"
   - name: trigger-early-gate-build
     workspaces:
     - name: basic-auth
