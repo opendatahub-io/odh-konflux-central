@@ -1,0 +1,21 @@
+name: OpenShell version test helpers
+on:
+  pull_request:
+    paths:
+      - integration-tests/openshell/**
+      - .github/workflows/openshell-version-tests.yaml
+  push:
+    branches: [main]
+    paths:
+      - integration-tests/openshell/**
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+      - run: uv run --no-project --with-requirements integration-tests/openshell/requirements.txt python -m unittest discover -s integration-tests/openshell/tests -v

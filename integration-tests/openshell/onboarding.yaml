@@ -1,0 +1,163 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openshell-version-test-workload
+  namespace: open-data-hub-tenant
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openshell-version-coordinator
+  namespace: open-data-hub-tenant
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshell-version-coordinate
+  namespace: open-data-hub-tenant
+rules:
+  - apiGroups:
+      - appstudio.redhat.com
+    resources:
+      - snapshots
+    verbs:
+      - list
+  - apiGroups:
+      - ''
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - create
+      - patch
+  - apiGroups:
+      - tekton.dev
+    resources:
+      - pipelineruns
+    verbs:
+      - get
+      - create
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshell-version-coordinate
+  namespace: open-data-hub-tenant
+subjects:
+  - kind: ServiceAccount
+    name: openshell-version-coordinator
+    namespace: open-data-hub-tenant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openshell-version-coordinate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshell-version-control
+  namespace: open-data-hub-tenant
+rules:
+  - apiGroups:
+      - ''
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - create
+  - apiGroups:
+      - ci.openshift.org
+    resources:
+      - testplatformclusters
+    verbs:
+      - get
+      - list
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshell-version-control
+  namespace: open-data-hub-tenant
+subjects:
+  - kind: ServiceAccount
+    name: konflux-integration-runner
+    namespace: open-data-hub-tenant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openshell-version-control
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openshell-version-settings
+  namespace: open-data-hub-tenant
+data:
+  config-revision: REPLACE_WITH_REVIEWED_COMMIT
+  tiers: smoke
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openshell-version-reconcile
+  namespace: open-data-hub-tenant
+spec:
+  schedule: '*/2 * * * *'
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          serviceAccountName: openshell-version-coordinator
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1001
+          volumes:
+            - name: code
+              emptyDir: {}
+          containers:
+            - name: reconcile
+              image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+              volumeMounts:
+                - name: code
+                  mountPath: /code
+              env:
+                - name: CONFIG_REVISION
+                  valueFrom:
+                    configMapKeyRef:
+                      name: openshell-version-settings
+                      key: config-revision
+                - name: TEST_TIERS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: openshell-version-settings
+                      key: tiers
+              command:
+                - python3
+                - -c
+                - |
+                  #!/usr/bin/env python3
+                  import os, pathlib, re, urllib.request
+                  revision = os.environ['CONFIG_REVISION']
+                  if not re.fullmatch(r'[0-9a-f]{40}', revision):
+                      raise ValueError('Pin CONFIG_REVISION to the reviewed central commit')
+                  root = pathlib.Path('/code')
+                  for name in ('version_tests.py', 'coordinator.py'):
+                      url = 'https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/' + revision + '/integration-tests/openshell/' + name
+                      with urllib.request.urlopen(url, timeout=30) as response:
+                          root.joinpath(name).write_bytes(response.read())
+                  root.joinpath('config-revision').write_text(revision)
+
+                  import subprocess
+                  subprocess.run(['python3', str(root / 'coordinator.py')], check=True)

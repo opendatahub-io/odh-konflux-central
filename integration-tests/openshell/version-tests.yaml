@@ -1,0 +1,429 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: openshell-version-tests
+spec:
+  description: Qualify one immutable image group referenced by ID.
+  params:
+    - name: group-id
+      type: string
+    - name: config-revision
+      type: string
+    - name: ocp-version
+      type: string
+      default: '4.22'
+  workspaces:
+    - name: config
+    - name: reports
+  results:
+    - name: TEST_OUTPUT
+      value: $(finally.report.results.TEST_OUTPUT)
+  tasks:
+    - name: prepare
+      workspaces:
+        - name: config
+          workspace: config
+      params:
+        - name: group-id
+          value: $(params.group-id)
+        - name: config-revision
+          value: $(params.config-revision)
+      taskSpec:
+        params:
+          - name: group-id
+          - name: config-revision
+        workspaces:
+          - name: config
+        results:
+          - name: gateway
+          - name: supervisor
+          - name: sandbox
+          - name: e2e
+          - name: tiers
+        steps:
+          - name: bootstrap
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            env:
+              - name: CONFIG_REVISION
+                value: $(params.config-revision)
+              - name: DATA_DIR
+                value: $(workspaces.config.path)
+            script: |
+              #!/usr/bin/env python3
+              import os, pathlib, re, urllib.request
+              revision = os.environ['CONFIG_REVISION']
+              if not re.fullmatch(r'[0-9a-f]{40}', revision):
+                  raise ValueError('Pin CONFIG_REVISION to the reviewed central commit')
+              root = pathlib.Path(os.environ['DATA_DIR'])
+              for name in ('version_tests.py', 'requirements.txt'):
+                  url = 'https://raw.githubusercontent.com/opendatahub-io/odh-konflux-central/' + revision + '/integration-tests/openshell/' + name
+                  with urllib.request.urlopen(url, timeout=30) as response:
+                      root.joinpath(name).write_bytes(response.read())
+              root.joinpath('config-revision').write_text(revision)
+              import subprocess, sys
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
+                              '--no-cache-dir', '--no-deps', '--only-binary=:all:', '--upgrade', '--target', str(root / 'vendor'),
+                              '-r', str(root / 'requirements.txt')], check=True)
+          - name: validate
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            command:
+              - python3
+            args:
+              - $(workspaces.config.path)/version_tests.py
+              - prepare
+              - --data
+              - $(workspaces.config.path)
+            env:
+              - name: GROUP_ID
+                value: $(params.group-id)
+              - name: RUN_ID
+                value: $(context.pipelineRun.name)
+              - name: PIPELINE_UID
+                value: $(context.pipelineRun.uid)
+              - name: GATEWAY_RESULT
+                value: $(results.gateway.path)
+              - name: SUPERVISOR_RESULT
+                value: $(results.supervisor.path)
+              - name: SANDBOX_RESULT
+                value: $(results.sandbox.path)
+              - name: E2E_RESULT
+                value: $(results.e2e.path)
+              - name: TIERS_RESULT
+                value: $(results.tiers.path)
+    - name: provision-cluster
+      runAfter:
+        - prepare
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/openshift/konflux-tasks
+          - name: revision
+            value: 9751a2028f2b3b88e4204d5c42de8eda4ebb466f
+          - name: pathInRepo
+            value: tasks/provision-ephemeral-cluster/0.1/provision-ephemeral-cluster.yaml
+      params:
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+        - name: workflow
+          value: hypershift-hostedcluster-workflow
+        - name: clusterProfile
+          value: aws-konflux-prod
+        - name: timeout
+          value: 1h
+        - name: releases
+          value: '{"latest":{"release":{"channel":"stable","version":"$(params.ocp-version)","architecture":"multi"}}}'
+        - name: env
+          value: '{"COMPUTE_NODE_TYPE":"m5.2xlarge","HYPERSHIFT_NODE_COUNT":"3","HOSTED_MANAGEMENT_CLUSTER":"hosted-mgmt2"}'
+    - name: install-agent-sandbox
+      runAfter:
+        - provision-cluster
+      timeout: 30m
+      params:
+        - name: credentials-secret
+          value: $(tasks.provision-cluster.results.secretRef)
+        - name: e2e-image
+          value: $(tasks.prepare.results.e2e)
+      workspaces:
+        - name: config
+          workspace: config
+        - name: reports
+          workspace: reports
+      taskSpec:
+        params:
+          - name: credentials-secret
+          - name: e2e-image
+        workspaces:
+          - name: config
+            readOnly: true
+          - name: reports
+        volumes:
+          - name: credentials
+            secret:
+              secretName: $(params.credentials-secret)
+        steps:
+          - name: install
+            image: $(params.e2e-image)
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+                readOnly: true
+            env:
+              - name: KUBECONFIG
+                value: /credentials/kubeconfig
+            command:
+              - python3
+            args:
+              - $(workspaces.config.path)/version_tests.py
+              - install-agent-sandbox
+              - --data
+              - $(workspaces.config.path)
+              - --reports
+              - $(workspaces.reports.path)
+    - name: run-tests
+      runAfter:
+        - install-agent-sandbox
+      timeout: 2h
+      params:
+        - name: credentials-secret
+          value: $(tasks.provision-cluster.results.secretRef)
+        - name: e2e-image
+          value: $(tasks.prepare.results.e2e)
+        - name: gateway-image
+          value: $(tasks.prepare.results.gateway)
+        - name: supervisor-image
+          value: $(tasks.prepare.results.supervisor)
+        - name: sandbox-image
+          value: $(tasks.prepare.results.sandbox)
+        - name: tiers
+          value: $(tasks.prepare.results.tiers)
+      workspaces:
+        - name: reports
+          workspace: reports
+      taskSpec:
+        params:
+          - name: credentials-secret
+          - name: e2e-image
+          - name: gateway-image
+          - name: supervisor-image
+          - name: sandbox-image
+          - name: tiers
+        workspaces:
+          - name: reports
+        volumes:
+          - name: credentials
+            secret:
+              secretName: $(params.credentials-secret)
+        steps:
+          - name: e2e
+            image: $(params.e2e-image)
+            computeResources:
+              requests:
+                cpu: '2'
+                memory: 4Gi
+              limits:
+                memory: 8Gi
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+                readOnly: true
+            env:
+              - name: KUBECONFIG
+                value: /credentials/kubeconfig
+              - name: GATEWAY_IMAGE
+                value: $(params.gateway-image)
+              - name: SUPERVISOR_IMAGE
+                value: $(params.supervisor-image)
+              - name: SANDBOX_IMAGE
+                value: $(params.sandbox-image)
+              - name: ALLOWED_IMAGE_REGISTRY_PREFIXES
+                value: quay.io/opendatahub/,ghcr.io/astral-sh/
+              - name: TEST_TIERS
+                value: $(params.tiers)
+              - name: REPORTS_DIR
+                value: $(workspaces.reports.path)
+            script: |
+              #!/usr/bin/env bash
+              set -euo pipefail
+              failed=0
+              IFS=',' read -r -a tiers <<< "$TEST_TIERS"
+              for tier in "${tiers[@]}"; do
+                export OPENSHELL_E2E_RESULTS_DIR="$REPORTS_DIR/$tier"
+                mkdir -p "$OPENSHELL_E2E_RESULTS_DIR"
+                set +e
+                /home/odh/openshell-e2e-odh/odh/scripts/e2e-odh-entrypoint.sh "$tier" 2>&1 | tee "$OPENSHELL_E2E_RESULTS_DIR/run.log"
+                status=${PIPESTATUS[0]}
+                set -e
+                printf '%s' "$status" > "$REPORTS_DIR/$tier.exit"
+                if [[ "$status" != 0 ]]; then failed=1; break; fi
+              done
+              exit "$failed"
+  finally:
+    - name: cleanup-cluster
+      timeout: 5m
+      taskSpec:
+        steps:
+          - name: cleanup
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            env:
+              - name: PIPELINE_UID
+                value: $(context.pipelineRun.uid)
+            script: |
+              #!/usr/bin/env python3
+              # This task deliberately needs neither a workspace nor publication credentials.
+              import datetime, json, os, pathlib, ssl, urllib.error, urllib.parse, urllib.request
+              sa = pathlib.Path('/var/run/secrets/kubernetes.io/serviceaccount')
+              namespace = sa.joinpath('namespace').read_text().strip()
+              base = 'https://' + os.environ['KUBERNETES_SERVICE_HOST'] + ':' + os.environ['KUBERNETES_SERVICE_PORT']
+              headers = {'Authorization': 'Bearer ' + sa.joinpath('token').read_text().strip(), 'Content-Type': 'application/json'}
+              context = ssl.create_default_context(cafile=str(sa / 'ca.crt'))
+              def api(path, method='GET', value=None):
+                  request = urllib.request.Request(base + path, headers=headers, method=method,
+                      data=json.dumps(value).encode() if value is not None else None)
+                  with urllib.request.urlopen(request, context=context, timeout=30) as response:
+                      return json.load(response)
+              uid = os.environ['PIPELINE_UID']
+              receipt = {'owner_uid': uid, 'requested': True, 'finished_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+              path = '/apis/ci.openshift.org/v1alpha1/namespaces/' + namespace + '/testplatformclusters'
+              try:
+                  cursor = ''
+                  while True:
+                      page = api(path + '?' + urllib.parse.urlencode({'limit': '100', 'continue': cursor}))
+                      for claim in page['items']:
+                          if any(owner.get('kind') == 'PipelineRun' and owner.get('uid') == uid for owner in claim['metadata'].get('ownerReferences', [])):
+                              try:
+                                  api(path + '/' + claim['metadata']['name'], 'DELETE', {'apiVersion': 'v1', 'kind': 'DeleteOptions', 'preconditions': {'uid': claim['metadata']['uid']}})
+                              except urllib.error.HTTPError as error:
+                                  if error.code != 404:
+                                      raise
+                      cursor = page.get('metadata', {}).get('continue', '')
+                      if not cursor:
+                          break
+              except Exception as error:
+                  receipt['requested'] = False
+                  receipt['error_type'] = type(error).__name__
+              cm = {'apiVersion': 'v1', 'kind': 'ConfigMap', 'metadata': {'name': 'openshell-cleanup-' + uid,
+                    'labels': {'openshell.opendatahub.io/kind': 'cleanup'}}, 'immutable': True,
+                    'data': {'receipt.json': json.dumps(receipt)}}
+              try:
+                  api('/api/v1/namespaces/' + namespace + '/configmaps', 'POST', cm)
+              except urllib.error.HTTPError as error:
+                  if error.code != 409:
+                      raise
+              if not receipt['requested']:
+                  raise SystemExit(1)
+    - name: report
+      timeout: 25m
+      workspaces:
+        - name: config
+          workspace: config
+        - name: reports
+          workspace: reports
+      params:
+        - name: pipeline-status
+          value: $(tasks.status)
+        - name: artifact-reference
+          value: quay.io/opendatahub/odh-ci-artifacts:$(context.pipelineRun.name)
+      taskSpec:
+        params:
+          - name: pipeline-status
+          - name: artifact-reference
+        results:
+          - name: TEST_OUTPUT
+        workspaces:
+          - name: config
+          - name: reports
+            readOnly: true
+        volumes:
+          - name: publisher
+            secret:
+              secretName: openshell-results-publisher
+          - name: registry
+            secret:
+              secretName: odh-registry-secret
+              items:
+                - key: .dockerconfigjson
+                  path: oci-storage-dockerconfigjson
+          - name: artifact-staging
+            emptyDir: {}
+        stepTemplate:
+          volumeMounts:
+            - name: artifact-staging
+              mountPath: /artifacts
+          env:
+            - name: PYTHONPATH
+              value: $(workspaces.config.path)/vendor
+        steps:
+          - name: finalize
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            command:
+              - python3
+            args:
+              - $(workspaces.config.path)/version_tests.py
+              - finalize
+              - --data
+              - $(workspaces.config.path)
+              - --reports
+              - $(workspaces.reports.path)
+            env:
+              - name: PIPELINE_UID
+                value: $(context.pipelineRun.uid)
+              - name: PIPELINE_STATUS
+                value: $(params.pipeline-status)
+          - name: stage-artifacts
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            command:
+              - python3
+            args:
+              - $(workspaces.config.path)/version_tests.py
+              - stage-artifacts
+              - --data
+              - $(workspaces.config.path)
+              - --reports
+              - $(workspaces.reports.path)
+          - name: upload
+            onError: continue
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/red-hat-data-services/rhoai-konflux-tasks.git
+                - name: revision
+                  value: f01c8d4f7b4dc79c7d395d24e9d94e8576889bd6
+                - name: pathInRepo
+                  value: stepactions/secure-push-oci/0.1/secure-push-oci.yaml
+            params:
+              - name: workdir-path
+                value: /artifacts
+              - name: oci-ref
+                value: $(params.artifact-reference)
+              - name: credentials-volume-name
+                value: registry
+              - name: always-pass
+                value: 'false'
+          - name: seal
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            command:
+              - python3
+            args:
+              - $(workspaces.config.path)/version_tests.py
+              - seal
+              - --data
+              - $(workspaces.config.path)
+              - --reports
+              - $(workspaces.reports.path)
+            env:
+              - name: ARTIFACT_EXIT_CODE_FILE
+                value: $(steps.upload.exitCode.path)
+              - name: ARTIFACT_REFERENCE
+                value: $(params.artifact-reference)
+              - name: TEST_OUTPUT_RESULT
+                value: $(results.TEST_OUTPUT.path)
+          - name: publish
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            command:
+              - python3
+            args:
+              - $(workspaces.config.path)/version_tests.py
+              - publish
+              - --data
+              - $(workspaces.config.path)
+              - --reports
+              - $(workspaces.reports.path)
+            volumeMounts:
+              - name: publisher
+                mountPath: /publisher
+                readOnly: true
+          - name: enforce
+            image: registry.access.redhat.com/ubi9/python-311@sha256:a0bdb55576fc5b8d6704279307817828ef027e1065533ceba133fe9516003a6c
+            command:
+              - python3
+            args:
+              - $(workspaces.config.path)/version_tests.py
+              - enforce
+              - --data
+              - $(workspaces.config.path)
+              - --reports
+              - $(workspaces.reports.path)
