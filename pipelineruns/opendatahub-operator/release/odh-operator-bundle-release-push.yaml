@@ -41,7 +41,7 @@ spec:
     - name: prefetch-input
       value: ""
     - name: image-expires-after
-      value: "30d"
+      value: "50d"
     - name: build-source-image
       value: "false"
     - name: build-image-index
