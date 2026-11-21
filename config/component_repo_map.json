@@ -190,7 +190,8 @@
     "odh-mod-arch-gen-ai-ci": "opendatahub/odh-mod-arch-gen-ai",
     "odh-mod-arch-mlflow": "opendatahub/odh-mod-arch-mlflow",
     "odh-mod-arch-modular-architecture-ci": "opendatahub/odh-mod-arch-modular-architecture",
-    "odh-mod-arch-notebooks-ci": "opendatahub/odh-mod-arch-notebooks"
+    "odh-mod-arch-notebooks-ci": "opendatahub/odh-mod-arch-notebooks",
+    "odh-rhaii-dashboard-ci": "opendatahub/odh-rhaii-dashboard"
   },
   "odh-model-controller": {
     "odh-model-controller-ci": "opendatahub/odh-model-controller",
