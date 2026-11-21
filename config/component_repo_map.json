@@ -181,6 +181,7 @@
     "odh-dashboard-ci": "opendatahub/odh-dashboard",
     "odh-dashboard-operator-ci": "opendatahub/odh-dashboard-operator",
     "odh-mod-arch-agent-ops-ci": "opendatahub/odh-mod-arch-agent-ops",
+    "odh-mod-arch-ai-safety-ci": "opendatahub/odh-mod-arch-ai-safety",
     "odh-mod-arch-automl-ci": "opendatahub/odh-mod-arch-automl",
     "odh-mod-arch-autorag-ci": "opendatahub/odh-mod-arch-autorag",
     "odh-mod-arch-data-connect-hub-ci": "opendatahub/odh-mod-arch-data-connect-hub",
