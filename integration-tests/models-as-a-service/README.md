@@ -51,7 +51,7 @@ Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/o
 
 Fast follow: bundle `tls_scanner.deploy` in the scanner image to drop the runtime git clone and `PYTHONPATH` coupling.
 
-**Validate:** `/group-test` → confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
+**Validate:** run `integration-tests/models-as-a-service/scripts/verify-tls-scanner-image.sh` against the pipeline default digest before `/group-test`. On Konflux, confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
 
 **Test a konflux PR:** set **`pipelineRef`** fork + SHA on MaaS `.tekton/maas-group-test.yaml`, then `/group-test`.
 
