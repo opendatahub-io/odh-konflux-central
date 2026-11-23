@@ -54,7 +54,8 @@
   },
   "eval-hub-contrib": {
     "odh-eval-hub-inspectai-ci": "opendatahub/odh-eval-hub-inspectai",
-    "odh-eval-hub-lighteval-ci": "opendatahub/odh-eval-hub-lighteval"
+    "odh-eval-hub-lighteval-ci": "opendatahub/odh-eval-hub-lighteval",
+    "odh-eval-hub-lm-eval-ci": "opendatahub/odh-eval-hub-lm-eval"
   },
   "feast": {
     "odh-feast-mcp-ci": "opendatahub/odh-feast-mcp",
