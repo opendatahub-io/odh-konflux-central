@@ -154,7 +154,7 @@ spec:
           - name: url
             value: https://github.com/openshift/konflux-tasks
           - name: revision
-            value: "9751a2028f2b3b88e4204d5c42de8eda4ebb466f"
+            value: "f288b035b04b75f42ef58fa1e88ae6e70429089c"
           - name: pathInRepo
             value: tasks/provision-ephemeral-cluster/0.1/provision-ephemeral-cluster.yaml
       params:
@@ -168,13 +168,19 @@ spec:
           value: aws-konflux-prod
         - name: timeout
           value: 1h
+        # Cover the bounded test command, diagnostics and artifact upload.
+        # The provision task's timeout above only bounds initial provisioning.
+        - name: waitForTearDownTimeout
+          value: 4h
         - name: releases
           value: >-
             {"latest":{"release":{"channel":"stable","version":"$(params.ocp-version)","architecture":"multi"}}}
         - name: env
           value: '{"COMPUTE_NODE_TYPE":"$(params.compute-node-type)","HYPERSHIFT_NODE_COUNT":"$(params.hypershift-node-count)","HOSTED_MANAGEMENT_CLUSTER":"$(params.hosted-management-cluster)"}'
     - name: e2e-maas-openshift
-      timeout: 2h30m
+      # Reserve time after a failed/timed-out test command to collect and upload
+      # artifacts; a TaskRunTimeout would terminate those later steps as well.
+      timeout: 3h30m
       workspaces:
       - name: basic-auth
         workspace: git-auth
@@ -287,7 +293,13 @@ spec:
               echo ""
               set -x
 
-              ./test/e2e/scripts/prow_run_smoke_test.sh
+              # Use a process timeout, not a Tekton step timeout, so onError:
+              # continue can still run diagnostics and publish the test reports.
+              timeout --signal=TERM --kill-after=5m 150m ./test/e2e/scripts/prow_run_smoke_test.sh || {
+                E2E_RC=$?
+                echo "E2E command failed (exit ${E2E_RC}); continuing with diagnostics and artifact upload"
+                exit "$E2E_RC"
+              }
 
               echo "success" > "$STATUS_FILE"
           - name: must-gather
@@ -342,7 +354,8 @@ spec:
               # The timeout runs INSIDE the gather pod, around /usr/bin/gather,
               # so a hung collector terminates and oc still copies whatever was
               # already collected. The outer timeout is only a backstop in case
-              # oc itself hangs (e.g. dead cluster API).
+              # oc itself hangs (e.g. dead cluster API). Set oc's own timeout too:
+              # its 10m default otherwise expires before the 25m collector budget.
               GATHER_TIMEOUT="25m"
               GATHER_PIDS=()
               GATHER_NAMES=()
@@ -350,7 +363,7 @@ spec:
               # Default OpenShift must-gather (infra-level data)
               mkdir -p "${ARTIFACT_DIR}/gather-openshift"
               (
-                timeout 30m oc adm must-gather \
+                timeout 35m oc adm must-gather --timeout=30m \
                   --dest-dir "${ARTIFACT_DIR}/gather-openshift" -- \
                   "timeout ${GATHER_TIMEOUT} /usr/bin/gather || echo 'gather timed out or failed; copying partial data'"
               ) &
@@ -362,7 +375,7 @@ spec:
               # avoiding the duplicate namespace/log collection and saving space.
               mkdir -p "${ARTIFACT_DIR}/gather-rhoai"
               (
-                timeout 30m oc adm must-gather \
+                timeout 35m oc adm must-gather --timeout=30m \
                   --image="${RHOAI_MUST_GATHER_IMAGE}" \
                   --dest-dir "${ARTIFACT_DIR}/gather-rhoai" -- \
                   "${MG_ODH_ENV}; timeout ${GATHER_TIMEOUT} /usr/bin/gather || echo 'gather timed out or failed; copying partial data'"
