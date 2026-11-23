@@ -29,7 +29,8 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
 | `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
 | `tls-scanner-image` | Pinned Quay scanner by digest (default in pipeline YAML; bump on intentional upgrade). |
-| `tls-scan-namespaces` | Namespaces for tls-scanner-deploy (default `opendatahub,odh-ai-gateway-infra`). |
+| `tls-scan-namespaces` | Namespace filter (default `opendatahub,odh-ai-gateway-infra,models-as-a-service`). |
+| `tls-scan-component-filter` | Pod component filter (default `maas-api,maas-controller,maas-discovery`; excludes e.g. `model-serving-api`). |
 
 **Workspaces**
 
@@ -47,7 +48,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 
 ### TLS / PQC after smoke
 
-Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` (retry ×3), run **`python -m tls_scanner.deploy`** with **`tls-scanner-image`** (Quay **digest-pinned**), **`tls-scan-namespaces`**, **`--pqc-check`**, bounded by **`TLS_SCANNER_DEPLOY_TIMEOUT`** (default **3600s**). Output **`ARTIFACT_DIR/tls-scanner/`** (`results.json`, logs); publish path unchanged (`tls-scanner/` inside the usual OCI artifact bundle). Pass/fail follows deploy exit code. Smoke sets **`MAAS_DISCOVERY_ENABLED=true`** so discovery workloads are on the cluster.
+Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` (retry ×3), run **`python -m tls_scanner.deploy`** with **`tls-scanner-image`**, **`tls-scan-namespaces`**, **`tls-scan-component-filter`**, **`--pqc-check`**, bounded by **`TLS_SCANNER_DEPLOY_TIMEOUT`** (default **3600s**). Requires deploy to accept **`--component-filter`** (upstream tls-scanner); until then a companion PR may apply a one-line patch from **`models-as-a-service/test/e2e/patches/`** at runtime (not vendored in this repo). Output **`ARTIFACT_DIR/tls-scanner/`** (`results.json`, logs); publish path unchanged (`tls-scanner/` inside the usual OCI artifact bundle). Pass/fail follows deploy exit code. Smoke sets **`MAAS_DISCOVERY_ENABLED=true`** so discovery workloads are on the cluster.
 
 Fast follow: bundle `tls_scanner.deploy` in the scanner image to drop the runtime git clone and `PYTHONPATH` coupling.
 

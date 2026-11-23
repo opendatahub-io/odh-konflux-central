@@ -60,8 +60,14 @@ spec:
       description: Pinned tls-scanner image (digest). Bump when intentionally upgrading the scanner.
     - name: tls-scan-namespaces
       type: string
-      default: "opendatahub,odh-ai-gateway-infra"
-      description: Namespaces passed to tls-scanner-deploy --namespaces.
+      default: "opendatahub,odh-ai-gateway-infra,models-as-a-service"
+      description: Namespaces for tls-scanner --namespace-filter (controller, discovery, tenant API).
+    - name: tls-scan-component-filter
+      type: string
+      default: "maas-api,maas-controller,maas-discovery"
+      description: >-
+        Comma-separated pod component names for tls-scanner --component-filter
+        (excludes unrelated ODH workloads such as model-serving-api in opendatahub).
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -314,6 +320,8 @@ spec:
                 value: $(params.tls-scanner-image)
               - name: TLS_SCAN_NAMESPACES
                 value: $(params.tls-scan-namespaces)
+              - name: TLS_SCAN_COMPONENT_FILTER
+                value: $(params.tls-scan-component-filter)
             volumeMounts:
               - name: credentials
                 mountPath: /credentials
@@ -356,15 +364,27 @@ spec:
                 exit 1
               fi
 
+              # Optional: models-as-a-service validation PR may ship a deploy patch until
+              # opendatahub-io/tls-scanner main wires --component-filter into the Job.
+              PATCH_FILE="/workspace/source/test/e2e/patches/tls-scanner-deploy-component-filter.patch"
+              if [ -n "${TLS_SCAN_COMPONENT_FILTER:-}" ] && [ -f "${PATCH_FILE}" ]; then
+                patch -p1 -d "${TLS_SCANNER_REPO}" < "${PATCH_FILE}"
+              fi
+
               export PYTHONPATH="${TLS_SCANNER_REPO}/src"
               TLS_DEPLOY_TIMEOUT="${TLS_SCANNER_DEPLOY_TIMEOUT:-3600}"
               # set +e: capture deploy exit code under set -euo pipefail without aborting before TLS_EXIT=$?
               set +e
-              timeout "${TLS_DEPLOY_TIMEOUT}" python3 -m tls_scanner.deploy \
-                --image "${TLS_SCANNER_IMAGE}" \
-                --namespaces "${TLS_SCAN_NAMESPACES}" \
-                --pqc-check \
+              DEPLOY_ARGS=(
+                --image "${TLS_SCANNER_IMAGE}"
+                --namespaces "${TLS_SCAN_NAMESPACES}"
+                --pqc-check
                 --out-dir "${TLS_SCAN_OUT}"
+              )
+              if [ -n "${TLS_SCAN_COMPONENT_FILTER:-}" ]; then
+                DEPLOY_ARGS+=(--component-filter "${TLS_SCAN_COMPONENT_FILTER}")
+              fi
+              timeout "${TLS_DEPLOY_TIMEOUT}" python3 -m tls_scanner.deploy "${DEPLOY_ARGS[@]}"
               TLS_EXIT=$?
               set -e
               if [ "${TLS_EXIT}" -eq 124 ]; then
