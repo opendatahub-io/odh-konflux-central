@@ -364,14 +364,30 @@ spec:
                 exit 1
               fi
 
-              # Optional: models-as-a-service validation PR may ship a deploy patch until
-              # opendatahub-io/tls-scanner main wires --component-filter into the Job.
+              export PYTHONPATH="${TLS_SCANNER_REPO}/src"
+
+              deploy_supports_component_filter() {
+                python3 -m tls_scanner.deploy --help 2>&1 | grep -q -- '--component-filter'
+              }
+
+              # --component-filter is on the in-cluster binary today; deploy on tls-scanner
+              # main may lag. Optional MaaS validation patch until upstream merges deploy support.
               PATCH_FILE="/workspace/source/test/e2e/patches/tls-scanner-deploy-component-filter.patch"
-              if [ -n "${TLS_SCAN_COMPONENT_FILTER:-}" ] && [ -f "${PATCH_FILE}" ]; then
-                patch -p1 -d "${TLS_SCANNER_REPO}" < "${PATCH_FILE}"
+              if [ -n "${TLS_SCAN_COMPONENT_FILTER:-}" ]; then
+                if ! deploy_supports_component_filter; then
+                  if [ -f "${PATCH_FILE}" ]; then
+                    patch -p1 -d "${TLS_SCANNER_REPO}" < "${PATCH_FILE}"
+                  fi
+                fi
+                if ! deploy_supports_component_filter; then
+                  echo "ERROR: tls-scan-component-filter is set but tls_scanner.deploy does not support --component-filter." >&2
+                  echo "Merge opendatahub-io/tls-scanner deploy support, or run from a models-as-a-service branch that ships ${PATCH_FILE}." >&2
+                  echo "failed" > "$STATUS_FILE"
+                  echo "failed" > "/test-status/tls-scan-status"
+                  exit 2
+                fi
               fi
 
-              export PYTHONPATH="${TLS_SCANNER_REPO}/src"
               TLS_DEPLOY_TIMEOUT="${TLS_SCANNER_DEPLOY_TIMEOUT:-3600}"
               # set +e: capture deploy exit code under set -euo pipefail without aborting before TLS_EXIT=$?
               set +e

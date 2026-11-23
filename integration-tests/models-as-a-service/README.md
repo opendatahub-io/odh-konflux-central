@@ -30,7 +30,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
 | `tls-scanner-image` | Pinned Quay scanner by digest (default in pipeline YAML; bump on intentional upgrade). |
 | `tls-scan-namespaces` | Namespace filter (default `opendatahub,odh-ai-gateway-infra,models-as-a-service`). |
-| `tls-scan-component-filter` | Pod component filter (default `maas-api,maas-controller,maas-discovery`; excludes e.g. `model-serving-api`). |
+| `tls-scan-component-filter` | Pod component filter (default `maas-api,maas-controller,maas-discovery`). Requires `tls_scanner.deploy --component-filter` on tls-scanner `main` (step fails fast with a clear error if deploy lacks it). |
 
 **Workspaces**
 
