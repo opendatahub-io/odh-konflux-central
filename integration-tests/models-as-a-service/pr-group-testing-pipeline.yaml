@@ -65,9 +65,7 @@ spec:
     - name: tls-scan-component-filter
       type: string
       default: "maas-api,maas-controller,maas-discovery"
-      description: >-
-        Comma-separated pod component names for tls-scanner --component-filter
-        (excludes unrelated ODH workloads such as model-serving-api in opendatahub).
+      description: Comma-separated MaaS pod component names for tls-scanner --component-filter.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -369,7 +367,7 @@ spec:
               if [ -n "${TLS_SCAN_COMPONENT_FILTER:-}" ]; then
                 if ! python3 -m tls_scanner.deploy --help 2>&1 | grep -q -- '--component-filter'; then
                   echo "ERROR: tls-scan-component-filter is set but tls_scanner.deploy lacks --component-filter." >&2
-                  echo "Need opendatahub-io/tls-scanner main with deploy --component-filter (merged in opendatahub-io/tls-scanner#8)." >&2
+                  echo "Need opendatahub-io/tls-scanner main with deploy --component-filter." >&2
                   echo "failed" > "$STATUS_FILE"
                   echo "failed" > "/test-status/tls-scan-status"
                   exit 2

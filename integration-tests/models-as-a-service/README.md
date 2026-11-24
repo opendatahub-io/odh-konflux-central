@@ -30,7 +30,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
 | `tls-scanner-image` | Pinned Quay scanner by digest (default in pipeline YAML; bump on intentional upgrade). |
 | `tls-scan-namespaces` | Namespace filter (default `opendatahub,odh-ai-gateway-infra,models-as-a-service`). |
-| `tls-scan-component-filter` | Pod component filter (default `maas-api,maas-controller,maas-discovery`); see tls-scanner deploy `--component-filter`. |
+| `tls-scan-component-filter` | MaaS pod components to scan (default `maas-api,maas-controller,maas-discovery`). |
 
 **Workspaces**
 
@@ -48,7 +48,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 
 ### TLS / PQC after smoke
 
-Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` (retry ×3), run **`python -m tls_scanner.deploy`** with **`tls-scanner-image`**, **`tls-scan-namespaces`**, **`tls-scan-component-filter`**, **`--pqc-check`**, bounded by **`TLS_SCANNER_DEPLOY_TIMEOUT`** (default **3600s**). Deploy **`--component-filter`** is on tls-scanner `main` ([opendatahub-io/tls-scanner#8](https://github.com/opendatahub-io/tls-scanner/pull/8)). Output **`ARTIFACT_DIR/tls-scanner/`** (`results.json`, logs); publish path unchanged (`tls-scanner/` inside the usual OCI artifact bundle). Pass/fail follows deploy exit code. Smoke sets **`MAAS_DISCOVERY_ENABLED=true`** so discovery workloads are on the cluster.
+Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/opendatahub-io/tls-scanner) `main` (retry ×3), run **`python -m tls_scanner.deploy`** with **`tls-scanner-image`**, **`tls-scan-namespaces`**, **`tls-scan-component-filter`**, and **`--pqc-check`**, bounded by **`TLS_SCANNER_DEPLOY_TIMEOUT`** (default **3600s**). Output under **`ARTIFACT_DIR/tls-scanner/`** (`results.json`, logs); published with the usual OCI artifact bundle. Pass/fail follows deploy exit code. Smoke sets **`MAAS_DISCOVERY_ENABLED=true`** so discovery workloads are on the cluster.
 
 Fast follow: bundle `tls_scanner.deploy` in the scanner image to drop the runtime git clone and `PYTHONPATH` coupling.
 
