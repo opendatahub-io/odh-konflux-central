@@ -28,7 +28,7 @@ Tekton **`Pipeline`** (`metadata.name: odh-pr-test-maas`). It runs MaaS e2e agai
 | `rhoai-must-gather-tag` | Tag for `registry.redhat.io/rhoai/odh-must-gather-rhel9:<tag>` used by the must-gather step (default `v3.5.0`). Ignored when `rhoai-must-gather-image` is set. |
 | `rhoai-must-gather-image` | Optional full must-gather image override (e.g. `quay.io/rhoai/odh-must-gather-rhel9:rhoai-3.6` for pre-release). Empty by default. |
 | `gather-on-success` | When `"true"`, run must-gather even if e2e/TLS pass (default `"false"`). |
-| `tls-scanner-image` | Pinned Quay scanner by digest (default in pipeline YAML; bump on intentional upgrade). |
+| `tls-scanner-image` | Quay scanner image (default `quay.io/opendatahub/tls-scanner:latest`; override with a digest to pin). |
 | `tls-scan-namespaces` | Namespace filter (default `opendatahub,odh-ai-gateway-infra,models-as-a-service`). |
 | `tls-scan-component-filter` | MaaS pod components to scan (default `maas-api,maas-controller,maas-discovery`). |
 
@@ -52,7 +52,7 @@ Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/o
 
 Fast follow: bundle `tls_scanner.deploy` in the scanner image to drop the runtime git clone and `PYTHONPATH` coupling.
 
-**Validate:** run `integration-tests/models-as-a-service/scripts/verify-tls-scanner-image.sh` against the pipeline default digest before `/group-test`. On Konflux, confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
+**Validate:** optional `scripts/verify-tls-scanner-image.sh` (default matches `tls-scanner-image`) before `/group-test` if Quay pull failed before. Confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
 
 **Test a konflux PR:** set **`pipelineRef`** fork + SHA on MaaS `.tekton/maas-group-test.yaml`, then `/group-test`.
 

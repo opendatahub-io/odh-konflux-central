@@ -56,8 +56,8 @@ spec:
       description: Hosted management cluster used to provision the ephemeral cluster.
     - name: tls-scanner-image
       type: string
-      default: "quay.io/opendatahub/tls-scanner@sha256:a815d178e081cfa6d776362b9b440fa969a6cd61aeeeaf7fb73f4b0b16e58d8d"
-      description: Pinned tls-scanner image (digest). Bump when intentionally upgrading the scanner.
+      default: "quay.io/opendatahub/tls-scanner:latest"
+      description: tls-scanner image on Quay (default latest). Override with a digest to pin a release.
     - name: tls-scan-namespaces
       type: string
       default: "opendatahub,odh-ai-gateway-infra,models-as-a-service"

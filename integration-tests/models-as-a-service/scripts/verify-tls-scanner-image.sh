@@ -1,28 +1,32 @@
 #!/usr/bin/env bash
-# Pre-flight for MaaS group-test TLS step: confirm the pinned Quay digest exists
-# before spending a Konflux PipelineRun. Usage:
+# Pre-flight: confirm the tls-scanner reference resolves on Quay before a group-test run.
+# Usage:
 #   ./scripts/verify-tls-scanner-image.sh
-#   ./scripts/verify-tls-scanner-image.sh 'quay.io/opendatahub/tls-scanner@sha256:...'
+#   ./scripts/verify-tls-scanner-image.sh 'quay.io/opendatahub/tls-scanner:latest'
+#   TLS_SCANNER_IMAGE='quay.io/opendatahub/tls-scanner@sha256:...' ./scripts/verify-tls-scanner-image.sh
 set -euo pipefail
 
-IMAGE="${1:-${TLS_SCANNER_IMAGE:-quay.io/opendatahub/tls-scanner@sha256:a815d178e081cfa6d776362b9b440fa969a6cd61aeeeaf7fb73f4b0b16e58d8d}}"
+IMAGE="${1:-${TLS_SCANNER_IMAGE:-quay.io/opendatahub/tls-scanner:latest}}"
 
-if [[ "${IMAGE}" != *@sha256:* ]]; then
-  echo "ERROR: expected digest-pinned reference (image@sha256:...), got: ${IMAGE}" >&2
+if [[ "${IMAGE}" != quay.io/* ]]; then
+  echo "ERROR: only quay.io/... references are supported, got: ${IMAGE}" >&2
   exit 2
 fi
 
-DIGEST="${IMAGE#*@}"
-REGISTRY_REPO="${IMAGE%@*}"
-
-if [[ "${REGISTRY_REPO}" != quay.io/* ]]; then
-  echo "ERROR: only quay.io/... references are supported, got: ${REGISTRY_REPO}" >&2
-  exit 2
+PATH_ON_QUAY="${IMAGE#quay.io/}"
+if [[ "${PATH_ON_QUAY}" == *@sha256:* ]]; then
+  REPO="${PATH_ON_QUAY%@*}"
+  REF="${PATH_ON_QUAY#*@}"
+else
+  REPO="${PATH_ON_QUAY%%:*}"
+  REF="${PATH_ON_QUAY#*:}"
+  if [[ -z "${REF}" || "${REF}" == "${PATH_ON_QUAY}" ]]; then
+    echo "ERROR: expected quay.io/repo:tag or quay.io/repo@sha256:..., got: ${IMAGE}" >&2
+    exit 2
+  fi
 fi
 
-PATH_ON_QUAY="${REGISTRY_REPO#quay.io/}"
-MANIFEST_URL="https://quay.io/v2/${PATH_ON_QUAY}/manifests/${DIGEST}"
-
+MANIFEST_URL="https://quay.io/v2/${REPO}/manifests/${REF}"
 code="$(curl -s -o /dev/null -w '%{http_code}' \
   -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
   "${MANIFEST_URL}")"
