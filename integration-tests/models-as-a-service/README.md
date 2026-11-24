@@ -52,7 +52,7 @@ Step **`tls-pqc-scan`**: clone [opendatahub-io/tls-scanner](https://github.com/o
 
 Fast follow: bundle `tls_scanner.deploy` in the scanner image to drop the runtime git clone and `PYTHONPATH` coupling.
 
-**Validate:** optional `scripts/verify-tls-scanner-image.sh` (default matches `tls-scanner-image`) before `/group-test` if Quay pull failed before. Confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
+**Validate:** optional `scripts/verify-tls-scanner-image.sh` reads **`tls-scanner-image`** from `pr-group-testing-pipeline.yaml` (or pass an override ref). Confirm **`tls-pqc-scan`** after smoke; artifacts under the pipelinerun OCI bundle.
 
 **Test a konflux PR:** set **`pipelineRef`** fork + SHA on MaaS `.tekton/maas-group-test.yaml`, then `/group-test`.
 

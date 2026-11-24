@@ -1,12 +1,39 @@
 #!/usr/bin/env bash
 # Pre-flight: confirm the tls-scanner reference resolves on Quay before a group-test run.
+# Default image is read from pr-group-testing-pipeline.yaml (tls-scanner-image param).
 # Usage:
 #   ./scripts/verify-tls-scanner-image.sh
-#   ./scripts/verify-tls-scanner-image.sh 'quay.io/opendatahub/tls-scanner:latest'
-#   TLS_SCANNER_IMAGE='quay.io/opendatahub/tls-scanner@sha256:...' ./scripts/verify-tls-scanner-image.sh
+#   ./scripts/verify-tls-scanner-image.sh 'quay.io/opendatahub/tls-scanner@sha256:...'
 set -euo pipefail
 
-IMAGE="${1:-${TLS_SCANNER_IMAGE:-quay.io/opendatahub/tls-scanner:latest}}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIPELINE_YAML="${SCRIPT_DIR}/../pr-group-testing-pipeline.yaml"
+
+read_pipeline_default() {
+  if [[ ! -f "${PIPELINE_YAML}" ]]; then
+    echo "ERROR: pipeline YAML not found: ${PIPELINE_YAML}" >&2
+    return 1
+  fi
+  awk '
+    $0 ~ /^[[:space:]]*- name: tls-scanner-image$/ { found=1; next }
+    found && $0 ~ /^[[:space:]]*default:/ {
+      sub(/^[[:space:]]*default:[[:space:]]*"/, "")
+      sub(/".*$/, "")
+      print
+      exit
+    }
+    found && $0 ~ /^[[:space:]]*- name:/ { exit 1 }
+  ' "${PIPELINE_YAML}"
+}
+
+IMAGE="${1:-${TLS_SCANNER_IMAGE:-}}"
+if [[ -z "${IMAGE}" ]]; then
+  IMAGE="$(read_pipeline_default)" || exit 2
+  if [[ -z "${IMAGE}" ]]; then
+    echo "ERROR: could not read tls-scanner-image default from ${PIPELINE_YAML}" >&2
+    exit 2
+  fi
+fi
 
 if [[ "${IMAGE}" != quay.io/* ]]; then
   echo "ERROR: only quay.io/... references are supported, got: ${IMAGE}" >&2
