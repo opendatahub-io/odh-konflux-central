@@ -5,10 +5,15 @@ metadata:
   name: odh-pr-test-feast-power
 spec:
   description: |
-    Power (ppc64le) variant of the Feast group integration test. Provisions an ephemeral
-    HyperShift HostedCluster on IBM PowerVS (PLATFORM=powervs), deploys Feast from a
+    Power (ppc64le) Feast group integration test against a shared OpenShift cluster.
+    Skips ephemeral provisioning; mounts a tenant kubeconfig Secret, deploys Feast from a
     Konflux snapshot, and runs the same e2e suite as pr-group-testing-pipeline.yaml.
-    Triggered manually via /feast-power-group-test (see feast/.tekton/feast-power-group-test.yaml).
+    Manual only via /feast-power-group-test (see feast/.tekton/feast-power-group-test.yaml).
+
+    Prerequisite (Konflux tenant namespace, e.g. open-data-hub-tenant):
+      oc create secret generic feast-power-shared-kubeconfig \
+        --from-file=kubeconfig=/path/to/power-shared.kubeconfig \
+        -n open-data-hub-tenant
   params:
     - description: List of components in the group
       name: group-components
@@ -19,32 +24,12 @@ spec:
     - name: artifact-browser-url
       default: 'https://app-artifact-browser.apps.rosa.konflux-qe.zmr9.p3.openshiftapps.com'
       description: The OCI container used to store all test artifacts.
-    - name: ocp-version
+    - name: cluster-kubeconfig-secret
       type: string
-      default: "4.22"
-      description: OpenShift minor version for the ephemeral HyperShift cluster.
-    - name: platform
-      type: string
-      default: powervs
-      description: HyperShift HostedCluster platform (must be powervs for ppc64le workers).
-    # Must provide .powervscred (+ existing-resources.json). Update when Test Platform
-    # assigns the PowerVS profile name for ODH Konflux ephemeral use.
-    - name: cluster-profile
-      type: string
-      default: powervs-konflux
-      description: OpenShift CI cluster profile with PowerVS credentials.
-    - name: hypershift-node-count
-      type: string
-      default: "2"
-      description: Number of PowerVS worker nodes for the ephemeral HyperShift cluster.
-    - name: hosted-management-cluster
-      type: string
-      default: hosted-mgmt2
-      description: Hosted management cluster used to provision the ephemeral cluster.
-    - name: wait-for-olm
-      type: string
-      default: "true"
-      description: Wait for OLM to be ready on the HostedCluster before tests.
+      default: feast-power-shared-kubeconfig
+      description: |
+        Tenant Secret name whose key "kubeconfig" points at the shared Power OpenShift
+        cluster. Override if your Secret uses a different name.
   tasks:
     - name: generate-snapshot
       description: Placeholder task that prints the Snapshot and outputs standard TEST_OUTPUT
@@ -130,47 +115,16 @@ spec:
               echo -n "${GIT_ORG}" > "$(results.git-org.path)"
               echo -n "${GIT_REVISION}" > "$(results.git-revision.path)"
 
-    - name: provision-cluster
-      runAfter:
-        - audit-snapshot
-      taskRef:
-        resolver: git
-        params:
-          - name: url
-            value: https://github.com/openshift/konflux-tasks
-          - name: revision
-            value: "9751a2028f2b3b88e4204d5c42de8eda4ebb466f"
-          - name: pathInRepo
-            value: tasks/provision-ephemeral-cluster/0.1/provision-ephemeral-cluster.yaml
-      params:
-        - name: ownerName
-          value: $(context.pipelineRun.name)
-        - name: ownerUid
-          value: $(context.pipelineRun.uid)
-        - name: workflow
-          value: hypershift-hostedcluster-workflow
-        - name: clusterProfile
-          value: $(params.cluster-profile)
-        - name: timeout
-          value: 1h
-        - name: releases
-          value: >-
-            {"latest":{"release":{"channel":"stable","version":"$(params.ocp-version)","architecture":"multi"}}}
-        # PLATFORM=powervs selects IBM PowerVS workers (ppc64le). Do not set HYPERSHIFT_NODE_ARCH
-        # (AWS-only amd64/arm64). POWERVS_* values are taken from the cluster profile's
-        # existing-resources.json when omitted from env.
-        - name: env
-          value: >-
-            {"PLATFORM":"$(params.platform)","HYPERSHIFT_NODE_COUNT":"$(params.hypershift-node-count)","HOSTED_MANAGEMENT_CLUSTER":"$(params.hosted-management-cluster)","WAIT_FOR_OLM":"$(params.wait-for-olm)"}
+    # No provision-cluster: uses shared Power OpenShift via cluster-kubeconfig-secret.
     - name: deploy-and-test
       workspaces:
       - name: basic-auth
         workspace: git-auth
       runAfter:
-        - provision-cluster
+        - audit-snapshot
       params:
         - name: clusterCredentialsSecretRef
-          value: $(tasks.provision-cluster.results.secretRef)
+          value: $(params.cluster-kubeconfig-secret)
       taskSpec:
         params:
           - name: clusterCredentialsSecretRef
@@ -212,7 +166,7 @@ spec:
               STATUS_FILE="/test-status/deploy-and-e2e-status"
               echo "failed" > "$STATUS_FILE"
 
-              # Configure KUBECONFIG for Registry REST API tests
+              # Configure KUBECONFIG for shared Power cluster + Registry REST API tests
               export KUBECONFIG
               echo "KUBECONFIG=${KUBECONFIG}"
               export HOME="${HOME:-/tmp}"
@@ -220,8 +174,9 @@ spec:
               cp "${KUBECONFIG%%:*}" "$HOME/.kube/config"
               echo "Kubeconfig copied to $HOME/.kube/config"
 
-              oc get pods
+              oc get nodes -o wide || true
               oc whoami
+              oc cluster-info || true
 
               echo "SNAPSHOT=${SNAPSHOT}"
               COMPONENT_NAME=odh-feast-operator-ci
@@ -250,7 +205,7 @@ spec:
               git checkout ${REVISION}
 
               export RUN_ON_OPENSHIFT_CI=true
-              echo "Feature Store Operator E2E test run"
+              echo "Feature Store Operator E2E test run (shared Power cluster)"
               cd infra/feast-operator
               make install && make deploy IMG=${FEAST_OPERATOR_CONTROLLER_IMAGE} FS_IMG=${FEAST_FEATURE_SERVER_IMAGE}
               oc wait --for condition=Available -n feast-operator-system deployment feast-operator-controller-manager
