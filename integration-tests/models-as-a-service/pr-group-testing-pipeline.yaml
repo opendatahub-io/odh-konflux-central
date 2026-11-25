@@ -54,6 +54,18 @@ spec:
       type: string
       default: hosted-mgmt2
       description: Hosted management cluster used to provision the ephemeral cluster.
+    - name: tls-scanner-image
+      type: string
+      default: "quay.io/opendatahub/tls-scanner:latest"
+      description: tls-scanner image on Quay (default latest). Override with a digest to pin a release.
+    - name: tls-scan-namespaces
+      type: string
+      default: "opendatahub,odh-ai-gateway-infra,models-as-a-service"
+      description: Namespaces for tls-scanner --namespace-filter (controller, discovery, tenant API).
+    - name: tls-scan-component-filter
+      type: string
+      default: "maas-api,maas-controller,maas-discovery"
+      description: Comma-separated MaaS pod component names for tls-scanner --component-filter.
   tasks:
     - name: generate-snapshot
       description: Generate a composite snapshot containing images for all group components
@@ -251,14 +263,17 @@ spec:
                 mountPath: /test-status
             script: |
               set -euxo pipefail
-              bash
 
               STATUS_FILE="/test-status/deploy-and-e2e-status"
+              E2E_SMOKE_STATUS="/test-status/e2e-smoke-status"
               echo "failed" > "$STATUS_FILE"
+              echo "failed" > "$E2E_SMOKE_STATUS"
 
               export MAAS_API_IMAGE=$(jq -r '."odh-maas-api-ci".image' <<< "${SNAPSHOT}")
               export MAAS_CONTROLLER_IMAGE=$(jq -r '."odh-maas-controller-ci".image' <<< "${SNAPSHOT}")
               export MAAS_DISCOVERY_IMAGE=$(jq -r '."odh-maas-discovery-ci".image' <<< "${SNAPSHOT}")
+              # Enable MaaS discovery in smoke so odh-maas-discovery is deployed (snapshot includes odh-maas-discovery-ci; TLS filter expects maas-discovery/odh-maas-discovery).
+              export MAAS_DISCOVERY_ENABLED="true"
 
               MAAS_API_TAG=$(jq -r '."odh-maas-api-ci".image_tag' <<< "${SNAPSHOT}")
               MAAS_CONTROLLER_TAG=$(jq -r '."odh-maas-controller-ci".image_tag' <<< "${SNAPSHOT}")
@@ -289,7 +304,109 @@ spec:
 
               ./test/e2e/scripts/prow_run_smoke_test.sh
 
+              echo "success" > "$E2E_SMOKE_STATUS"
               echo "success" > "$STATUS_FILE"
+          - name: tls-pqc-scan
+            onError: continue
+            image: quay.io/rhoai/rhoai-task-toolset:maas
+            env:
+              - name: KUBECONFIG
+                value: /credentials/kubeconfig
+              - name: ARTIFACT_DIR
+                value: /workspace/artifacts-dir
+              - name: TLS_SCANNER_IMAGE
+                value: $(params.tls-scanner-image)
+              - name: TLS_SCAN_NAMESPACES
+                value: $(params.tls-scan-namespaces)
+              - name: TLS_SCAN_COMPONENT_FILTER
+                value: $(params.tls-scan-component-filter)
+            volumeMounts:
+              - name: credentials
+                mountPath: /credentials
+              - name: test-status
+                mountPath: /test-status
+            script: |
+              set -euxo pipefail
+
+              STATUS_FILE="/test-status/deploy-and-e2e-status"
+              E2E_SMOKE_STATUS="/test-status/e2e-smoke-status"
+              E2E_STATUS=$(cat "${E2E_SMOKE_STATUS}" 2>/dev/null || cat "${STATUS_FILE}" 2>/dev/null || echo "failed")
+              if [ "${E2E_STATUS}" != "success" ]; then
+                echo "WARNING: smoke e2e status is ${E2E_STATUS}; TLS/PQC scan continues for artifacts but results may reflect a broken or partial cluster" >&2
+              fi
+
+              echo "failed" > "/test-status/tls-scan-status"
+              # fail-if-needed requires deploy-and-e2e-status=success only when smoke and TLS both pass.
+              if [ "${E2E_STATUS}" = "success" ]; then
+                echo "failed" > "$STATUS_FILE"
+              fi
+
+              TLS_SCAN_OUT="${ARTIFACT_DIR}/tls-scanner"
+              mkdir -p "${TLS_SCAN_OUT}"
+
+              TLS_SCANNER_REPO=/tmp/opendatahub-tls-scanner
+              rm -rf "${TLS_SCANNER_REPO}"
+              CLONE_OK=0
+              for attempt in 1 2 3; do
+                if timeout 120s git clone --depth 1 --branch main \
+                  https://github.com/opendatahub-io/tls-scanner.git "${TLS_SCANNER_REPO}"; then
+                  CLONE_OK=1
+                  break
+                fi
+                echo "tls-scanner git clone attempt ${attempt} failed; retrying..." >&2
+                sleep 5
+              done
+              if [ "${CLONE_OK}" -ne 1 ]; then
+                echo "failed" > "$STATUS_FILE"
+                echo "failed" > "/test-status/tls-scan-status"
+                exit 1
+              fi
+
+              export PYTHONPATH="${TLS_SCANNER_REPO}/src"
+
+              if [ -n "${TLS_SCAN_COMPONENT_FILTER:-}" ]; then
+                if ! python3 -m tls_scanner.deploy --help 2>&1 | grep -q -- '--component-filter'; then
+                  echo "ERROR: tls-scan-component-filter is set but tls_scanner.deploy lacks --component-filter." >&2
+                  echo "Need opendatahub-io/tls-scanner main with deploy --component-filter." >&2
+                  echo "failed" > "$STATUS_FILE"
+                  echo "failed" > "/test-status/tls-scan-status"
+                  exit 2
+                fi
+              fi
+
+              TLS_DEPLOY_TIMEOUT="${TLS_SCANNER_DEPLOY_TIMEOUT:-3600}"
+              # set +e: capture deploy exit code under set -euo pipefail without aborting before TLS_EXIT=$?
+              set +e
+              DEPLOY_ARGS=(
+                --image "${TLS_SCANNER_IMAGE}"
+                --namespaces "${TLS_SCAN_NAMESPACES}"
+                --pqc-check
+                --out-dir "${TLS_SCAN_OUT}"
+              )
+              if [ -n "${TLS_SCAN_COMPONENT_FILTER:-}" ]; then
+                DEPLOY_ARGS+=(--component-filter "${TLS_SCAN_COMPONENT_FILTER}")
+              fi
+              timeout "${TLS_DEPLOY_TIMEOUT}" python3 -m tls_scanner.deploy "${DEPLOY_ARGS[@]}"
+              TLS_EXIT=$?
+              set -e
+              if [ "${TLS_EXIT}" -eq 124 ]; then
+                echo "tls_scanner.deploy timed out after ${TLS_DEPLOY_TIMEOUT}s" >&2
+              fi
+              if [ -f "${TLS_SCAN_OUT}/junit_tls_scan.xml" ]; then
+                cp "${TLS_SCAN_OUT}/junit_tls_scan.xml" "${ARTIFACT_DIR}/junit_tls_scan.xml"
+              fi
+              if [ "${TLS_EXIT}" -ne 0 ]; then
+                echo "failed" > "$STATUS_FILE"
+                echo "failed" > "/test-status/tls-scan-status"
+                exit "${TLS_EXIT}"
+              fi
+
+              echo "success" > "/test-status/tls-scan-status"
+              if [ "${E2E_STATUS}" = "success" ]; then
+                echo "success" > "$STATUS_FILE"
+              else
+                echo "ℹ️ TLS scan succeeded; pipeline will still fail on smoke (e2e-smoke-status=${E2E_STATUS})"
+              fi
           - name: must-gather
             onError: continue
             image: quay.io/rhoai/rhoai-task-toolset:maas
@@ -412,11 +529,30 @@ spec:
                 mountPath: /test-status
             script: |
               STATUS_FILE="/test-status/deploy-and-e2e-status"
-              if ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
-                echo "❌ Failing pipeline because deploy-and-e2e step failed"
+              E2E_SMOKE=$(cat /test-status/e2e-smoke-status 2>/dev/null || echo "unknown")
+              if [ -f /test-status/tls-scan-status ]; then
+                TLS_RAW=$(tr -d '[:space:]' </test-status/tls-scan-status)
+                TLS_STATUS_DISPLAY="${TLS_RAW}"
+              else
+                TLS_RAW="failed"
+                TLS_STATUS_DISPLAY="missing (tls step did not write status — e.g. task timeout before tls-pqc-scan)"
+              fi
+              FAIL=0
+              if [ "${E2E_SMOKE}" != "success" ]; then
+                FAIL=1
+              fi
+              if [ "${TLS_RAW}" = "failed" ]; then
+                FAIL=1
+              fi
+              if [ "${FAIL}" -ne 0 ] || ! [ -f "$STATUS_FILE" ] || [ "$(cat "$STATUS_FILE")" != "success" ]; then
+                echo "❌ Failing pipeline (e2e-smoke-status=${E2E_SMOKE}, tls-scan-status=${TLS_STATUS_DISPLAY}, deploy-and-e2e-status=$(cat "$STATUS_FILE" 2>/dev/null || echo missing))"
                 exit 1
               fi
-              echo "✅ deploy-and-e2e step succeeded"
+              if [ "${TLS_RAW}" = "success" ]; then
+                echo "✅ deploy, e2e smoke, and TLS PQC scan succeeded"
+              else
+                echo "✅ deploy and e2e smoke succeeded (unexpected tls-scan-status=${TLS_RAW})"
+              fi
 
   finally:
   - name: push-ci-artifacts-and-update-pr
