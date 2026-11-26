@@ -18,7 +18,7 @@ spec:
     git:
       dockerfileUrl: Dockerfile
       url: https://github.com/opendatahub-io/feast
-      revision: "stable"
+      revision: "master"
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
 kind: Component

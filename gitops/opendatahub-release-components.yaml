@@ -555,7 +555,7 @@ spec:
     git:
       context: infra/feast-operator
       dockerfileUrl: Dockerfile
-      revision: "stable"
+      revision: "master"
       url: https://github.com/opendatahub-io/feast
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
@@ -574,7 +574,7 @@ spec:
     git:
       context: sdk/python/feast/infra/feature_servers/multicloud
       dockerfileUrl: Dockerfile
-      revision: "stable"
+      revision: "master"
       url: https://github.com/opendatahub-io/feast
 ---
 apiVersion: appstudio.redhat.com/v1alpha1
