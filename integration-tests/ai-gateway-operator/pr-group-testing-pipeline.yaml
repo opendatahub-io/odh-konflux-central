@@ -239,8 +239,50 @@ spec:
               # snapshot refs unchanged.
               make deploy IMG="${AI_GATEWAY_OPERATOR_IMAGE}"
 
-              # Run the operator's Go e2e suite against the provisioned cluster.
-              make test-e2e-run 2>&1 | tee "${ARTIFACT_DIR}/e2e-test-output.log"
+              # The e2e suite asserts the operator's status.module.version and
+              # buildSource against the *test binary's* ldflags metadata. On the
+              # GHA runner both are built in the same environment, so they match
+              # trivially; in this pipeline the operator is built by Konflux and
+              # the test binary here, in different environments (and the runner
+              # image exports its own VERSION, which would otherwise override the
+              # Makefile default). Probe the deployed operator's actual build
+              # metadata and pass it to the test so the assertions compare
+              # against the operator's real values.
+              printf '%s\n' \
+                'apiVersion: components.platform.opendatahub.io/v1alpha1' \
+                'kind: AIGateway' \
+                'metadata:' \
+                '  name: e2e-version-probe' \
+                'spec:' \
+                '  aiGrid:' \
+                '    managementState: Removed' \
+                '  batchGateway:' \
+                '    managementState: Removed' \
+                '  modelsAsAService:' \
+                '    managementState: Removed' \
+                | kubectl apply -f - >/dev/null
+              PROBE_VERSION=""
+              for i in $(seq 1 60); do
+                PROBE_VERSION=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.version}' 2>/dev/null)
+                [ -n "${PROBE_VERSION}" ] && break
+                sleep 5
+              done
+              if [ -z "${PROBE_VERSION}" ]; then
+                echo "ERROR: could not read status.module.version from the version probe" >&2
+                kubectl get aigateway e2e-version-probe -o yaml >&2 || true
+                exit 1
+              fi
+              PROBE_REPO=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f1)
+              PROBE_BRANCH=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f2 | cut -d/ -f1)
+              PROBE_COMMIT=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f2 | cut -d/ -f2)
+              echo "probed operator build metadata: version=${PROBE_VERSION} repo=${PROBE_REPO} branch=${PROBE_BRANCH} commit=${PROBE_COMMIT}"
+              kubectl delete aigateway e2e-version-probe --ignore-not-found >/dev/null 2>&1 || true
+
+              # Run the operator's Go e2e suite against the provisioned cluster,
+              # with the probed build metadata so the version/buildSource
+              # assertions reflect the deployed operator.
+              make test-e2e-run VERSION="${PROBE_VERSION}" GIT_REPO="${PROBE_REPO}" GIT_BRANCH="${PROBE_BRANCH}" GIT_COMMIT="${PROBE_COMMIT}" \
+                2>&1 | tee "${ARTIFACT_DIR}/e2e-test-output.log"
 
               echo "success" > "$STATUS_FILE"
           - name: must-gather
