@@ -248,19 +248,35 @@ spec:
               # Makefile default). Probe the deployed operator's actual build
               # metadata and pass it to the test so the assertions compare
               # against the operator's real values.
-              printf '%s\n' \
-                'apiVersion: components.platform.opendatahub.io/v1alpha1' \
-                'kind: AIGateway' \
-                'metadata:' \
-                '  name: e2e-version-probe' \
-                'spec:' \
-                '  aiGrid:' \
-                '    managementState: Removed' \
-                '  batchGateway:' \
-                '    managementState: Removed' \
-                '  modelsAsAService:' \
-                '    managementState: Removed' \
-                | kubectl apply -f - >/dev/null
+              # The CRD was applied moments ago by make deploy; wait for it to
+              # become Established and retry the apply — creating the CR
+              # immediately can race API discovery ("no matches for kind").
+              kubectl wait --for=condition=Established crd/aigateways.components.platform.opendatahub.io --timeout=180s
+              PROBE_APPLIED=""
+              for i in $(seq 1 12); do
+                if printf '%s\n' \
+                  'apiVersion: components.platform.opendatahub.io/v1alpha1' \
+                  'kind: AIGateway' \
+                  'metadata:' \
+                  '  name: e2e-version-probe' \
+                  'spec:' \
+                  '  aiGrid:' \
+                  '    managementState: Removed' \
+                  '  batchGateway:' \
+                  '    managementState: Removed' \
+                  '  modelsAsAService:' \
+                  '    managementState: Removed' \
+                  | kubectl apply -f - >/dev/null 2>>"${ARTIFACT_DIR}/probe.log"; then
+                  PROBE_APPLIED=yes
+                  break
+                fi
+                sleep 10
+              done
+              if [ -z "${PROBE_APPLIED}" ]; then
+                echo "ERROR: could not apply the version probe CR (see probe.log)" >&2
+                cat "${ARTIFACT_DIR}/probe.log" >&2 || true
+                exit 1
+              fi
               PROBE_VERSION=""
               for i in $(seq 1 60); do
                 PROBE_VERSION=$(kubectl get aigateways.components.platform.opendatahub.io e2e-version-probe -o jsonpath='{.status.module.version}' 2>/dev/null)
