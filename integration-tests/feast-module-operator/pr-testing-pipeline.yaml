@@ -207,7 +207,8 @@ spec:
                 # ConfigMap with the key absent, and the e2e suite writes
                 # platformVersion=2.22.0 itself.
                 export ODH_PLATFORM_TYPE=odh
-                # Operand and feature-server images from opendatahub-io/feast stable.
+                # Operand and feature-server images from opendatahub-io/feast,
+                # built from master and tagged odh-stable.
                 # ApplyParams copies these onto the ODH overlay at startup.
                 export HELM_EXTRA_ARGS="--set-string extraEnvs.RELATED_IMAGE_ODH_FEAST_OPERATOR_IMAGE=quay.io/opendatahub/feast-operator:odh-stable --set-string extraEnvs.RELATED_IMAGE_ODH_FEATURE_SERVER_IMAGE=quay.io/opendatahub/feature-server:odh-stable"
                 export GOCACHE="${HOME}/.cache/go-build"
