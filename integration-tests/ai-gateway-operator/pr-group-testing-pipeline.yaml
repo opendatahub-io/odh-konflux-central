@@ -110,7 +110,11 @@ spec:
                       echo "ERROR: snapshot metadata missing for ${COMPONENT_NAME}" >&2
                       exit 1
                   fi
-                  echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
+                  if [ "${GIT_COMMIT}" != "${GIT_REVISION}" ]; then
+                    echo "ERROR: ${COMPONENT_NAME} image commit ${GIT_COMMIT} does not match revision ${GIT_REVISION}" >&2
+                    exit 1
+                fi
+                echo "${COMPONENT_NAME} IMAGE: ${IMAGE}"
               done < <(echo "$COMPONENTS" | jq -r 'to_entries[] | @base64')
               echo -n "${PR_AUTHOR}" > "$(results.pull-request-author.path)"
               echo -n "${PR_NUMBER}" > "$(results.pull-request-number.path)"
@@ -147,9 +151,6 @@ spec:
           value: '{"COMPUTE_NODE_TYPE":"$(params.compute-node-type)","HYPERSHIFT_NODE_COUNT":"$(params.hypershift-node-count)","HOSTED_MANAGEMENT_CLUSTER":"$(params.hosted-management-cluster)"}'
     - name: e2e-ai-gateway-operator-openshift
       timeout: 1h30m
-      workspaces:
-      - name: basic-auth
-        workspace: git-auth
       runAfter:
         - provision-cluster
       params:
@@ -180,11 +181,15 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['pipelinesascode.tekton.dev/source-repo-url']
+            - name: source_sha
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha']
             script: |
               git clone --depth 50 --no-single-branch "${repo_url}" /workspace/source
               git config --global --add safe.directory /workspace/source
               cd /workspace/source
-              git checkout "${source_branch}"
+              git checkout "${source_sha}"
           - name: e2e-ai-gateway-operator
             onError: continue
             image: quay.io/rhoai/rhoai-task-toolset:go-its
