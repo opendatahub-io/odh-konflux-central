@@ -110,7 +110,7 @@ on:
         type: string
 
       build_branch:
-        description: 'Branch that images are built from (e.g. stable). Defaults to PR target branch.'
+        description: 'Branch that images are built from (e.g. main). Defaults to PR target branch.'
         required: false
         type: string
 
