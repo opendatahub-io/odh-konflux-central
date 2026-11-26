@@ -263,20 +263,20 @@ spec:
                 | kubectl apply -f - >/dev/null
               PROBE_VERSION=""
               for i in $(seq 1 60); do
-                PROBE_VERSION=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.version}' 2>/dev/null)
+                PROBE_VERSION=$(kubectl get aigateways.components.platform.opendatahub.io e2e-version-probe -o jsonpath='{.status.module.version}' 2>/dev/null)
                 [ -n "${PROBE_VERSION}" ] && break
                 sleep 5
               done
               if [ -z "${PROBE_VERSION}" ]; then
                 echo "ERROR: could not read status.module.version from the version probe" >&2
-                kubectl get aigateway e2e-version-probe -o yaml >&2 || true
+                kubectl get aigateways.components.platform.opendatahub.io e2e-version-probe -o yaml >&2 || true
                 exit 1
               fi
-              PROBE_REPO=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f1)
-              PROBE_BRANCH=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f2 | cut -d/ -f1)
-              PROBE_COMMIT=$(kubectl get aigateway e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f2 | cut -d/ -f2)
+              PROBE_REPO=$(kubectl get aigateways.components.platform.opendatahub.io e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f1)
+              PROBE_BRANCH=$(kubectl get aigateways.components.platform.opendatahub.io e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f2 | cut -d/ -f1)
+              PROBE_COMMIT=$(kubectl get aigateways.components.platform.opendatahub.io e2e-version-probe -o jsonpath='{.status.module.buildSource}' 2>/dev/null | cut -d@ -f2 | cut -d/ -f2)
               echo "probed operator build metadata: version=${PROBE_VERSION} repo=${PROBE_REPO} branch=${PROBE_BRANCH} commit=${PROBE_COMMIT}"
-              kubectl delete aigateway e2e-version-probe --ignore-not-found >/dev/null 2>&1 || true
+              kubectl delete aigateways.components.platform.opendatahub.io e2e-version-probe --ignore-not-found >/dev/null 2>&1 || true
 
               # Run the operator's Go e2e suite against the provisioned cluster,
               # with the probed build metadata so the version/buildSource
