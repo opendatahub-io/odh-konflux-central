@@ -22,8 +22,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from install.dependency_operators import _namespace_phase, unblock_terminating_namespace
 from install.cluster_registry import extract_quay_auth, merge_docker_auths
+from install.dependency_operators import (_namespace_phase,
+                                          unblock_terminating_namespace)
 from k8s.oc_util import run_oc
 
 KYVERNO_INSTALL_URL = "https://github.com/kyverno/kyverno/releases/download/v1.12.4/install.yaml"
@@ -336,25 +337,32 @@ def apply_kyverno_policies() -> None:
 
 
 def load_quay_dockerconfig() -> dict[str, Any]:
-    candidates: list[str] = []
-    vdir = vault_policy_dir()
-    if vdir is not None:
-        candidates.append(str(vdir / ".dockerconfigjson"))
-    candidates.extend(
-        [
-            os.environ.get("ROSA_HCP_QUAY_AUTH_PATH", "").strip(),
-            str(DEFAULT_VAULT_POLICY_DIR / ".dockerconfigjson"),
-            os.environ.get("QUAY_PULL_SECRET_PATH", "/var/secret/quay/.dockerconfigjson").strip(),
-        ]
-    )
-    for path_s in candidates:
-        if not path_s:
-            continue
-        path = Path(path_s)
-        if path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
+    """Quay dockerconfig for the Rosa HCP Kyverno setup.
+
+    ``load_quay_pull_dockerconfig`` only reads mounted paths. When Vault was
+    reachable earlier in the process (``vault_policy_dir`` already staged the
+    Kyverno YAML from ``apps/rhods-ci/aws/rosa-hcp``), the staged directory also
+    holds ``.dockerconfigjson``. Use it before failing, otherwise a Vault-only
+    run raised here even though the credentials had just been fetched.
+    """
+    from install.quay_pull_auth import (_dockerconfig_from_file,
+                                        load_quay_pull_dockerconfig)
+
+    doc = load_quay_pull_dockerconfig()
+    if doc is not None:
+        return doc
+    staged_dir = vault_policy_dir()
+    if staged_dir is not None:
+        staged = _dockerconfig_from_file(staged_dir / ".dockerconfigjson")
+        if staged is not None:
+            print(
+                f"✓ Quay dockerconfig from staged Vault Kyverno dir {staged_dir}",
+                flush=True,
+            )
+            return staged
     raise RuntimeError(
-        "quay dockerconfig not found (set ROSA_HCP_QUAY_AUTH_PATH or QUAY_PULL_SECRET_PATH)"
+        "quay dockerconfig not found (Vault vault-approle, staged Vault Kyverno dir, "
+        "ROSA_HCP_QUAY_AUTH_PATH, or QUAY_PULL_SECRET_PATH)"
     )
 
 
@@ -392,7 +400,8 @@ def ensure_rosa_hcp_pull_setup(
         print("⚠ ROSA HCP Kyverno setup applied but readiness check incomplete; continuing")
     else:
         print("✓ ROSA HCP Kyverno pull setup ready")
-    from install.rosa_hcp_imagestream_mirror import ensure_rosa_hcp_imagestream_mirror
+    from install.rosa_hcp_imagestream_mirror import \
+      ensure_rosa_hcp_imagestream_mirror
 
     ensure_rosa_hcp_imagestream_mirror()
 

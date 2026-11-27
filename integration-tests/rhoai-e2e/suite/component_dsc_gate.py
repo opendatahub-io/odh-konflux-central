@@ -6,26 +6,20 @@ import os
 import sys
 import time
 
-from install.dependency_operators import maas_dependency_operators_ready
-from install.dsc_install import (
-    _dsc_smoke_managed_components,
-    _resolve_operator_version_for_dsc,
-    components_need_models_as_service,
-    oc_run,
-    uses_aigateway_models_as_a_service,
-)
-from install.llama_stack_deps import _LLAMA_STACK_CRD, llama_stack_crd_present
-from suite.cluster_api_health import (
-    cluster_api_unreachable_text,
-    cluster_smoke_infra_blocked_reason,
-)
-from suite.errors import AppError
 from components.maas_billing.common import (
-    _dsc_condition_types,
-    _maas_smoke_ready,
-    models_as_service_ready_condition_type,
-)
-from suite.component_version_gate import _compare_version_strings, normalize_version_for_enablement
+  _dsc_condition_types, _maas_smoke_ready,
+  models_as_service_ready_condition_type)
+from install.dependency_operators import maas_dependency_operators_ready
+from install.dsc_install import (_dsc_smoke_managed_components,
+                                 _resolve_operator_version_for_dsc,
+                                 components_need_models_as_service, oc_run,
+                                 uses_aigateway_models_as_a_service)
+from install.llama_stack_deps import _LLAMA_STACK_CRD, llama_stack_crd_present
+from suite.cluster_api_health import (cluster_api_unreachable_text,
+                                      cluster_smoke_infra_blocked_reason)
+from suite.component_version_gate import (_compare_version_strings,
+                                          normalize_version_for_enablement)
+from suite.errors import AppError
 
 # Primary Ready condition per smoke catalog id (status.conditions[].reason == Removed).
 _SMOKE_READY_CONDITION: dict[str, str] = {
@@ -282,6 +276,36 @@ def _models_as_service_removed_reason() -> str:
     return "spec.components.kserve.modelsAsService.managementState=Removed"
 
 
+def _maas_parent_management_state() -> str:
+    """Live DSC managementState of the MaaS parent component ('' when unreadable)."""
+    op_ver = _resolve_operator_version_for_dsc()
+    key = "aigateway" if uses_aigateway_models_as_a_service(op_ver) else "kserve"
+    return _component_management_state(key)
+
+
+def _is_maas_ready_condition(ready_type: str) -> bool:
+    return "ModelsAsService" in ready_type or "ModelsAsAService" in ready_type
+
+
+def _stale_maas_removed_reason(ready_type: str) -> bool:
+    """True when a MaaS ``reason=Removed`` condition contradicts the DSC spec.
+
+    The operator emits ``ModelsAsAServiceReady reason=Removed: Submodule
+    ManagementState is set to Removed`` when the parent component (``aigateway``
+    on 3.5+; ``kserve`` before) is Removed, even after the child submodule is
+    patched back to Managed. A merge patch that set the parent Removed while
+    leaving the child Managed produced exactly that state (htjzg), so the
+    condition lags the spec. Treat the condition as stale (not disabled) only
+    when the spec says Managed for both the submodule *and* its parent - a
+    Removed parent never reconciles, so that stays a real disable.
+    """
+    if not _is_maas_ready_condition(ready_type):
+        return False
+    if _maas_parent_management_state() == "Removed":
+        return False
+    return _models_as_service_management_state() == "Managed"
+
+
 def dsc_disabled_reason_from_states(
     smoke_id: str,
     *,
@@ -472,7 +496,7 @@ def smoke_component_dsc_disabled(smoke_id: str) -> tuple[bool, str]:
     ready_type = _resolve_smoke_ready_condition(smoke_id)
     if ready_type:
         _, reason, _ = _dsc_condition(ready_type)
-        if reason == "Removed":
+        if reason == "Removed" and not _stale_maas_removed_reason(ready_type):
             return True, f"{ready_type} reason=Removed"
 
     for key in _dsc_smoke_managed_components(
@@ -591,8 +615,10 @@ def smoke_component_prereq_reason_from_states(
 
 def _dashboard_cypress_gateway_unavailable_reason() -> str:
     """Gateway HTTP preflight gate for dashboard Cypress orchestrate skip."""
-    from components.dashboard_cypress.config import resolve_odh_dashboard_base_url
-    from components.dashboard_cypress.verify_route import dashboard_cypress_accessible_for_smoke
+    from components.dashboard_cypress.config import \
+      resolve_odh_dashboard_base_url
+    from components.dashboard_cypress.verify_route import \
+      dashboard_cypress_accessible_for_smoke
 
     url = resolve_odh_dashboard_base_url()
     if not url:
@@ -605,9 +631,7 @@ def _dashboard_cypress_gateway_unavailable_reason() -> str:
 def _maas_prereq_unavailable_reason(smoke_id: str) -> str:
     del smoke_id  # MaaS prereqs are shared across MaaS smoke components.
     from components.maas_billing.common import (
-        deps_only_install_dependencies_smoke,
-        maas_smoke_acceptable_for_run,
-    )
+      deps_only_install_dependencies_smoke, maas_smoke_acceptable_for_run)
 
     if deps_only_install_dependencies_smoke():
         from components.maas_billing.common import maas_functional_smoke_ready
@@ -629,10 +653,12 @@ def smoke_component_prereq_unavailable(smoke_id: str) -> tuple[bool, str]:
     if disabled:
         return True, reason
 
+    maas_gate_accepted = False
     if components_need_models_as_service({smoke_id}):
         maas_reason = _maas_prereq_unavailable_reason(smoke_id)
         if maas_reason:
             return True, maas_reason
+        maas_gate_accepted = True
 
     if smoke_id == "dashboard_cypress":
         gateway_reason = _dashboard_cypress_gateway_unavailable_reason()
@@ -645,8 +671,16 @@ def smoke_component_prereq_unavailable(smoke_id: str) -> tuple[bool, str]:
         return False, ""
 
     _, reason, msg = _dsc_condition(ready_type)
-    if reason == "Removed":
+    if reason == "Removed" and not _stale_maas_removed_reason(ready_type):
         return True, f"{ready_type} reason=Removed"
+
+    if maas_gate_accepted and _is_maas_ready_condition(ready_type):
+        # ``maas_smoke_acceptable_for_run`` already accepted the run through its
+        # stale-Removed / functional+annotation fallbacks; re-checking the raw
+        # condition status here would reject exactly what the MaaS gate allowed
+        # (hollow-red). Non-MaaS ready types (KserveReady for model_server /
+        # model_runtime) still go through the status check below.
+        return False, ""
 
     if ready_type in _dsc_condition_types():
         status, cond_reason, cond_msg = _dsc_condition(ready_type)

@@ -27,52 +27,45 @@ from _bootstrap import ensure_rhoai_e2e_path
 
 ensure_rhoai_e2e_path()
 
-from suite.component_phases import combine_pytest_markers, parse_component_test_phases
-from suite.component_test_timeout import (
-    COMPONENT_TEST_TIMEOUT_SECS_ENV,
-    apply_cluster_source_timeout_cap,
-    parse_component_timeout_seconds,
-    resolve_component_test_timeout_raw,
-)
-from suite.component_task_exit import component_exit_file_path, resolve_component_exit_codes
-from suite.component_catalog import SmokeComponent, load_components_smoke_catalog
-from suite.component_dsc_gate import smoke_component_prereq_unavailable
-from suite.cluster_api_health import cluster_smoke_infra_blocked_reason, is_definitive_infra_error
-from suite.dsc_baseline import reconcile_baseline_dsc_before_component
-from install.dsc_install import components_need_models_as_service
-from runners.component_prereqs import (
-    cluster_prep_already_done,
-    prepare_component_for_smoke,
-    refresh_maas_smoke_before_pytest,
-    run_pooled_external_smoke_prep,
-)
-from suite.component_plan import parse_components_selection
-from runners.run_bvt_pytest import run_single as run_single_pytest
-from k8s.vault_runtime import ensure_runtime_vault_env
-from k8s.shift_left_env import (
-    apply_cluster_router_ca_from_kubeconfig,
-    load_shift_left_env_from_mount,
-    promote_shift_left_aws_env,
-    suppress_ephemeral_jira_env,
-)
-from ogx_ea_distribution_plugin import apply_ogx_ea_distribution_patch
 from components.maas_billing.oidc_users import (
-    apply_maas_billing_htpasswd_test_user_overrides,
-    apply_maas_oidc_client_secret_overrides,
-    maas_billing_aitenant_bootstrap_pytest_extra_args,
-    maas_billing_aitenant_pytest_extra_args,
-    maas_billing_ephc_bbr_pytest_extra_args,
-    maas_billing_rosa_hcp_pytest_extra_args,
-)
-from steps.tekton_util import (
-    prepare_kubeconfig_auth_for_tests,
-)
-from suite.its_trigger_params import (
-    CLUSTER_SOURCE_EPHC,
-    is_ephemeral_hosted_cluster_source,
-    is_external_cluster_source,
-    is_pooled_external_cluster_source,
-)
+  apply_maas_billing_htpasswd_test_user_overrides,
+  apply_maas_oidc_client_secret_overrides,
+  maas_billing_aitenant_bootstrap_pytest_extra_args,
+  maas_billing_aitenant_pytest_extra_args,
+  maas_billing_ephc_bbr_pytest_extra_args,
+  maas_billing_rosa_hcp_pytest_extra_args)
+from install.dsc_install import components_need_models_as_service
+from k8s.shift_left_env import (apply_cluster_router_ca_from_kubeconfig,
+                                load_shift_left_env_from_mount,
+                                promote_shift_left_aws_env,
+                                suppress_ephemeral_jira_env)
+from k8s.vault_runtime import ensure_runtime_vault_env
+from ogx_ea_distribution_plugin import apply_ogx_ea_distribution_patch
+from runners.component_prereqs import (cluster_prep_already_done,
+                                       prepare_component_for_smoke,
+                                       refresh_maas_smoke_before_pytest,
+                                       run_pooled_external_smoke_prep)
+from runners.run_bvt_pytest import run_single as run_single_pytest
+from steps.tekton_util import prepare_kubeconfig_auth_for_tests
+from suite.cluster_api_health import (cluster_smoke_infra_blocked_reason,
+                                      is_definitive_infra_error)
+from suite.component_catalog import (SmokeComponent,
+                                     load_components_smoke_catalog)
+from suite.component_dsc_gate import smoke_component_prereq_unavailable
+from suite.component_phases import (combine_pytest_markers,
+                                    parse_component_test_phases)
+from suite.component_plan import parse_components_selection
+from suite.component_task_exit import (component_exit_file_path,
+                                       resolve_component_exit_codes)
+from suite.component_test_timeout import (COMPONENT_TEST_TIMEOUT_SECS_ENV,
+                                          apply_cluster_source_timeout_cap,
+                                          parse_component_timeout_seconds,
+                                          resolve_component_test_timeout_raw)
+from suite.dsc_baseline import reconcile_baseline_dsc_before_component
+from suite.its_trigger_params import (CLUSTER_SOURCE_EPHC,
+                                      is_ephemeral_hosted_cluster_source,
+                                      is_external_cluster_source,
+                                      is_pooled_external_cluster_source)
 
 # EPHC/HCP quay mirrors fail registry.redhat.io-only checks (nodeids vary by suite).
 _EHC_SKIP_IMAGE_VALIDATION = "-k 'not image_validation and not verify_images'"
@@ -124,8 +117,10 @@ def _wait_for_schedulable_nodes_before_component_pytest() -> str:
     """Return infra message when nodes stay unschedulable; empty when OK."""
     if not _needs_schedulable_nodes_wait():
         return ""
-    from components.maas_billing.timeouts import component_cluster_nodes_timeout_sec
-    from steps.prepare_bvt_cluster_nodes import wait_for_schedulable_nodes_for_bvt
+    from components.maas_billing.timeouts import \
+      component_cluster_nodes_timeout_sec
+    from steps.prepare_bvt_cluster_nodes import \
+      wait_for_schedulable_nodes_for_bvt
 
     timeout_sec = component_cluster_nodes_timeout_sec()
     print(
@@ -147,8 +142,8 @@ def _ensure_yaml_loader() -> None:
         return
     except ImportError:
         pass
-    from helpers.pip_bootstrap import pip_install_to_target, prepend_pythonpath
     from components.dashboard_cypress.runtime import prepend_staged_python_deps
+    from helpers.pip_bootstrap import pip_install_to_target, prepend_pythonpath
 
     if prepend_staged_python_deps():
         try:
@@ -158,7 +153,8 @@ def _ensure_yaml_loader() -> None:
             pass
     artifacts = _artifacts_dir()
     os.environ.setdefault("ARTIFACTS_DIR", str(artifacts))
-    from steps.tests_payload import resolve_tests_payload_root, tests_payload_tools_python_dir
+    from steps.tests_payload import (resolve_tests_payload_root,
+                                     tests_payload_tools_python_dir)
 
     target = tests_payload_tools_python_dir(resolve_tests_payload_root(artifacts))
     print(f"Installing PyYAML to {target} (component pytest)...", flush=True)
@@ -287,7 +283,8 @@ def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
 
 
-from runners.component_junit import prereq_junit_outcome, write_single_failure_junit
+from runners.component_junit import (prereq_junit_outcome,
+                                     write_single_failure_junit)
 
 
 def _return_infra_junit_failure(
@@ -557,6 +554,8 @@ def _apply_ogx_pytest_extra_args(extra: str) -> str:
         extra = f"-p ogx_ea_distribution_plugin {extra}".strip()
     if "-p ogx_tekton_route_plugin" not in extra:
         extra = f"-p ogx_tekton_route_plugin {extra}".strip()
+    if "-p ogx_models_embedding_only_plugin" not in extra:
+        extra = f"-p ogx_models_embedding_only_plugin {extra}".strip()
     cluster_source = os.environ.get("CLUSTER_SOURCE", "").strip()
     if is_ephemeral_hosted_cluster_source(cluster_source):
         extra = _merge_pytest_k_skip(extra, _EPHC_SKIP_OGX_FILE_SEARCH)
@@ -572,22 +571,28 @@ def _materialize_ogx_ea_conftest(artifacts_dir: Path) -> None:
     root = _RHOAI_E2E_ROOT
     plugin_src = root / "ogx_ea_distribution_plugin.py"
     tekton_src = root / "ogx_tekton_route_plugin.py"
+    models_src = root / "ogx_models_embedding_only_plugin.py"
     shutil.copy2(plugin_src, work / "ogx_ea_distribution_plugin.py")
     shutil.copy2(tekton_src, work / "ogx_tekton_route_plugin.py")
+    shutil.copy2(models_src, work / "ogx_models_embedding_only_plugin.py")
     (work / "sitecustomize.py").write_text(
         "import ogx_ea_distribution_plugin as _ogx_ea\n"
         "import ogx_tekton_route_plugin as _ogx_tekton\n"
+        "import ogx_models_embedding_only_plugin as _ogx_models\n"
         "_ogx_ea.apply_ogx_ea_distribution_patch()\n"
-        "_ogx_tekton.apply_ogx_tekton_route_patch()\n",
+        "_ogx_tekton.apply_ogx_tekton_route_patch()\n"
+        "_ogx_models.apply_ogx_models_embedding_only_patch()\n",
         encoding="utf-8",
     )
     (work / "conftest.py").write_text(
         f"import sys\nsys.path.insert(0, {str(root)!r})\n"
         "import ogx_ea_distribution_plugin as _ogx_ea\n"
         "import ogx_tekton_route_plugin as _ogx_tekton\n"
+        "import ogx_models_embedding_only_plugin as _ogx_models\n"
         "def pytest_configure(config):\n"
         "    _ogx_ea.pytest_configure(config)\n"
-        "    _ogx_tekton.pytest_configure(config)\n",
+        "    _ogx_tekton.pytest_configure(config)\n"
+        "    _ogx_models.pytest_configure(config)\n",
         encoding="utf-8",
     )
 
@@ -799,11 +804,29 @@ def _run_one_component(
     if not collect_only and cid == "maas_billing":
         pytest_extra_env = apply_maas_billing_htpasswd_test_user_overrides()
     if not collect_only:
-        run_pooled_external_smoke_prep(cid)
-        # Always call: after global prepare, maas_billing still needs _resync_maas_smoke_after_global_prep.
-        prepare_component_for_smoke(cid)
-        # Heal baseline-Managed Ready flaps (DeploymentsNotReady, Removed, …) before pytest.
-        reconcile_baseline_dsc_before_component(cid, artifacts_dir)
+        try:
+            run_pooled_external_smoke_prep(cid)
+            # Always call: after global prepare, maas_billing still needs _resync_maas_smoke_after_global_prep.
+            prepare_component_for_smoke(cid)
+            # Heal baseline-Managed Ready flaps (DeploymentsNotReady, Removed, …) before pytest.
+            reconcile_baseline_dsc_before_component(cid, artifacts_dir)
+        except Exception as exc:
+            # An escaped probe failure here (e.g. AppError from a stalled apiserver
+            # during `oc get datasciencecluster`) used to kill the component before
+            # pytest with no JUnit at all, which surfaced as a hollow
+            # "infrastructure error - no JUnit file". Always emit a failing JUnit.
+            print(
+                f"FAIL component tests {cid}: component prereq infra ({exc}) — skipping pytest",
+                flush=True,
+            )
+            return _return_infra_junit_failure(
+                comp,
+                artifacts_dir=artifacts_dir,
+                prefix_by_id=prefix_by_id,
+                testcase_name="component_prereq_infra_blocked",
+                message=str(exc),
+                refresh_test_output=refresh_test_output,
+            )
         api_reason = cluster_smoke_infra_blocked_reason()
         if api_reason:
             print(
@@ -895,9 +918,7 @@ def _run_one_component(
             log_model_server_ci_s3_layout()
         if cid == "model_runtime":
             from k8s.smoke_ci_s3_test_dir import (
-                log_model_runtime_ci_s3_layout,
-                model_runtime_pytest_extra_args,
-            )
+              log_model_runtime_ci_s3_layout, model_runtime_pytest_extra_args)
 
             log_model_runtime_ci_s3_layout()
             runtime_skip = model_runtime_pytest_extra_args()
@@ -993,7 +1014,8 @@ def main() -> int:
         apply_cluster_router_ca_from_kubeconfig()
         artifacts_dir = _artifacts_dir()
         os.environ.setdefault("ARTIFACTS_DIR", str(artifacts_dir))
-        from runners.orchestrator import prepare_oc_binary_path_for_pytest, stage_git_for_prereqs
+        from runners.orchestrator import (prepare_oc_binary_path_for_pytest,
+                                          stage_git_for_prereqs)
 
         stage_git_for_prereqs()
         prepare_oc_binary_path_for_pytest()

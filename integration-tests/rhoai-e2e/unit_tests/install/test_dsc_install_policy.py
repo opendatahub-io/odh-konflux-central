@@ -184,5 +184,81 @@ class BatchEnsureDscManagedTest(unittest.TestCase):
         ensure_removed.assert_not_called()
 
 
+class ReconcileStaleDscAigatewayTest(unittest.TestCase):
+    @patch(
+        "install.dsc_install_policy.stale_removed_dsc_keys_for_smoke",
+        return_value=frozenset({"aigateway", "ogx"}),
+    )
+    @patch("install.dsc_install.uses_aigateway_models_as_a_service", return_value=True)
+    @patch("install.dsc_install._resolve_operator_version_for_dsc", return_value="3.6.0-ea.2")
+    @patch("install.dsc_install._cr_exists", return_value=True)
+    @patch("install.dsc_install.dsc_component_management_state", return_value="Managed")
+    @patch("install.dsc_install.ensure_dsc_component_removed")
+    def test_keeps_aigateway_when_maas_selected(
+        self, ensure_removed, _state, _exists, _ver, _use, _stale
+    ) -> None:
+        from install.dsc_install import reconcile_stale_dsc_components_for_smoke
+
+        reconcile_stale_dsc_components_for_smoke({"maas_billing"})
+        removed = [call.args[0] for call in ensure_removed.call_args_list]
+        self.assertNotIn("aigateway", removed)
+        self.assertIn("ogx", removed)
+
+    @patch(
+        "install.dsc_install_policy.stale_removed_dsc_keys_for_smoke",
+        return_value=frozenset({"aigateway", "ogx"}),
+    )
+    @patch("install.dsc_install.uses_aigateway_models_as_a_service", return_value=True)
+    @patch("install.dsc_install._resolve_operator_version_for_dsc", return_value="3.6.0-ea.2")
+    @patch("install.dsc_install._cr_exists", return_value=True)
+    @patch("install.dsc_install.dsc_component_management_state", return_value="Managed")
+    @patch("install.dsc_install.ensure_dsc_component_removed")
+    def test_removes_aigateway_when_maas_not_selected(
+        self, ensure_removed, _state, _exists, _ver, _use, _stale
+    ) -> None:
+        from install.dsc_install import reconcile_stale_dsc_components_for_smoke
+
+        reconcile_stale_dsc_components_for_smoke({"workbenches"})
+        removed = [call.args[0] for call in ensure_removed.call_args_list]
+        self.assertIn("aigateway", removed)
+
+
+class EnsureDscComponentRemovedAigatewayTest(unittest.TestCase):
+    @patch("install.dsc_install._dsc_crd_supports_aigateway_models_as_a_service", return_value=True)
+    @patch("install.dsc_install._cr_exists", return_value=True)
+    @patch("install.dsc_install.oc_run")
+    def test_aigateway_removal_also_clears_submodule(
+        self, oc_run, _exists, _supports
+    ) -> None:
+        import json
+
+        from install.dsc_install import ensure_dsc_component_removed
+
+        oc_run.return_value = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        ensure_dsc_component_removed("aigateway")
+        patch_doc = oc_run.call_args.args[0][-1]
+        components = json.loads(patch_doc)["spec"]["components"]
+        self.assertEqual(components["aigateway"]["managementState"], "Removed")
+        self.assertEqual(
+            components["aigateway"]["modelsAsAService"]["managementState"], "Removed"
+        )
+
+    @patch("install.dsc_install._dsc_crd_supports_aigateway_models_as_a_service", return_value=True)
+    @patch("install.dsc_install._cr_exists", return_value=True)
+    @patch("install.dsc_install.oc_run")
+    def test_other_components_stay_parent_only(self, oc_run, _exists, _supports) -> None:
+        import json
+
+        from install.dsc_install import ensure_dsc_component_removed
+
+        oc_run.return_value = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        ensure_dsc_component_removed("llamastackoperator")
+        patch_doc = oc_run.call_args.args[0][-1]
+        components = json.loads(patch_doc)["spec"]["components"]
+        self.assertEqual(
+            components["llamastackoperator"], {"managementState": "Removed"}
+        )
+
+
 if __name__ == "__main__":
     raise SystemExit(unittest.main())

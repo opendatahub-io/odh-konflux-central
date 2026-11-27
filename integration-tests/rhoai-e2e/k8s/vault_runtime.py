@@ -8,7 +8,7 @@ import ssl
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from suite.errors import AppError
 
@@ -235,6 +235,19 @@ def _vault_login_token(
     except TypeError:
         with opener(login_req, timeout=30) as resp:  # type: ignore[misc]
             login_raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            body = json.loads(exc.read().decode("utf-8", errors="replace"))
+            errs = body.get("errors")
+            if errs:
+                detail = f" ({errs})"
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            pass
+        raise AppError(
+            f"Vault AppRole login failed: HTTP {exc.code} {exc.reason}{detail}",
+            1,
+        ) from exc
     except urllib.error.URLError as exc:
         raise AppError(f"Vault AppRole login failed: {exc.reason}", 1) from exc
     login_doc = json.loads(login_raw.decode("utf-8"))
@@ -376,6 +389,63 @@ def stage_rosa_hcp_kyverno_from_vault(
         flush=True,
     )
     return stage_root
+
+
+def fetch_quay_dockerconfig_from_vault(
+    *,
+    auth_dir: Path = VAULT_AUTH_MOUNT,
+    kv_path: str = "",
+    vault_keys: tuple[str, ...] = (),
+    urlopen: UrlOpen | None = None,
+) -> dict[str, Any] | None:
+    """Read quay dockerconfig JSON from Vault KV (rotation-friendly; no Kyverno YAML required)."""
+    if not auth_dir.is_dir():
+        return None
+    addr = _read_auth_file(auth_dir, "VAULT_ADDR")
+    role_id = _read_auth_file(auth_dir, "role_id")
+    secret_id = _read_auth_file(auth_dir, "secret_id")
+    ca_path = auth_dir / "ca.crt"
+    path = (kv_path or os.environ.get("QUAY_PULL_VAULT_KV_PATH") or "").strip() or ROSA_HCP_KYVERNO_KV_PATH
+    keys = vault_keys or tuple(
+        k.strip()
+        for k in (os.environ.get("QUAY_PULL_VAULT_KEYS") or "rosahcp-quay-auth,rosahcp-brew-auth").split(",")
+        if k.strip()
+    )
+    try:
+        raw = vault_login_and_read_kv_data(
+            vault_addr=addr,
+            role_id=role_id,
+            secret_id=secret_id,
+            ca_path=ca_path,
+            kv_path=path,
+            urlopen=urlopen,
+        )
+    except AppError as exc:
+        print(f"WARN: Vault quay auth read failed for {path}: {exc}", flush=True)
+        return None
+    data = _flatten_vault_kv_leaf_strings(raw)
+    blob = ""
+    for key in keys:
+        blob = (data.get(key) or "").strip()
+        if blob:
+            break
+    if not blob:
+        print(
+            f"WARN: Vault {path} missing quay dockerconfig (tried {', '.join(keys)})",
+            flush=True,
+        )
+        return None
+    normalized = _normalize_dockerconfigjson_blob(blob)
+    try:
+        parsed = json.loads(normalized)
+    except json.JSONDecodeError:
+        print(f"WARN: Vault quay dockerconfig at {path} is not valid JSON", flush=True)
+        return None
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("auths"), dict):
+        print(f"WARN: Vault quay dockerconfig at {path} missing auths", flush=True)
+        return None
+    print(f"✓ Quay dockerconfig from Vault {path} (keys tried: {', '.join(keys)})", flush=True)
+    return parsed
 
 
 def vault_login_and_read_shift_left(

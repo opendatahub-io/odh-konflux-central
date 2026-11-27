@@ -17,6 +17,7 @@ from install.cluster_registry import (
     extract_quay_auth,
     merge_docker_auths,
 )
+from install.quay_pull_auth import load_quay_pull_dockerconfig
 
 __all__ = [
     "dockerconfig_pull_secret_apply_manifest",
@@ -79,10 +80,10 @@ def ensure_olm_marketplace_pull_secrets(quay: dict) -> int:
 
 
 def main() -> int:
-    if not QUAY_SECRET_PATH.is_file():
-        print(f"❌ Quay secret not mounted at {QUAY_SECRET_PATH}")
+    quay = load_quay_pull_dockerconfig()
+    if quay is None:
+        print("❌ Quay pull auth unavailable (Vault vault-approle or tenant mount)")
         return 1
-    quay = json.loads(QUAY_SECRET_PATH.read_text(encoding="utf-8"))
     return ensure_olm_marketplace_pull_secrets(quay)
 
 

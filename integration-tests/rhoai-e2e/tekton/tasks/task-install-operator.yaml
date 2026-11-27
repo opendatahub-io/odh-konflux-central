@@ -38,6 +38,11 @@ spec:
       type: string
     - name: QUAY_PULL_SECRET_NAME
       type: string
+    - name: SECRET_SOURCE
+      type: string
+      default: vault
+      description: >-
+        vault (default: AppRole + Vault KV at runtime) or tenant (mount QUAY_PULL_SECRET_NAME first)
     - name: ROSA_HCP_KYVERNO_SECRET
       type: string
       default: rhoai-e2e-rosa-hcp-kyverno
@@ -86,6 +91,7 @@ spec:
     - name: quay-pull-secret
       secret:
         secretName: $(params.QUAY_PULL_SECRET_NAME)
+        optional: true
     - name: rosa-hcp-kyverno
       secret:
         secretName: $(params.ROSA_HCP_KYVERNO_SECRET)
@@ -197,6 +203,10 @@ spec:
           value: /var/secret/rosa-hcp-kyverno
         - name: ROSA_HCP_QUAY_AUTH_PATH
           value: /var/secret/rosa-hcp-kyverno/.dockerconfigjson
+        - name: SECRET_SOURCE
+          value: $(params.SECRET_SOURCE)
+        - name: QUAY_PULL_SECRET_NAME
+          value: $(params.QUAY_PULL_SECRET_NAME)
         - name: SCRIPTS_REPO_ROOT
           value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e
       script: |
@@ -290,12 +300,15 @@ spec:
       onError: continue
       image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
       env:
-        - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+        - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
         - name: PIPELINE_TASK
           valueFrom:
             fieldRef:
               fieldPath: metadata.labels['tekton.dev/pipelineTask']
-        - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+        - {
+            name: SCRIPTS_REPO_ROOT,
+            value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+          }
       script: |
         #!/usr/bin/env bash
         set -euo pipefail

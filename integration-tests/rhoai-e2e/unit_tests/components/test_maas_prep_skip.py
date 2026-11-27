@@ -169,6 +169,10 @@ def test_maas_resync_when_global_cluster_prep_done(tmp_path, monkeypatch) -> Non
         patch("components.maas_billing.database.ensure_maas_database"),
         patch("components.maas_billing.wait._wait_for_maas_smoke_ready") as wait_maas,
         patch("install.dsc_install.ensure_dsc_models_as_service") as models_as_service,
+        patch(
+            "components.maas_billing.common.maas_smoke_acceptable_for_run",
+            return_value=(False, ""),
+        ),
     ):
         assert prepare_component_for_smoke("model_server") is True
         dsc.assert_called_once_with("model_server")
@@ -179,8 +183,28 @@ def test_maas_resync_when_global_cluster_prep_done(tmp_path, monkeypatch) -> Non
         wait_maas.reset_mock()
         assert prepare_component_for_smoke("maas_billing") is True
         dsc.assert_called_once_with("maas_billing")
-        models_as_service.assert_called_once()
+        models_as_service.assert_called_once_with(wait_for_aigateway=False)
         wait_maas.assert_called_once()
+
+
+def test_maas_resync_skips_models_as_service_when_smoke_acceptable(tmp_path, monkeypatch) -> None:
+    payload = tmp_path / "results"
+    payload.mkdir()
+    monkeypatch.setenv("ARTIFACTS_DIR", str(payload))
+    mark_cluster_prep_done(payload)
+
+    with (
+        patch("runners.component_prereqs._ensure_dsc_managed_for_component"),
+        patch("components.maas_billing.database.ensure_maas_database"),
+        patch("components.maas_billing.wait._wait_for_maas_smoke_ready"),
+        patch("install.dsc_install.ensure_dsc_models_as_service") as models_as_service,
+        patch(
+            "components.maas_billing.common.maas_smoke_acceptable_for_run",
+            return_value=(True, "functional MaaS ready"),
+        ),
+    ):
+        assert prepare_component_for_smoke("maas_billing") is True
+        models_as_service.assert_not_called()
 
 def test_maas_billing_prep_enables_models_as_service_after_gateway() -> None:
     call_order: list[str] = []

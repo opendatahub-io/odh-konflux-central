@@ -7,14 +7,11 @@ import unittest
 from unittest.mock import patch
 
 from components.maas_billing.common import (  # noqa: E402
-    _AUTHORINO_TLS_ANNOTATION,
-    _maas_gateway_annotations_ready,
-    _maas_gateway_https_service_ready,
-    _maas_gateway_programmed,
-    _maas_gateway_ready_for_smoke,
-    maas_functional_smoke_ready,
-    maas_smoke_acceptable_for_run,
-)
+  _AUTHORINO_TLS_ANNOTATION, _maas_gateway_annotations_ready,
+  _maas_gateway_https_service_ready, _maas_gateway_programmed,
+  _maas_gateway_ready_for_smoke, maas_functional_smoke_ready,
+  maas_smoke_acceptable_for_run)
+
 
 class MaasGatewayProgrammedTest(unittest.TestCase):
     @patch("components.maas_billing.common.oc_run")
@@ -122,6 +119,7 @@ class MaasGatewayProgrammedTest(unittest.TestCase):
         ready, _reason = maas_functional_smoke_ready()
         self.assertTrue(ready)
 
+    @patch("components.maas_billing.common._dsc_maas_parent_state", return_value="Managed")
     @patch("components.maas_billing.common.deps_only_install_dependencies_smoke", return_value=False)
     @patch("components.maas_billing.common._dsc_condition_types", return_value={"MaaSPrerequisitesAvailable"})
     @patch(
@@ -145,6 +143,7 @@ class MaasGatewayProgrammedTest(unittest.TestCase):
         self.assertTrue(acceptable)
         self.assertEqual(reason, "")
 
+    @patch("components.maas_billing.common._dsc_maas_parent_state", return_value="Managed")
     @patch("components.maas_billing.common.deps_only_install_dependencies_smoke", return_value=False)
     @patch(
         "components.maas_billing.common.models_as_service_ready_condition_type",
@@ -179,6 +178,170 @@ class MaasGatewayProgrammedTest(unittest.TestCase):
         self.assertTrue(acceptable)
         self.assertIn("functional MaaS ready", reason)
         self.assertIn("ModelsAsAServiceReady lagging", reason)
+
+    @patch("components.maas_billing.common._dsc_maas_parent_state", return_value="Managed")
+    @patch("components.maas_billing.common.deps_only_install_dependencies_smoke", return_value=False)
+    @patch(
+        "components.maas_billing.common.models_as_service_ready_condition_type",
+        return_value="ModelsAsAServiceReady",
+    )
+    @patch(
+        "components.maas_billing.common._dsc_condition_types",
+        return_value={"ModelsAsAServiceReady", "Ready"},
+    )
+    @patch(
+        "components.maas_billing.common._dsc_condition",
+        side_effect=[
+            ("", "", ""),
+            (
+                "False",
+                "Removed",
+                "Submodule ManagementState is set to Removed",
+            ),
+            ("True", "Reconciled", "dsc ready"),
+        ],
+    )
+    @patch("install.dependency_operators.maas_dependency_operators_ready", return_value=True)
+    @patch(
+        "components.maas_billing.common._dsc_models_as_service_spec_state",
+        return_value="Removed",
+    )
+    @patch(
+        "components.maas_billing.common.maas_functional_smoke_ready",
+        return_value=(True, ""),
+    )
+    @patch(
+        "components.maas_billing.common._maas_gateway_annotations_ready",
+        return_value=(True, ""),
+    )
+    def test_acceptable_false_when_models_as_a_service_removed(
+        self,
+        *_mocks: object,
+    ) -> None:
+        """reason=Removed is disabled, not lag: resync must run (5jjq8 hollow green)."""
+        acceptable, reason = maas_smoke_acceptable_for_run()
+        self.assertFalse(acceptable)
+        self.assertIn("ModelsAsAServiceReady reason=Removed", reason)
+        self.assertIn("Submodule ManagementState is set to Removed", reason)
+
+    @patch("components.maas_billing.common._dsc_maas_parent_state", return_value="Removed")
+    @patch("components.maas_billing.common.deps_only_install_dependencies_smoke", return_value=False)
+    @patch(
+        "components.maas_billing.common.models_as_service_ready_condition_type",
+        return_value="ModelsAsAServiceReady",
+    )
+    @patch(
+        "components.maas_billing.common._dsc_condition_types",
+        return_value={"ModelsAsAServiceReady", "Ready"},
+    )
+    @patch(
+        "components.maas_billing.common._dsc_condition",
+        side_effect=[
+            ("", "", ""),
+            ("True", "Reconciled", "models as a service available"),
+            ("True", "Reconciled", "dsc ready"),
+        ],
+    )
+    @patch("install.dependency_operators.maas_dependency_operators_ready", return_value=True)
+    @patch(
+        "components.maas_billing.common.maas_functional_smoke_ready",
+        return_value=(True, ""),
+    )
+    @patch(
+        "components.maas_billing.common._maas_gateway_annotations_ready",
+        return_value=(True, ""),
+    )
+    def test_acceptable_false_when_parent_removed_even_if_conditions_true(
+        self,
+        *_mocks: object,
+    ) -> None:
+        """A Removed parent never reconciles the child, so skip must not happen."""
+        acceptable, reason = maas_smoke_acceptable_for_run()
+        self.assertFalse(acceptable)
+        self.assertIn("parent DSC component is Removed", reason)
+
+    def test_stale_removed_ignored_when_spec_managed(self) -> None:
+        """Operator condition lags spec: aigateway Removed + modelsAsAService Managed (htjzg)."""
+        from components.maas_billing.common import \
+          models_as_service_disabled_reason
+
+        self.assertEqual(
+            models_as_service_disabled_reason(
+                maas_type="ModelsAsAServiceReady",
+                reason="Removed",
+                message="Submodule ManagementState is set to Removed",
+                spec_management_state="Managed",
+                parent_management_state="",
+            ),
+            "",
+        )
+        self.assertIn(
+            "reason=Removed",
+            models_as_service_disabled_reason(
+                maas_type="ModelsAsAServiceReady",
+                reason="Removed",
+                message="Submodule ManagementState is set to Removed",
+                spec_management_state="Removed",
+                parent_management_state="",
+            ),
+        )
+        self.assertIn(
+            "reason=Removed",
+            models_as_service_disabled_reason(
+                maas_type="ModelsAsAServiceReady",
+                reason="Removed",
+                message="Submodule ManagementState is set to Removed",
+                spec_management_state="",
+                parent_management_state="",
+            ),
+        )
+
+    def test_removed_parent_is_a_hard_disable(self) -> None:
+        """A Removed parent never reconciles the child, even with a Managed spec."""
+        from components.maas_billing.common import \
+          models_as_service_disabled_reason
+
+        reason = models_as_service_disabled_reason(
+            maas_type="ModelsAsAServiceReady",
+            reason="",
+            message="",
+            management_state="Managed",
+            spec_management_state="Managed",
+            parent_management_state="Removed",
+        )
+        self.assertIn("parent DSC component is Removed", reason)
+
+    def test_models_as_service_disabled_reason_from_management_state(self) -> None:
+        from components.maas_billing.common import \
+          models_as_service_disabled_reason
+
+        self.assertEqual(
+            models_as_service_disabled_reason(
+                maas_type="ModelsAsAServiceReady",
+                reason="",
+                management_state="Removed",
+                parent_management_state="",
+            ),
+            "spec.components.aigateway.modelsAsAService.managementState=Removed",
+        )
+        self.assertEqual(
+            models_as_service_disabled_reason(
+                maas_type="ModelsAsServiceReady",
+                reason="",
+                management_state="Removed",
+                parent_management_state="",
+            ),
+            "spec.components.kserve.modelsAsService.managementState=Removed",
+        )
+        self.assertEqual(
+            models_as_service_disabled_reason(
+                maas_type="ModelsAsAServiceReady",
+                reason="Reconciled",
+                management_state="Managed",
+                parent_management_state="",
+            ),
+            "",
+        )
 
 
 class MaasGatewayHttpsServiceTest(unittest.TestCase):
