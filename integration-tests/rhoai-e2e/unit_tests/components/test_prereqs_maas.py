@@ -7,17 +7,18 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
-from components.maas_billing.common import _maas_smoke_ready  # noqa: E402
-from components.maas_billing.gateway import _gateway_route_yaml, _gateway_yaml  # noqa: E402
-from components.maas_billing.uwm import _user_workload_monitoring_yaml  # noqa: E402
 from components.maas_billing.auth import (  # noqa: E402
-    _maas_auth_policy_accepted,
-    _wait_maas_api_auth_policy_accepted,
-    ensure_maas_auth_gateway_ready,
-    ensure_maas_auth_policy_ready,
-    ensure_maas_authorino_ready,
-)
-from components.maas_billing.gateway import ensure_maas_api_auth_policy  # noqa: E402
+  _maas_auth_policy_accepted, _wait_maas_api_auth_policy_accepted,
+  ensure_maas_auth_gateway_ready, ensure_maas_auth_policy_ready,
+  ensure_maas_authorino_ready)
+from components.maas_billing.common import _maas_smoke_ready  # noqa: E402
+from components.maas_billing.gateway import _gateway_route_yaml  # noqa: E402
+from components.maas_billing.gateway import \
+  ensure_maas_api_auth_policy  # noqa: E402
+from components.maas_billing.gateway import _gateway_yaml
+from components.maas_billing.uwm import \
+  _user_workload_monitoring_yaml  # noqa: E402
+
 
 class MaasGatewayYamlTest(unittest.TestCase):
     def test_includes_authorino_tls_bootstrap_annotation(self) -> None:
@@ -99,11 +100,15 @@ class MaasAuthGatewayReadyTest(unittest.TestCase):
                 return MagicMock(returncode=0, stdout="False\tMissingDependency")
             return MagicMock(returncode=0, stdout="")
 
+        # Un-mocked common.oc_run would reach the real `oc` binary through
+        # maas_api_namespace(); returncode=1 falls back to the default namespace.
+        fallback = MagicMock(returncode=1, stdout="")
         with patch("components.maas_billing.gateway.ensure_maas_api_auth_policy"):
             with patch("components.maas_billing.auth._oc_run", side_effect=fake_oc_run):
-                with patch("components.maas_billing.auth._sleep"):
-                    with self.assertRaises(RuntimeError):
-                        _wait_maas_api_auth_policy_accepted(timeout_sec=1)
+                with patch("components.maas_billing.common.oc_run", return_value=fallback):
+                    with patch("components.maas_billing.auth._sleep"):
+                        with self.assertRaises(RuntimeError):
+                            _wait_maas_api_auth_policy_accepted(timeout_sec=1)
 
         delete_calls = [c for c in calls if c[:2] == ["delete", "pod"]]
         self.assertGreaterEqual(len(delete_calls), 1)
@@ -120,13 +125,24 @@ class MaasAuthGatewayReadyTest(unittest.TestCase):
                         "components.maas_billing.auth._kuadrant_ready_status",
                         return_value=("True", ""),
                     ):
+                        fallback = MagicMock(returncode=1, stdout="")
                         with patch("components.maas_billing.gateway.ensure_maas_api_auth_policy"):
                             with patch(
                                 "components.maas_billing.auth._maas_api_deployment_ready_now",
                                 return_value=False,
                             ):
-                                with patch("components.maas_billing.auth._sleep"):
-                                    _wait_maas_api_auth_policy_accepted(timeout_sec=5)
+                                # _kuadrant_namespace() probes via auth._oc_run; keep it
+                                # hermetic so the test never reaches the real `oc`.
+                                with patch(
+                                    "components.maas_billing.auth._oc_run",
+                                    return_value=fallback,
+                                ):
+                                    with patch(
+                                        "components.maas_billing.common.oc_run",
+                                        return_value=fallback,
+                                    ):
+                                        with patch("components.maas_billing.auth._sleep"):
+                                            _wait_maas_api_auth_policy_accepted(timeout_sec=5)
 
     @patch("components.maas_billing.gateway.oc_run")
     @patch("components.maas_billing.gateway._clone_models_as_a_service")

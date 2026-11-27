@@ -49,6 +49,12 @@ spec:
       description: >-
         Host-scoped git sslVerify=false for gitlab.cee.redhat.com (rhoai-releases).
         Same as install-dep-operators / install-rhoai.
+    - name: SECRET_SOURCE
+      type: string
+      default: "vault"
+      description: >-
+        vault (default) loads quay dockerconfig from Vault rosahcp-quay-auth; tenant prefers
+        QUAY_PULL_SECRET_NAME mount (see install/quay_pull_auth.py).
   results:
     - name: TEST_OUTPUT
       description: FBC structural pass/fail summary (Konflux TEST_OUTPUT JSON from JUnit)
@@ -59,6 +65,10 @@ spec:
       secret:
         secretName: $(params.QUAY_PULL_SECRET_NAME)
         optional: true
+    - name: vault-approle
+      secret:
+        secretName: vault-approle
+        optional: true
   steps:
     - name: validate-fbc-structural
       displayName: Run rhoai-releases structural tests
@@ -67,6 +77,9 @@ spec:
       volumeMounts:
         - name: quay-pull-secret
           mountPath: /var/secret/quay
+          readOnly: true
+        - name: vault-approle
+          mountPath: /vault-approle
           readOnly: true
       env:
         - name: FBCF_IMAGE
@@ -83,6 +96,8 @@ spec:
           value: $(params.RHOAI_FBC_NAME)
         - name: QUAY_PULL_SECRET_PATH
           value: /var/secret/quay/.dockerconfigjson
+        - name: SECRET_SOURCE
+          value: $(params.SECRET_SOURCE)
         - name: RHOAI_RELEASES_REPO_URL
           value: $(params.RHOAI_RELEASES_REPO_URL)
         - name: RHOAI_RELEASES_REPO_REVISION

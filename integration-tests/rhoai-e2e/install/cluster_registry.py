@@ -259,14 +259,23 @@ def ensure_additional_pull_secret(quay: dict[str, Any]) -> None:
     print("✓ additional-pull-secret created in kube-system")
 
 
-def full_pull_setup_requested(product: str, quay_path: str) -> bool:
+def full_pull_setup_requested(product: str, quay: dict[str, Any] | None = None) -> bool:
+    """True when cluster pull-secret prep should run with *quay* credentials.
+
+    The gate is on credentials being available, not on a mounted secret file:
+    with Vault-first auth the tenant secret mount is optional, so a Vault-only
+    run has valid *quay* auths but no ``quay_path`` file. Requiring the file
+    silently skipped the global pull-secret merge, the ``additional-pull-secret``
+    and the Rosa HCP Kyverno setup (those then fell back to the imagestream
+    mirror path).
+    """
     from suite.constants import is_test_only_product
 
     if is_test_only_product(product):
         return False
     if not os.environ.get("QUAY_PULL_SECRET_NAME", "").strip():
         return False
-    return bool(quay_path) and os.path.isfile(quay_path)
+    return bool(quay and quay.get("auths"))
 
 
 def ensure_cluster_registry_for_rhoai(
@@ -276,12 +285,15 @@ def ensure_cluster_registry_for_rhoai(
     quay_path: str = "",
 ) -> None:
     """Idempotent registry prep: IDMS/Kyverno, safe pull-secret merge, unpack preflight."""
-    from install.rosa_hcp_imagestream_mirror import ensure_rosa_hcp_imagestream_mirror
-    from install.rosa_hcp_pull_setup import ensure_rosa_hcp_pull_setup, is_hypershift_managed_cluster
+    from install.rosa_hcp_imagestream_mirror import \
+      ensure_rosa_hcp_imagestream_mirror
+    from install.rosa_hcp_pull_setup import (ensure_rosa_hcp_pull_setup,
+                                             is_hypershift_managed_cluster)
 
+    del quay_path  # Kept for callers; the gate keys on resolved credentials, not a file.
     product_l = product.strip().lower()
     strict_preflight = product_l in ("rhoai", "odh")
-    do_full_pull = quay is not None and full_pull_setup_requested(product_l, quay_path)
+    do_full_pull = full_pull_setup_requested(product_l, quay)
 
     if is_hypershift_managed_cluster():
         if do_full_pull and quay is not None:

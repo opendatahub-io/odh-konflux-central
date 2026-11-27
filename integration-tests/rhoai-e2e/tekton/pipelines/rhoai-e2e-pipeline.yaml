@@ -285,7 +285,9 @@ spec:
       default: ""
 
     - name: QUAY_PULL_SECRET_NAME
-      description: Name of the namespace secret containing quay.io/rhoai dockerconfigjson
+      description: >-
+        Optional tenant fallback for quay.io/rhoai dockerconfigjson when Vault AppRole is
+        unavailable (default auth is Vault apps/rhods-ci/aws/rosa-hcp rosahcp-quay-auth).
       type: string
       default: "rhoai-external-quay-secret"
 
@@ -827,12 +829,15 @@ spec:
                 values: ["rhoai", "odh"]
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
               - name: PIPELINE_TASK
                 valueFrom:
                   fieldRef:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
             script: |
               #!/usr/bin/env bash
               set -euo pipefail
@@ -909,6 +914,8 @@ spec:
           value: $(params.SCRIPTS_REPO_REVISION)
         - name: OLMINSTALL_ALLOW_GIT_SSLVERIFY_FALSE
           value: "true"
+        - name: SECRET_SOURCE
+          value: $(params.SECRET_SOURCE)
 
     - name: resolve-oci-releases
       displayName: "Cluster — resolve OpenShift CI release"
@@ -999,12 +1006,15 @@ spec:
           - name: write-konflux-task-summary
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
               - name: PIPELINE_TASK
                 valueFrom:
                   fieldRef:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
             script: |
               #!/usr/bin/env bash
               set -euo pipefail
@@ -1171,12 +1181,15 @@ spec:
           - name: write-konflux-task-summary
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
               - name: PIPELINE_TASK
                 valueFrom:
                   fieldRef:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
             script: |
               #!/usr/bin/env bash
               set -euo pipefail
@@ -1417,12 +1430,15 @@ spec:
           - name: write-konflux-task-summary
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
               - name: PIPELINE_TASK
                 valueFrom:
                   fieldRef:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
             script: |
               #!/usr/bin/env bash
               set -euo pipefail
@@ -1565,12 +1581,15 @@ spec:
           - name: write-konflux-task-summary
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
               - name: PIPELINE_TASK
                 valueFrom:
                   fieldRef:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
             script: |
               #!/usr/bin/env bash
               set -euo pipefail
@@ -1748,6 +1767,8 @@ spec:
           value: $(params.SCRIPTS_REPO_REVISION)
         - name: QUAY_PULL_SECRET_NAME
           value: $(params.QUAY_PULL_SECRET_NAME)
+        - name: SECRET_SOURCE
+          value: $(params.SECRET_SOURCE)
         - name: ROSA_HCP_KYVERNO_SECRET
           value: $(params.ROSA_HCP_KYVERNO_SECRET)
         - name: CLUSTER_SOURCE
@@ -1828,6 +1849,8 @@ spec:
           value: $(params.SCRIPTS_REPO_REVISION)
         - name: QUAY_PULL_SECRET_NAME
           value: $(params.QUAY_PULL_SECRET_NAME)
+        - name: SECRET_SOURCE
+          value: $(params.SECRET_SOURCE)
         - name: ROSA_HCP_KYVERNO_SECRET
           value: $(params.ROSA_HCP_KYVERNO_SECRET)
         - name: CLUSTER_SOURCE
@@ -2446,12 +2469,15 @@ spec:
           - name: write-konflux-task-summary
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
               - name: PIPELINE_TASK
                 valueFrom:
                   fieldRef:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
               - name: TESTS_SHARED
                 value: $(workspaces.tests-shared.path)
               - name: VERSION_SKIPPED_JSON
@@ -2461,7 +2487,6 @@ spec:
               set -euo pipefail
               [[ -n "${SCRIPTS_REPO_ROOT:-}" ]] || exit 0
               exec bash "${SCRIPTS_REPO_ROOT}/tekton/scripts/run_write_task_message.sh"
-
 
     - name: resolve-component-run-flags
       displayName: "Setup — resolve component run flags"
@@ -2642,7 +2667,6 @@ spec:
               os.chdir(os.path.join(os.environ["TESTS_SHARED"], "scripts-repo/integration-tests/rhoai-e2e"))
               os.execvp(sys.executable, [sys.executable, "-m", "steps.refresh_component_smoke_flags"])
 
-
     - name: bvt-health-checks
       displayName: "BVT — health checks"
       description: >-
@@ -2683,7 +2707,6 @@ spec:
           value: $(params.CLUSTER_SOURCE)
         - name: PRODUCT
           value: $(params.PRODUCT)
-
 
     - name: test-workbenches
       onError: continue
@@ -2943,10 +2966,11 @@ spec:
       onError: continue
       displayName: "Test — maas billing"
       description: |
-        Models-as-a-Service billing smoke tests. May fail on external pooled clusters until MaaS auth gateway setup completes within the task timeout. EPHC HyperShift blocks OAuth IdP patches — keep unprivileged client off (admin SA).
+        Models-as-a-Service billing smoke tests. May fail on external pooled clusters until MaaS auth gateway setup completes within the task timeout. EPHC HyperShift blocks OAuth IdP patches — keep unprivileged client off (admin SA). tests/model_serving/maas_billing exists only in opendatahub-tests 3.5; 3.6+ images dropped that tree, so pin 3.5 instead of the prepare-resolved versioned image.
 
         - Test framework: opendatahub-tests (pytest).
         - Command: pytest tests/model_serving/maas_billing -m 'smoke' -svv -o junit_suite_name=maas_billing --tc use_unprivileged_client:False.
+        - Uses a catalog-pinned opendatahub-tests image.
         - Requires tenant credentials supplied by the pipeline.
         - Timeouts: smoke 20m, tier1 45m.
         - Version gate: minRhoai 3.3.
@@ -4180,7 +4204,6 @@ spec:
         - name: STRUCTURAL_TESTS_ONLY
           value: $(params.STRUCTURAL_TESTS_ONLY)
 
-
   finally:
     - name: collect-diagnostics
       displayName: "Report — collect diagnostics"
@@ -4339,12 +4362,15 @@ spec:
           - name: write-konflux-task-summary
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
               - name: PIPELINE_TASK
                 valueFrom:
                   fieldRef:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
             script: |
               #!/usr/bin/env bash
               set -euo pipefail
@@ -4725,15 +4751,27 @@ spec:
             displayName: Write Konflux task summary
             image: quay.io/konflux-ci/konflux-test:stable@sha256:09328e5f47da168ffe951ec9c4242cd6761e61e0a235df1bba3f5158e757446d
             env:
-              - {name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path)}
-              - {name: TEST_OUTPUT_PATH, value: $(results.TEST_OUTPUT.path)}
-              - {name: TESTS_SUMMARY_PATH, value: $(results.TESTS_SUMMARY.path)}
-              - {name: BVT_GATE_PATH, value: $(results.BVT_GATE.path)}
-              - {name: SMOKE_GATE_PATH, value: $(results.SMOKE_GATE.path)}
-              - {name: CLUSTER_PATH, value: $(results.CLUSTER.path)}
-              - {name: OPENSHIFT_VERSION_PATH, value: $(results.OPENSHIFT_VERSION.path)}
-              - {name: OPERATOR_VERSION_PATH, value: $(results.OPERATOR_VERSION.path)}
-              - {name: ARTIFACTS_URL_PATH, value: $(results.ARTIFACTS_URL.path)}
+              - { name: TASK_MESSAGE_PATH, value: $(results.TASK_MESSAGE.path) }
+              - { name: TEST_OUTPUT_PATH, value: $(results.TEST_OUTPUT.path) }
+              - {
+                  name: TESTS_SUMMARY_PATH,
+                  value: $(results.TESTS_SUMMARY.path),
+                }
+              - { name: BVT_GATE_PATH, value: $(results.BVT_GATE.path) }
+              - { name: SMOKE_GATE_PATH, value: $(results.SMOKE_GATE.path) }
+              - { name: CLUSTER_PATH, value: $(results.CLUSTER.path) }
+              - {
+                  name: OPENSHIFT_VERSION_PATH,
+                  value: $(results.OPENSHIFT_VERSION.path),
+                }
+              - {
+                  name: OPERATOR_VERSION_PATH,
+                  value: $(results.OPERATOR_VERSION.path),
+                }
+              - {
+                  name: ARTIFACTS_URL_PATH,
+                  value: $(results.ARTIFACTS_URL.path),
+                }
               - name: BVT_TEST_OUTPUT_PATH
                 value: $(workspaces.tests-shared.path)/tests-payload/.rhoai-e2e-bvt-test-output.json
               - name: SMOKE_TEST_OUTPUT_PATH
@@ -4754,7 +4792,10 @@ spec:
                     fieldPath: metadata.labels['tekton.dev/pipelineTask']
               - name: OLMINSTALL_TASK_ALWAYS_SUCCEED
                 value: "1"
-              - {name: SCRIPTS_REPO_ROOT, value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e}
+              - {
+                  name: SCRIPTS_REPO_ROOT,
+                  value: $(workspaces.tests-shared.path)/scripts-repo/integration-tests/rhoai-e2e,
+                }
             script: |
               #!/usr/bin/env bash
               set -euo pipefail

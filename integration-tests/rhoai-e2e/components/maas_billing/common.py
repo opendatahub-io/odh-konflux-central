@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 from install.dsc_install import dsc_crd_available, oc_run
@@ -89,38 +90,67 @@ def maas_api_deployment_exists() -> bool:
     return False
 
 
+_DSC_PROBE_ATTEMPTS = 3
+_DSC_PROBE_RETRY_SLEEP_SEC = 2.0
+
+
+def _dsc_probe_stdout(args: list[str]) -> str | None:
+    """Run one DSC jsonpath probe; None when the apiserver stalls.
+
+    ``oc_run`` raises ``AppError`` on timeout even with ``check=False`` — the
+    flag only governs non-zero return codes. Under concurrent ITS load the
+    shared apiserver can exceed the 30s probe budget, and letting that abort
+    the caller turned MaaS prep into a component with no JUnit at all
+    (``infrastructure error - no JUnit file``). Retry briefly, then report
+    "unreadable" so the owning wait loop keeps waiting.
+    """
+    from suite.errors import AppError
+
+    last: str | None = None
+    for attempt in range(1, _DSC_PROBE_ATTEMPTS + 1):
+        try:
+            r = oc_run(
+                args,
+                check=False,
+                capture_output=True,
+                timeout=30,
+            )
+        except AppError as exc:
+            last = str(exc)
+            if attempt < _DSC_PROBE_ATTEMPTS:
+                time.sleep(_DSC_PROBE_RETRY_SLEEP_SEC)
+            continue
+        return r.stdout or ""
+    print(f"WARN: DSC condition probe unreadable after {_DSC_PROBE_ATTEMPTS} attempts ({last})")
+    return None
+
+
 def _dsc_condition(condition_type: str) -> tuple[str, str, str]:
     path = (
         f'{{.status.conditions[?(@.type=="{condition_type}")].status}}'
         f'\t{{.status.conditions[?(@.type=="{condition_type}")].reason}}'
         f'\t{{.status.conditions[?(@.type=="{condition_type}")].message}}'
     )
-    r = oc_run(
-        ["get", "datasciencecluster", "default-dsc", "-o", f"jsonpath={path}"],
-        check=False,
-        capture_output=True,
-        timeout=30,
+    stdout = _dsc_probe_stdout(
+        ["get", "datasciencecluster", "default-dsc", "-o", f"jsonpath={path}"]
     )
-    parts = (r.stdout or "").strip().split("\t")
+    parts = (stdout or "").strip().split("\t")
     while len(parts) < 3:
         parts.append("")
     return parts[0], parts[1], parts[2]
 
 
 def _dsc_condition_types() -> set[str]:
-    r = oc_run(
+    stdout = _dsc_probe_stdout(
         [
             "get",
             "datasciencecluster",
             "default-dsc",
             "-o",
             "jsonpath={.status.conditions[*].type}",
-        ],
-        check=False,
-        capture_output=True,
-        timeout=30,
+        ]
     )
-    return {t.strip() for t in (r.stdout or "").split() if t.strip()}
+    return {t.strip() for t in (stdout or "").split() if t.strip()}
 
 
 def _maas_smoke_ready(
@@ -179,6 +209,109 @@ def _dsc_maas_prerequisites_met() -> tuple[bool, str]:
     return False, msg or f"MaaSPrerequisitesAvailable={status or 'Unknown'}"
 
 
+def _dsc_models_as_service_spec_state() -> str:
+    """Live DSC spec managementState for the MaaS submodule ('' when unreadable)."""
+    try:
+        from install.dsc_install import _dsc_models_as_service_management_state
+    except Exception:
+        return ""
+    try:
+        return _dsc_models_as_service_management_state()
+    except Exception:
+        return ""
+
+
+def _dsc_maas_parent_state() -> str:
+    """Live DSC managementState of the MaaS parent component ('' when unreadable)."""
+    try:
+        from install.dsc_install import maas_parent_management_state
+    except Exception:
+        return ""
+    try:
+        return maas_parent_management_state()
+    except Exception:
+        return ""
+
+
+def _maas_submodule_label(maas_type: str = "") -> str:
+    """``aigateway.modelsAsAService`` on 3.5+, ``kserve.modelsAsService`` before.
+
+    The condition type is authoritative when given, so the reported path always
+    matches the condition the caller observed; only fall back to the live
+    operator version probe when the type is unknown.
+    """
+    if "ModelsAsAService" in maas_type:
+        return "aigateway.modelsAsAService"
+    if "ModelsAsService" in maas_type:
+        return "kserve.modelsAsService"
+    try:
+        from install.dsc_install import maas_submodule_json_path_label
+    except Exception:
+        return "modelsAsService"
+    try:
+        return maas_submodule_json_path_label()
+    except Exception:
+        return "modelsAsService"
+
+
+def models_as_service_disabled_reason(
+    *,
+    maas_type: str,
+    reason: str,
+    message: str = "",
+    management_state: str = "",
+    spec_management_state: str | None = None,
+    parent_management_state: str | None = None,
+) -> str:
+    """Return a reason when MaaS is disabled (Removed), not merely lagging.
+
+    ``reason=Removed`` means the operator turned the submodule off, so the
+    functional fallback (gateway/Authorino/DB reachable) cannot make the
+    component runnable: the fail-fast DSC gate in ``suite.component_dsc_gate``
+    reports it as hard-unavailable. Smoke must re-enable modelsAsService
+    instead of silently skipping, otherwise the run ends hollow green.
+
+    A stale ``reason=Removed`` is not a disable: when the DSC spec already says
+    the submodule is ``Managed``, the operator has not reconciled yet, so treat
+    it as lagging and let the functional fallback decide. Without this cross-check
+    the fail-fast gate rejected the run seconds after the wait loop accepted it
+    via its grace period (htjzg model_server/model_runtime/maas_billing).
+
+    A ``Removed`` parent component (``aigateway`` on 3.5+, ``kserve`` before)
+    overrides that grace: a Managed submodule under a Removed parent never
+    reconciles, so it stays hard-disabled even when the child spec says Managed.
+    """
+    if reason != "Removed" and management_state != "Removed":
+        # No Removed signal on the submodule: only a caller-supplied Removed
+        # parent can still force a disable, and we never probe the cluster here.
+        if parent_management_state == "Removed":
+            return (
+                f"{maas_type} reason=Removed: parent DSC component is Removed "
+                "(MaaS submodule never reconciles)"
+            )
+        return ""
+    parent_state = (
+        parent_management_state
+        if parent_management_state is not None
+        else _dsc_maas_parent_state()
+    )
+    if parent_state == "Removed":
+        return (
+            f"{maas_type} reason=Removed: parent DSC component is Removed "
+            "(MaaS submodule never reconciles)"
+        )
+    if reason == "Removed":
+        spec_state = (
+            spec_management_state
+            if spec_management_state is not None
+            else _dsc_models_as_service_spec_state()
+        )
+        if spec_state == "Managed":
+            return ""
+        return f"{maas_type} reason=Removed: {(message or 'submodule disabled')[:160]}"
+    return f"spec.components.{_maas_submodule_label(maas_type)}.managementState=Removed"
+
+
 def maas_smoke_acceptable_for_run() -> tuple[bool, str]:
     """Shared prepare wait + pytest gate: DSC conditions or functional+annotation fallback."""
     from install.dependency_operators import maas_dependency_operators_ready
@@ -193,8 +326,22 @@ def maas_smoke_acceptable_for_run() -> tuple[bool, str]:
 
     require_prereq = "MaaSPrerequisitesAvailable" in _dsc_condition_types()
     prereq_status, _, prereq_msg = _dsc_condition("MaaSPrerequisitesAvailable")
-    maas_status, _, maas_msg = _dsc_condition(models_as_service_ready_condition_type())
+    maas_type = models_as_service_ready_condition_type()
+    maas_status, maas_reason, maas_msg = _dsc_condition(maas_type)
     ready_status, _, ready_msg = _dsc_condition("Ready")
+
+    # Leave the spec state kwargs unset: ``models_as_service_disabled_reason``
+    # probes the DSC lazily, only when the condition actually says Removed.
+    # The parent state must be supplied here: a Removed parent never reconciles
+    # the MaaS submodule, so the child condition can stay non-Removed forever.
+    disabled_reason = models_as_service_disabled_reason(
+        maas_type=maas_type,
+        reason=maas_reason,
+        message=maas_msg,
+        parent_management_state=_dsc_maas_parent_state(),
+    )
+    if disabled_reason:
+        return False, disabled_reason
 
     if _maas_smoke_ready(
         prereq_status=prereq_status,
@@ -224,7 +371,6 @@ def maas_smoke_acceptable_for_run() -> tuple[bool, str]:
         func_ready, func_reason = maas_functional_smoke_ready()
         ann_ready, ann_reason = _maas_gateway_annotations_ready()
         if func_ready and ann_ready:
-            maas_type = models_as_service_ready_condition_type()
             lag_detail = (maas_msg or f"{maas_type} not True")[:120]
             if require_prereq and prereq_status != "True":
                 return True, (
@@ -386,7 +532,8 @@ def maas_functional_smoke_ready() -> tuple[bool, str]:
         return False, reason
     if not _secret_exists(_MAAS_APPS_NS, _MAAS_DB_SECRET):
         return False, f"MaaS DB secret {_MAAS_APPS_NS}/{_MAAS_DB_SECRET} not present"
-    from components.maas_billing.auth import _authorino_deployment_ready, _authorino_namespace
+    from components.maas_billing.auth import (_authorino_deployment_ready,
+                                              _authorino_namespace)
 
     authorino_ns = _authorino_namespace()
     if not _authorino_deployment_ready(authorino_ns):

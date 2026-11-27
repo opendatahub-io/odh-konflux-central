@@ -199,6 +199,9 @@ components:
         Models-as-a-Service billing smoke tests. May fail on external pooled clusters until
         MaaS auth gateway setup completes within the task timeout.
         EPHC HyperShift blocks OAuth IdP patches — keep unprivileged client off (admin SA).
+        tests/model_serving/maas_billing exists only in opendatahub-tests 3.5; 3.6+ images
+        dropped that tree, so pin 3.5 instead of the prepare-resolved versioned image.
+      opendatahubTestsImage: quay.io/opendatahub/opendatahub-tests:3.5
       pytestExtraArgs: "--tc use_unprivileged_client:False"
       minPassRateForSuccess: 0.9
       nonBlockingOnTimeout: true
@@ -595,7 +598,7 @@ components:
         type: cypress-dashboard
         image: quay.io/redhat-user-workloads/rh-platform-experien-tenant/cypress-e2e-image/cypress-e2e-image:9bc9e59
         sourceRepo: https://github.com/opendatahub-io/odh-dashboard.git
-        sourceRef: main  # fallback when operator version unknown; orchestrate maps x.y -> rhoai-x.y
+        sourceRef: main # fallback when operator version unknown; orchestrate maps x.y -> rhoai-x.y
         workingDir: frontend
         resultsDir: packages/cypress/results/e2e
         vaultSecretKey: envfile-dashboard-cypress

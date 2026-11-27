@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-
 from runners import run_component_pytest
+
 
 def test_ephc_maas_waits_operator_webhook() -> None:
     with mock.patch.dict(os.environ, {"CLUSTER_SOURCE": "EPHC"}, clear=False):
@@ -39,6 +39,7 @@ def test_ephc_pytest_extra_args_skip_image_validation() -> None:
         )
         merged = run_component_pytest._apply_cluster_source_pytest_extra_args(workbenches_extra)
         import shlex
+
         from runners.run_bvt_pytest import _build_pytest_args
 
         args = _build_pytest_args("smoke", merged, "tests/workbenches/", "/tmp/junit.xml")
@@ -358,6 +359,7 @@ def test_ogx_forces_rh_dev_distribution_after_shift_left(monkeypatch: pytest.Mon
     )
     assert "distribution_name:rh-dev" in extra
     assert "-p ogx_ea_distribution_plugin" in extra
+    assert "-p ogx_models_embedding_only_plugin" in extra
     assert os.environ["distribution_name"] == "rh-dev"
 
 
@@ -384,7 +386,12 @@ def test_materialize_ogx_ea_conftest(tmp_path: Path) -> None:
     assert conf.is_file()
     text = conf.read_text(encoding="utf-8")
     assert "ogx_ea_distribution_plugin" in text
+    assert "ogx_models_embedding_only_plugin" in text
     assert "pytest_configure" in text
     assert (work / "ogx_ea_distribution_plugin.py").is_file()
+    assert (work / "ogx_models_embedding_only_plugin.py").is_file()
     assert (work / "sitecustomize.py").is_file()
     assert "apply_ogx_ea_distribution_patch" in (work / "sitecustomize.py").read_text(encoding="utf-8")
+    assert "apply_ogx_models_embedding_only_patch" in (work / "sitecustomize.py").read_text(
+        encoding="utf-8"
+    )

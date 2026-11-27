@@ -11,6 +11,7 @@ from unittest import mock
 from k8s.vault_runtime import (
     VAULT_APPROLE_SECRET,
     _normalize_dockerconfigjson_blob,
+    fetch_quay_dockerconfig_from_vault,
     load_hcp_install_aws_credentials,
     merge_model_serving_env,
     parse_env_file_blob,
@@ -248,6 +249,26 @@ class StageRosaHcpKyvernoFromVaultTest(unittest.TestCase):
         out = _normalize_dockerconfigjson_blob(raw)
         parsed = json.loads(out)
         self.assertIn("auths", parsed)
+
+    def test_fetch_quay_dockerconfig_without_kyverno_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = Path(tmp) / "auth"
+            auth.mkdir()
+            auth.joinpath("VAULT_ADDR").write_text("https://vault.example:8200\n", encoding="utf-8")
+            auth.joinpath("role_id").write_text("role\n", encoding="utf-8")
+            auth.joinpath("secret_id").write_text("secret\n", encoding="utf-8")
+            auth.joinpath("ca.crt").write_text(
+                "-----BEGIN CERTIFICATE-----\nM\n-----END CERTIFICATE-----\n",
+                encoding="utf-8",
+            )
+            with mock.patch(
+                "k8s.vault_runtime.vault_login_and_read_kv_data",
+                return_value={"rosahcp-quay-auth": '{"auths":{"quay.io/rhoai":{"auth":"abc"}}}'},
+            ):
+                doc = fetch_quay_dockerconfig_from_vault(auth_dir=auth)
+            self.assertIsNotNone(doc)
+            assert doc is not None
+            self.assertIn("quay.io/rhoai", doc["auths"])
 
 
 class LoadHcpInstallAwsCredentialsTest(unittest.TestCase):

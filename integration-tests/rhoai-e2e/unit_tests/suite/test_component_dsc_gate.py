@@ -7,13 +7,11 @@ import unittest
 from unittest.mock import patch
 
 from suite.component_dsc_gate import (
-    dsc_disabled_reason_from_states,
-    llama_stack_smoke_prereq_reason_from_states,
-    smoke_component_dsc_disabled,
-    smoke_component_prereq_reason_from_states,
-    smoke_component_prereq_unavailable,
-    wait_for_smoke_dsc_ready_after_patch,
-)
+  _stale_maas_removed_reason, dsc_disabled_reason_from_states,
+  llama_stack_smoke_prereq_reason_from_states, smoke_component_dsc_disabled,
+  smoke_component_prereq_reason_from_states,
+  smoke_component_prereq_unavailable, wait_for_smoke_dsc_ready_after_patch)
+
 
 class DscDisabledReasonTest(unittest.TestCase):
     def test_workbenches_removed_via_ready_condition(self) -> None:
@@ -82,6 +80,50 @@ class DscDisabledReasonTest(unittest.TestCase):
             ready_reasons={"TrainingOperatorReady": "Removed"},
         )
         self.assertEqual(reason, "TrainingOperatorReady reason=Removed")
+
+class StaleMaasRemovedReasonTest(unittest.TestCase):
+    @patch(
+        "suite.component_dsc_gate._maas_parent_management_state",
+        return_value="Managed",
+    )
+    @patch(
+        "suite.component_dsc_gate._models_as_service_management_state",
+        return_value="Managed",
+    )
+    def test_removed_condition_is_stale_when_spec_managed(self, _state, _parent) -> None:
+        """Operator lags the spec: aigateway Removed + modelsAsAService Managed (htjzg)."""
+        self.assertTrue(_stale_maas_removed_reason("ModelsAsAServiceReady"))
+
+    @patch(
+        "suite.component_dsc_gate._maas_parent_management_state",
+        return_value="Managed",
+    )
+    @patch(
+        "suite.component_dsc_gate._models_as_service_management_state",
+        return_value="Removed",
+    )
+    def test_removed_condition_is_real_when_spec_removed(self, _state, _parent) -> None:
+        self.assertFalse(_stale_maas_removed_reason("ModelsAsAServiceReady"))
+
+    @patch(
+        "suite.component_dsc_gate._maas_parent_management_state",
+        return_value="Removed",
+    )
+    @patch(
+        "suite.component_dsc_gate._models_as_service_management_state",
+        return_value="Managed",
+    )
+    def test_removed_parent_is_never_stale(self, _state, _parent) -> None:
+        """A Removed parent means the child never reconciles: treat as real, not lag."""
+        self.assertFalse(_stale_maas_removed_reason("ModelsAsAServiceReady"))
+
+    @patch(
+        "suite.component_dsc_gate._models_as_service_management_state",
+        return_value="Managed",
+    )
+    def test_non_maas_condition_never_stale(self, _state) -> None:
+        self.assertFalse(_stale_maas_removed_reason("WorkbenchesReady"))
+        _state.assert_not_called()
 
 class LlamaStackSmokePrereqTest(unittest.TestCase):
     def test_ready_when_condition_true(self) -> None:

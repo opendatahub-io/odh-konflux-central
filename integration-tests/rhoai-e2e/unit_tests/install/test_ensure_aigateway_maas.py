@@ -8,10 +8,9 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from install.dsc_install import (
-    _dsc_crd_supports_aigateway_models_as_a_service,
-    ensure_aigateway_models_as_a_service_managed,
-    uses_aigateway_models_as_a_service,
-)
+  _dsc_crd_supports_aigateway_models_as_a_service,
+  ensure_aigateway_models_as_a_service_managed,
+  uses_aigateway_models_as_a_service)
 
 
 class EnsureAigatewayMaasTest(unittest.TestCase):
@@ -86,30 +85,72 @@ class EnsureAigatewayMaasTest(unittest.TestCase):
         self.assertGreaterEqual(mock_wait.call_args.kwargs["timeout_sec"], 890)
         self.assertLessEqual(mock_wait.call_args.kwargs["timeout_sec"], 900)
 
+    @patch("install.dsc_install._dsc_models_as_service_management_state", return_value="")
     @patch("install.dsc_install._patch_dsc_merge_with_webhook_retry")
     @patch("install.dsc_install.wait_operator_admission_webhook")
     @patch("install.dsc_install.ensure_aigateway_models_as_a_service_managed")
     @patch("install.dsc_install._cr_exists", return_value=True)
     @patch("install.dsc_install.uses_aigateway_models_as_a_service", return_value=True)
     def test_ensure_dsc_models_as_service_forwards_wait_budget(
-        self, _use, _exists, mock_aigateway, _webhook, _patch
+        self, _use, _exists, mock_aigateway, _webhook, _patch, _state
     ) -> None:
         from install.dsc_install import ensure_dsc_models_as_service
 
         ensure_dsc_models_as_service(wait_timeout_sec=600)
         mock_aigateway.assert_called_once_with(wait_timeout_sec=600, wait=True)
 
+    @patch("install.dsc_install._dsc_models_as_service_management_state", return_value="")
     @patch("install.dsc_install._patch_dsc_merge_with_webhook_retry")
     @patch("install.dsc_install.wait_operator_admission_webhook")
     @patch("install.dsc_install.ensure_aigateway_models_as_a_service_managed")
     @patch("install.dsc_install._cr_exists", return_value=True)
     @patch("install.dsc_install.uses_aigateway_models_as_a_service", return_value=True)
     def test_ensure_dsc_models_as_service_can_defer_aigateway_wait(
-        self, _use, _exists, mock_aigateway, _webhook, _patch
+        self, _use, _exists, mock_aigateway, _webhook, _patch, _state
     ) -> None:
         from install.dsc_install import ensure_dsc_models_as_service
 
         ensure_dsc_models_as_service(wait_for_aigateway=False)
+        mock_aigateway.assert_called_once_with(wait_timeout_sec=900, wait=False)
+
+    @patch("install.dsc_install.ensure_aigateway_models_as_a_service_managed")
+    @patch("install.dsc_install._patch_dsc_merge_with_webhook_retry")
+    @patch("install.dsc_install.wait_operator_admission_webhook")
+    @patch("install.dsc_install.dsc_component_management_state", return_value="Managed")
+    @patch("install.dsc_install._dsc_models_as_service_management_state", return_value="Managed")
+    @patch("install.dsc_install._cr_exists", return_value=True)
+    @patch("install.dsc_install.uses_aigateway_models_as_a_service", return_value=True)
+    def test_ensure_dsc_models_as_service_skips_patch_when_managed(
+        self, _use, _exists, _state, _parent, mock_webhook, mock_patch, mock_aigateway
+    ) -> None:
+        from install.dsc_install import ensure_dsc_models_as_service
+
+        ensure_dsc_models_as_service(wait_for_aigateway=False)
+        _parent.assert_called_with("aigateway")
+        mock_webhook.assert_not_called()
+        mock_patch.assert_not_called()
+        mock_aigateway.assert_called_once_with(wait_timeout_sec=900, wait=False)
+
+    @patch("install.dsc_install.ensure_aigateway_models_as_a_service_managed")
+    @patch("install.dsc_install._patch_dsc_merge_with_webhook_retry")
+    @patch("install.dsc_install.wait_operator_admission_webhook")
+    @patch("install.dsc_install.dsc_component_management_state", return_value="Removed")
+    @patch("install.dsc_install._dsc_models_as_service_management_state", return_value="Managed")
+    @patch("install.dsc_install._cr_exists", return_value=True)
+    @patch("install.dsc_install.uses_aigateway_models_as_a_service", return_value=True)
+    def test_ensure_dsc_models_as_service_reasserts_removed_aigateway_parent(
+        self, _use, _exists, _state, _parent, mock_webhook, mock_patch, mock_aigateway
+    ) -> None:
+        """Child Managed under a Removed parent never reconciles (htjzg); repair the parent."""
+        from install.dsc_install import ensure_dsc_models_as_service
+
+        ensure_dsc_models_as_service(wait_for_aigateway=False)
+        _state.assert_called_once()
+        _parent.assert_called_with("aigateway")
+        mock_patch.assert_called_once()
+        label = mock_patch.call_args.kwargs["label"]
+        self.assertEqual(label, "aigateway=Managed (MaaS submodule already Managed)")
+        self.assertIn('"managementState": "Managed"', mock_patch.call_args.args[0])
         mock_aigateway.assert_called_once_with(wait_timeout_sec=900, wait=False)
 
     @patch("install.dsc_install._cr_exists", return_value=False)
@@ -145,7 +186,8 @@ class EnsureAigatewayMaasTest(unittest.TestCase):
     @patch("install.dsc_install.time.time", side_effect=[0.0, 1.0, 2.0])
     @patch("install.dsc_install._AIGATEWAY_CR", "default-aigateway")
     def test_wait_requires_ready_replicas_not_only_deployment_object(self, _time, _sleep) -> None:
-        from install.dsc_install import _wait_aigateway_models_as_a_service_reconciled
+        from install.dsc_install import \
+          _wait_aigateway_models_as_a_service_reconciled
 
         responses = [
             MagicMock(returncode=0, stdout="0"),
@@ -166,7 +208,8 @@ class EnsureAigatewayMaasTest(unittest.TestCase):
     def test_deployments_available_without_maas_api_keeps_waiting(
         self, mock_time, _sleep, mock_nudge
     ) -> None:
-        from install.dsc_install import _AIGATEWAY_CR, _wait_aigateway_models_as_a_service_reconciled
+        from install.dsc_install import (
+          _AIGATEWAY_CR, _wait_aigateway_models_as_a_service_reconciled)
 
         class _AdvancingClock:
             def __init__(self) -> None:
@@ -195,7 +238,8 @@ class EnsureAigatewayMaasTest(unittest.TestCase):
 
     @patch("install.dsc_install.time.time", return_value=1000.0)
     def test_nudge_restarts_both_operators_and_annotates(self, _time) -> None:
-        from install.dsc_install import _AIGATEWAY_CR, _nudge_maas_api_after_aigateway_deployments
+        from install.dsc_install import (
+          _AIGATEWAY_CR, _nudge_maas_api_after_aigateway_deployments)
 
         rollout_calls: list[str] = []
 
@@ -226,7 +270,8 @@ class EnsureAigatewayMaasTest(unittest.TestCase):
     @patch("install.dsc_install._cr_exists", return_value=True)
     @patch("install.dsc_install.uses_aigateway_models_as_a_service", return_value=True)
     def test_cycle_patches_dsc_and_aigateway(self, _use, _exists, _sleep) -> None:
-        from install.dsc_install import _cycle_aigateway_models_as_a_service_state
+        from install.dsc_install import \
+          _cycle_aigateway_models_as_a_service_state
 
         patched: list[tuple[str, str, str]] = []
 

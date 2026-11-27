@@ -199,17 +199,28 @@ def _resync_maas_smoke_after_global_prep(smoke_id: str) -> bool:
             flush=True,
         )
     if smoke_id == "maas_billing":
-        try:
-            from install.dsc_install import ensure_dsc_models_as_service
+        from components.maas_billing.common import maas_smoke_acceptable_for_run
 
-            ensure_dsc_models_as_service()
-        except Exception as exc:
-            ok = False
+        mas_acceptable, mas_reason = maas_smoke_acceptable_for_run()
+        if mas_acceptable:
             print(
-                f"WARN: could not re-enable modelsAsService for {smoke_id}: {exc}",
-                file=sys.stderr,
+                "Skipping MaaS DSC modelsAsService resync "
+                f"(smoke prerequisites already acceptable"
+                f"{': ' + mas_reason[:120] if mas_reason else ''})",
                 flush=True,
             )
+        else:
+            try:
+                from install.dsc_install import ensure_dsc_models_as_service
+
+                ensure_dsc_models_as_service(wait_for_aigateway=False)
+            except Exception as exc:
+                ok = False
+                print(
+                    f"WARN: could not re-enable modelsAsService for {smoke_id}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
     try:
         from components.maas_billing.database import ensure_maas_database
 

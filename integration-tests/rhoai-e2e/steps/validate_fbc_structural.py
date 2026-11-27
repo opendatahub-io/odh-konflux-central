@@ -79,15 +79,9 @@ def should_skip_structural(*, product: str, fbcf_image: str) -> bool:
 
 
 def _stage_registry_auth(quay_path: str) -> str:
-    src = Path(quay_path)
-    if not src.is_file():
-        print(f"WARN: quay dockerconfig missing at {quay_path} (skopeo may fail on private images)")
-        return ""
-    dest = Path("/tmp/rhoai-structural-auth.json")
-    dest.write_bytes(src.read_bytes())
-    os.environ["REGISTRY_AUTH_FILE"] = str(dest)
-    print(f"REGISTRY_AUTH_FILE={dest}")
-    return str(dest)
+    from install.quay_pull_auth import stage_registry_auth_file
+
+    return stage_registry_auth_file(quay_path=quay_path)
 
 
 def _copy_artifacts(repo: Path, release_path: str, payload_dir: str) -> None:

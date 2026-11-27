@@ -15,13 +15,12 @@ from _bootstrap import ensure_rhoai_e2e_path
 
 ensure_rhoai_e2e_path()
 
-from suite.component_version_gate import (
-    probe_operator_version_from_cluster,
-    resolve_operator_version_for_gates,
-    rhoai_version_at_least,
-)
 from install.dsc_install_policy import resolve_managed_dsc_keys
 from k8s.oc_util import run_oc
+from suite.component_version_gate import (probe_operator_version_from_cluster,
+                                          resolve_operator_version_for_gates,
+                                          rhoai_version_at_least)
+
 
 # Minimal DSCI + DSC for BVT. The operator must be installed first; these CRs
 # activate RHOAI so the opendatahub-tests conftest can discover the cluster.
@@ -584,20 +583,31 @@ def _sync_dsc_smoke_components(
             }
             if key in managed and use_raw:
                 kserve_patch.update(_kserve_raw_deployment_patch())
-            if enable_maas and not use_aigateway_maas:
-                kserve_patch["modelsAsService"] = {"managementState": "Managed"}
+            # Always state the submodule explicitly: a merge patch that only sets the
+            # parent leaves a stale ``modelsAsService: Managed`` behind, and the operator
+            # then reports ``ModelsAsServiceReady reason=Removed`` forever.
+            kserve_patch["modelsAsService"] = {
+                "managementState": "Managed"
+                if (enable_maas and not use_aigateway_maas)
+                else "Removed"
+            }
             components_patch[key] = kserve_patch
             continue
         if key == "aigateway":
             if not use_aigateway_maas:
                 continue
+            aigateway_managed = enable_maas or key in managed
             components_patch[key] = {
-                "managementState": "Managed"
-                if (enable_maas or key in managed)
-                else "Removed",
+                "managementState": "Managed" if aigateway_managed else "Removed",
+                # Same merge-patch residue rule as kserve above: removing the parent
+                # without clearing the child leaves ``aigateway.managementState=Removed``
+                # with ``modelsAsAService=Managed``, which the operator surfaces as
+                # ``ModelsAsAServiceReady reason=Removed: Submodule ManagementState is set
+                # to Removed`` and which the fail-fast smoke gate treats as hard-unavailable.
+                "modelsAsAService": {
+                    "managementState": "Managed" if enable_maas else "Removed"
+                },
             }
-            if enable_maas:
-                components_patch[key]["modelsAsAService"] = {"managementState": "Managed"}
             continue
         components_patch[key] = {
             "managementState": "Managed" if key in managed else "Removed",
@@ -750,7 +760,13 @@ def ensure_dsc_component_removed(dsc_key: str) -> None:
     """Merge-patch one DSC component to Removed without changing other components."""
     if not _cr_exists("datasciencecluster", "default-dsc"):
         fail("DataScienceCluster/default-dsc missing; cannot disable DSC component")
-    patch_doc = json.dumps({"spec": {"components": {dsc_key: {"managementState": "Removed"}}}})
+    component_patch: dict[str, Any] = {"managementState": "Removed"}
+    if dsc_key == "aigateway" and _dsc_crd_supports_aigateway_models_as_a_service():
+        # A parent-only merge patch leaves a stale ``modelsAsAService=Managed`` behind,
+        # which the operator surfaces as ``ModelsAsAServiceReady reason=Removed:
+        # Submodule ManagementState is set to Removed`` forever. Clear the child too.
+        component_patch["modelsAsAService"] = {"managementState": "Removed"}
+    patch_doc = json.dumps({"spec": {"components": {dsc_key: component_patch}}})
     r = oc_run(
         ["patch", "datasciencecluster", "default-dsc", "--type=merge", "-p", patch_doc],
         check=False,
@@ -771,7 +787,15 @@ def reconcile_stale_dsc_components_for_smoke(component_ids: set[str]) -> None:
 
     csv = ",".join(sorted(component_ids))
     operator_version = _resolve_operator_version_for_dsc()
-    for key in sorted(stale_removed_dsc_keys_for_smoke(csv, operator_version)):
+    stale = set(stale_removed_dsc_keys_for_smoke(csv, operator_version))
+    # aigateway is install-deferred for 3.5+ (operator chart policy) but is the MaaS parent
+    # module: removing it after ``ensure_dsc_models_as_service`` strands
+    # ``ModelsAsAServiceReady reason=Removed`` and the smoke gate treats MaaS as unavailable.
+    if smoke_enables_models_as_service(component_ids) and uses_aigateway_models_as_a_service(
+        operator_version
+    ):
+        stale.discard("aigateway")
+    for key in sorted(stale):
         if dsc_component_management_state(key) == "Managed":
             ensure_dsc_component_removed(key)
 
@@ -801,6 +825,86 @@ def _aigateway_maas_wait_sec(wait_timeout_sec: int | None = None) -> int:
     return int(os.environ.get("MAAS_PREP_TIMEOUT_SEC", "900"))
 
 
+def _dsc_models_as_service_management_state() -> str:
+    """Current DSC spec managementState for modelsAsService / modelsAsAService."""
+    if uses_aigateway_models_as_a_service():
+        jsonpath = "{.spec.components.aigateway.modelsAsAService.managementState}"
+    else:
+        jsonpath = "{.spec.components.kserve.modelsAsService.managementState}"
+    r = oc_run(
+        [
+            "get",
+            "datasciencecluster",
+            "default-dsc",
+            "-o",
+            f"jsonpath={jsonpath}",
+        ],
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    if r.returncode != 0:
+        return ""
+    return (r.stdout or "").strip()
+
+
+def maas_parent_component_key() -> str:
+    """DSC component that owns the MaaS submodule (aigateway on 3.5+, kserve before)."""
+    return "aigateway" if uses_aigateway_models_as_a_service() else "kserve"
+
+
+def maas_submodule_json_path_label() -> str:
+    """Human label for the MaaS submodule spec path used in logs and reasons."""
+    return (
+        "aigateway.modelsAsAService"
+        if uses_aigateway_models_as_a_service()
+        else "kserve.modelsAsService"
+    )
+
+
+def maas_parent_management_state() -> str:
+    """Live DSC managementState of the component that owns the MaaS submodule."""
+    return dsc_component_management_state(maas_parent_component_key())
+
+
+def maas_state_disabled_reason() -> str:
+    """Reason when the MaaS parent or submodule is Removed; '' when MaaS can be used."""
+    parent_key = maas_parent_component_key()
+    if maas_parent_management_state() == "Removed":
+        # Child Managed under a Removed parent never reconciles: the operator reports
+        # ``reason=Removed: Submodule ManagementState is set to Removed`` and creates
+        # no gateway/api. Treat the parent state as authoritative.
+        return f"{parent_key}=Removed (MaaS submodule never reconciles)"
+    if _dsc_models_as_service_management_state() == "Removed":
+        return f"{maas_submodule_json_path_label()}.managementState=Removed"
+    return ""
+
+
+def _maas_parent_managed_patch() -> dict[str, Any]:
+    """merge-patch body asserting the MaaS parent component and submodule are Managed."""
+    if uses_aigateway_models_as_a_service():
+        return {
+            "spec": {
+                "components": {
+                    "aigateway": {
+                        "managementState": "Managed",
+                        "modelsAsAService": {"managementState": "Managed"},
+                    }
+                }
+            }
+        }
+    return {
+        "spec": {
+            "components": {
+                "kserve": {
+                    "managementState": "Managed",
+                    "modelsAsService": {"managementState": "Managed"},
+                }
+            }
+        }
+    }
+
+
 def ensure_dsc_models_as_service(
     *,
     wait_timeout_sec: int | None = None,
@@ -810,36 +914,40 @@ def ensure_dsc_models_as_service(
     if not _cr_exists("datasciencecluster", "default-dsc"):
         print("WARN: default-dsc missing; skipping modelsAsService patch", file=sys.stderr)
         return
-    if uses_aigateway_models_as_a_service():
-        patch_doc = json.dumps(
-            {
-                "spec": {
-                    "components": {
-                        "aigateway": {
-                            "managementState": "Managed",
-                            "modelsAsAService": {"managementState": "Managed"},
-                        }
-                    }
-                }
-            }
-        )
-        label = "aigateway.modelsAsAService"
-    else:
-        patch_doc = json.dumps(
-            {
-                "spec": {
-                    "components": {
-                        "kserve": {
-                            "managementState": "Managed",
-                            "modelsAsService": {"managementState": "Managed"},
-                        }
-                    }
-                }
-            }
-        )
-        label = "kserve.modelsAsService"
+    if _dsc_models_as_service_management_state() == "Managed":
+        parent_key = maas_parent_component_key()
+        if maas_parent_management_state() == "Removed":
+            # Submodule Managed under a Removed parent never reconciles (both the
+            # pre-3.5 ``kserve.modelsAsService`` and the 3.5+ ``aigateway`` layout).
+            # Re-assert the parent instead of trusting the child state alone.
+            print(
+                f"DSC {maas_submodule_json_path_label()}=Managed but {parent_key}=Removed; "
+                f"re-asserting {parent_key}=Managed",
+                flush=True,
+            )
+            wait_operator_admission_webhook(
+                timeout_sec=int(os.environ.get("VERIFY_OPERATOR_WEBHOOK_WAIT_SEC", "600"))
+            )
+            _patch_dsc_merge_with_webhook_retry(
+                json.dumps(_maas_parent_managed_patch()),
+                label=f"{parent_key}=Managed (MaaS submodule already Managed)",
+                timeout_sec=int(os.environ.get("DSC_PATCH_WEBHOOK_RETRY_SEC", "300")),
+            )
+        else:
+            print(
+                "✓ DSC modelsAsService already Managed; skipping admission webhook patch",
+                flush=True,
+            )
+        if uses_aigateway_models_as_a_service():
+            ensure_aigateway_models_as_a_service_managed(
+                wait_timeout_sec=_aigateway_maas_wait_sec(wait_timeout_sec),
+                wait=wait_for_aigateway,
+            )
+        return
+    patch_doc = json.dumps(_maas_parent_managed_patch())
+    label = maas_submodule_json_path_label()
     wait_operator_admission_webhook(
-        timeout_sec=int(os.environ.get("VERIFY_OPERATOR_WEBHOOK_WAIT_SEC", "300"))
+        timeout_sec=int(os.environ.get("VERIFY_OPERATOR_WEBHOOK_WAIT_SEC", "600"))
     )
     _patch_dsc_merge_with_webhook_retry(
         patch_doc,
@@ -964,9 +1072,8 @@ def ensure_aigateway_models_as_a_service_managed(
             flush=True,
         )
         return
-    from components.maas_billing.bbr_pre_processing import (
-        ensure_maas_controller_openshift_ingress_hpa_rbac,
-    )
+    from components.maas_billing.bbr_pre_processing import \
+      ensure_maas_controller_openshift_ingress_hpa_rbac
 
     ensure_maas_controller_openshift_ingress_hpa_rbac()
     _wait_aigateway_models_as_a_service_reconciled(timeout_sec=remaining)
@@ -1036,9 +1143,8 @@ def _cycle_aigateway_models_as_a_service_state() -> None:
 
 def _nudge_maas_api_after_aigateway_deployments(*, cycle_spec: bool = False) -> None:
     """DeploymentsAvailable covers gateway infra; maas-api is reconciled separately."""
-    from components.maas_billing.bbr_pre_processing import (
-        ensure_maas_controller_openshift_ingress_hpa_rbac,
-    )
+    from components.maas_billing.bbr_pre_processing import \
+      ensure_maas_controller_openshift_ingress_hpa_rbac
 
     ensure_maas_controller_openshift_ingress_hpa_rbac()
     print(
@@ -1504,7 +1610,8 @@ def _maybe_scale_rhods_dashboard_for_cpu_pressure() -> None:
                 "(Pending: insufficient cluster CPU/memory)",
                 flush=True,
             )
-        from install.small_cluster_cpu_relief import relieve_cpu_for_dashboard_install
+        from install.small_cluster_cpu_relief import \
+          relieve_cpu_for_dashboard_install
 
         relieve_cpu_for_dashboard_install()
         return
@@ -1517,7 +1624,8 @@ def wait_dsc_ready(timeout_s: int = 600) -> bool:
         # After CLEANUP, JobSetOperator/cluster is often missing until post-install; ensure
         # again here once CRDs exist (dep-operators may have skipped when setup exited ≠0).
         try:
-            from install.dependency_operators import ensure_jobset_and_lws_operator_crs
+            from install.dependency_operators import \
+              ensure_jobset_and_lws_operator_crs
 
             ensure_jobset_and_lws_operator_crs()
         except Exception as exc:
@@ -1531,7 +1639,8 @@ def wait_dsc_ready(timeout_s: int = 600) -> bool:
         f"{' + TrainerReady' if need_trainer else ''} (up to {timeout_s}s)...",
         flush=True,
     )
-    from install.small_cluster_cpu_relief import maybe_small_cluster_install_prep
+    from install.small_cluster_cpu_relief import \
+      maybe_small_cluster_install_prep
 
     maybe_small_cluster_install_prep()
     deadline = time.time() + timeout_s
@@ -1553,7 +1662,8 @@ def wait_dsc_ready(timeout_s: int = 600) -> bool:
         )
         _maybe_scale_rhods_dashboard_for_cpu_pressure()
         if iteration % 2 == 0:
-            from install.small_cluster_cpu_relief import relieve_cpu_for_dashboard_install
+            from install.small_cluster_cpu_relief import \
+              relieve_cpu_for_dashboard_install
 
             relieve_cpu_for_dashboard_install()
         if iteration % 4 == 0:
