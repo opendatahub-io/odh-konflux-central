@@ -2966,10 +2966,11 @@ spec:
       onError: continue
       displayName: "Test — maas billing"
       description: |
-        Models-as-a-Service billing smoke tests. May fail on external pooled clusters until MaaS auth gateway setup completes within the task timeout. EPHC HyperShift blocks OAuth IdP patches — keep unprivileged client off (admin SA).
+        Models-as-a-Service billing smoke tests. May fail on external pooled clusters until MaaS auth gateway setup completes within the task timeout. EPHC HyperShift blocks OAuth IdP patches — keep unprivileged client off (admin SA). tests/model_serving/maas_billing exists only in opendatahub-tests 3.5; 3.6+ images dropped that tree, so pin 3.5 instead of the prepare-resolved versioned image.
 
         - Test framework: opendatahub-tests (pytest).
         - Command: pytest tests/model_serving/maas_billing -m 'smoke' -svv -o junit_suite_name=maas_billing --tc use_unprivileged_client:False.
+        - Uses a catalog-pinned opendatahub-tests image.
         - Requires tenant credentials supplied by the pipeline.
         - Timeouts: smoke 20m, tier1 45m.
         - Version gate: minRhoai 3.3.
